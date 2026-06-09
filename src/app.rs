@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::time::{Instant, SystemTime};
 
 use eframe::App;
-use egui::{Color32, Margin, Pos2, RichText, Vec2};
+use egui::{Color32, Margin, Pos2, Rect, RichText, Shape, Stroke, Vec2};
 use egui_graphs::{
     DefaultNodeShape, Graph, GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation,
     SettingsStyle,
@@ -62,6 +62,13 @@ pub struct RedstringApp {
     nr_to: Option<NodeIndex>,
     nr_kind: RelationKind,
 
+    // right-drag edge creation: press on A → rubber-band → release on B →
+    // verb-picker popup. `pending_edge` is (from, to, popup screen pos).
+    edge_drag: Option<NodeIndex>,
+    pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
+    verb_filter: String,
+    verb_filter_focus: bool,
+
     // add-source form (targets the selected relation)
     ns_kind: SourceKind,
     ns_ref: String,
@@ -84,6 +91,10 @@ impl RedstringApp {
             nr_from: None,
             nr_to: None,
             nr_kind: RelationKind::RelatedTo,
+            edge_drag: None,
+            pending_edge: None,
+            verb_filter: String::new(),
+            verb_filter_focus: false,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -408,6 +419,9 @@ impl RedstringApp {
         self.g = g;
         self.nr_from = None;
         self.nr_to = None;
+        // node indices just got reassigned — abort any in-flight edge gesture
+        self.edge_drag = None;
+        self.pending_edge = None;
         // Pre-write: the GraphView (added later this same frame) loads the
         // MetadataFrame at its start, so this is the camera it draws with —
         // flash-free for button loads and hot reloads. The widget's very
@@ -658,6 +672,7 @@ impl RedstringApp {
             ui.label(RichText::new("select an entity or relation").weak());
             ui.add_space(8.0);
             ui.label("• drag to move · scroll to zoom");
+            ui.label("• right-drag entity → entity to link");
             ui.label("• red dashed link = unsourced");
             ui.label("• green link = has ≥1 source");
         }
@@ -842,6 +857,204 @@ impl RedstringApp {
             self.g.remove_edge(eidx);
         }
     }
+
+    // ---- board (graph view + right-drag edge creation) ----
+
+    /// The corkboard: the `GraphView` plus the right-drag link-creation overlay.
+    /// RECONCILE(chrome): the GraphView builder lives here now (moved out of
+    /// `App::ui`) — settings/prefs wiring belongs in this fn.
+    fn board(&mut self, ui: &mut egui::Ui) {
+        // the rect the GraphView is about to allocate (it takes all available space)
+        let rect = ui.available_rect_before_wrap();
+
+        // Edge-drag input runs BEFORE the GraphView so that on the press frame
+        // the view is already built with node-dragging gated off. egui_graphs'
+        // handle_node_drag keys off any-button press/drag (is_pointer_button_down_on,
+        // dragged()), so an ungated right-press over a node would start a node
+        // drag and snap the node to the cursor.
+        self.edge_drag_input(ui, rect);
+        // plain-wheel zoom (no ctrl needed) — RECONCILE(camera): scroll-only,
+        // coexists with the right-drag gesture above
+        Self::scroll_zoom(ui);
+
+        ui.add(
+            &mut GraphView::<_, _, _, _, _, SourcedEdgeShape>::new(&mut self.g)
+                .with_id(Some(BOARD_META_ID.to_owned()))
+                .with_interactions(
+                    &SettingsInteraction::default()
+                        // left-drag node moving, except while a right-drag edge
+                        // gesture is in flight (see edge_drag_input)
+                        .with_dragging_enabled(self.edge_drag.is_none())
+                        .with_node_selection_enabled(true)
+                        .with_edge_selection_enabled(true),
+                )
+                .with_navigations(
+                    &SettingsNavigation::default()
+                        .with_fit_to_screen_enabled(false)
+                        .with_zoom_and_pan_enabled(true),
+                )
+                .with_styles(&SettingsStyle::default().with_labels_always(true)),
+        );
+
+        self.edge_drag_overlay(ui, rect);
+        self.verb_picker(ui);
+    }
+
+    /// Which entity is under an absolute screen position? Camera transform via
+    /// the board's `MetadataFrame`, then each node's `DisplayNode::is_inside`.
+    /// RECONCILE(images): hit-testing rides the display shape, so textured /
+    /// resized nodes keep working without touching this.
+    fn node_at_screen(&self, ui: &egui::Ui, rect: Rect, screen: Pos2) -> Option<NodeIndex> {
+        let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        self.g
+            .node_by_screen_pos(&mf, (screen - rect.left_top()).to_pos2())
+    }
+
+    /// Right-button press on an entity starts an edge drag; release on another
+    /// entity opens the verb picker; release anywhere else cancels.
+    ///
+    /// RECONCILE(camera): everything here is scoped to the secondary button —
+    /// scroll-zoom and primary/middle-drag pan stay with egui_graphs.
+    fn edge_drag_input(&mut self, ui: &egui::Ui, rect: Rect) {
+        let (pressed, released, down, pointer) = ui.input(|i| {
+            (
+                i.pointer.secondary_pressed(),
+                i.pointer.secondary_released(),
+                i.pointer.secondary_down(),
+                i.pointer.interact_pos(),
+            )
+        });
+
+        if pressed && self.pending_edge.is_none() && self.g.dragged_node().is_none() {
+            if let Some(p) = pointer.filter(|p| rect.contains(*p)) {
+                self.edge_drag = self.node_at_screen(ui, rect, p);
+                if self.edge_drag.is_some() {
+                    self.status = "release on a target entity to link".into();
+                }
+            }
+        }
+
+        let Some(from) = self.edge_drag else { return };
+
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.edge_drag = None;
+            self.status = "link cancelled".into();
+            return;
+        }
+
+        if released {
+            self.edge_drag = None;
+            let to = pointer
+                .filter(|p| rect.contains(*p))
+                .and_then(|p| self.node_at_screen(ui, rect, p));
+            match (to, pointer) {
+                (Some(to), Some(p)) if to != from => {
+                    self.verb_filter.clear();
+                    self.verb_filter_focus = true;
+                    self.pending_edge = Some((from, to, p));
+                }
+                _ => self.status = "link cancelled".into(),
+            }
+        } else if !down {
+            // release never arrived (pointer left the window) — abort
+            self.edge_drag = None;
+        }
+    }
+
+    /// Rubber-band string from the drag source to the pointer, drawn over the
+    /// `GraphView` in the unsourced style — that's what the new link will be.
+    fn edge_drag_overlay(&mut self, ui: &egui::Ui, rect: Rect) {
+        let Some(from) = self.edge_drag else { return };
+        let Some(node) = self.g.node(from) else {
+            self.edge_drag = None; // entity vanished mid-drag (delete / hot-reload)
+            return;
+        };
+        let Some(pointer) = ui.input(|i| i.pointer.latest_pos()) else {
+            return;
+        };
+
+        let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        let a = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
+        let stroke = Stroke::new(2.0_f32, ALARM_RED);
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.extend(Shape::dashed_line(&[a, pointer], stroke, 9.0, 6.0));
+        painter.circle_filled(pointer, 3.5, ALARM_RED);
+    }
+
+    /// Verb picker for a just-dropped edge: filter box on top, the kinds below.
+    /// Esc / click-away cancels.
+    fn verb_picker(&mut self, ui: &mut egui::Ui) {
+        let Some((from, to, at)) = self.pending_edge else {
+            return;
+        };
+
+        // endpoints can vanish while the popup is open (delete / hot-reload)
+        if self.g.node(from).is_none() || self.g.node(to).is_none() {
+            self.pending_edge = None;
+            return;
+        }
+
+        let (from_l, to_l) = (self.node_label(from), self.node_label(to));
+        let mut picked: Option<RelationKind> = None;
+        let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        let area = egui::Area::new(egui::Id::new("rs_verb_picker"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .constrain(true)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_max_width(230.0);
+                    ui.label(RichText::new(format!("{from_l}  —?→  {to_l}")).small().weak());
+
+                    let filter = ui.text_edit_singleline(&mut self.verb_filter);
+                    if std::mem::take(&mut self.verb_filter_focus) {
+                        filter.request_focus();
+                    }
+
+                    // RECONCILE(relations): iterate ALL generically — the verb
+                    // list is exploding; anything added to the enum shows up here.
+                    let needle = self.verb_filter.trim().to_lowercase();
+                    let verbs: Vec<RelationKind> = RelationKind::ALL
+                        .into_iter()
+                        .filter(|k| needle.is_empty() || k.label().to_lowercase().contains(&needle))
+                        .collect();
+
+                    // typing narrowed it to one verb? Enter picks it
+                    if verbs.len() == 1
+                        && filter.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    {
+                        picked = Some(verbs[0]);
+                    }
+
+                    ui.separator();
+                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        for k in verbs {
+                            if ui.button(k.label()).clicked() {
+                                picked = Some(k);
+                            }
+                        }
+                    });
+                });
+            });
+
+        if area.response.clicked_elsewhere() {
+            close = true;
+        }
+        if let Some(kind) = picked {
+            self.g
+                .add_edge_with_label(from, to, Relation::new(kind), kind.label().into());
+            self.status = format!(
+                "linked: {from_l} —{}→ {to_l} (unsourced — attach a source!)",
+                kind.label()
+            );
+            close = true;
+        }
+        if close {
+            self.pending_edge = None;
+        }
+    }
 }
 
 impl App for RedstringApp {
@@ -881,25 +1094,7 @@ impl App for RedstringApp {
         egui::Panel::bottom("status").show_inside(ui, |ui| {
             ui.label(&self.status);
         });
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            Self::scroll_zoom(ui);
-            ui.add(
-                &mut GraphView::<_, _, _, _, _, SourcedEdgeShape>::new(&mut self.g)
-                    .with_id(Some(BOARD_META_ID.to_owned()))
-                    .with_interactions(
-                        &SettingsInteraction::default()
-                            .with_dragging_enabled(true)
-                            .with_node_selection_enabled(true)
-                            .with_edge_selection_enabled(true),
-                    )
-                    .with_navigations(
-                        &SettingsNavigation::default()
-                            .with_fit_to_screen_enabled(false)
-                            .with_zoom_and_pan_enabled(true),
-                    )
-                    .with_styles(&SettingsStyle::default().with_labels_always(true)),
-            );
-        });
+        egui::CentralPanel::default().show_inside(ui, |ui| self.board(ui));
 
         // Camera-restore ordering, verified against egui_graphs 0.30
         // graph_view.rs: the widget loads our MetadataFrame (BOARD_META_ID
