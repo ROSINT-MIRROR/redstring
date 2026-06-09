@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::time::{Instant, SystemTime};
 
 use eframe::App;
-use egui::{Color32, Pos2, RichText, Vec2};
+use egui::{Color32, Margin, Pos2, RichText, Vec2};
 use egui_graphs::{
     DefaultNodeShape, Graph, GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation,
     SettingsStyle,
@@ -21,6 +21,7 @@ use petgraph::Directed;
 
 use crate::edge_shape::SourcedEdgeShape;
 use crate::model::*;
+use crate::prefs::Prefs;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, DefaultNodeShape, SourcedEdgeShape>;
 
@@ -40,6 +41,7 @@ pub struct RedstringApp {
     g: RsGraph,
     case_path: String,
     status: String,
+    prefs: Prefs,
 
     /// (path, mtime) of the file as we last wrote/read it — the hot-reload watch.
     watched: Option<(String, SystemTime)>,
@@ -72,6 +74,7 @@ impl RedstringApp {
             g: Graph::from(&StableGraph::default()),
             case_path: "case.ron".to_owned(),
             status: "new case".to_owned(),
+            prefs: Prefs::load(),
             watched: None,
             last_watch_poll: Instant::now(),
             pending_load: false,
@@ -462,8 +465,26 @@ impl RedstringApp {
 
     // ---- panels ----
 
+    /// Collapsed sidebar: a thin strip whose only job is the expand toggle.
+    fn sidebar_strip(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            if ui.button("⏵").on_hover_text("expand sidebar").clicked() {
+                self.prefs.sidebar_collapsed = false;
+                self.prefs.save();
+            }
+        });
+    }
+
     fn left_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("redstring");
+        ui.horizontal(|ui| {
+            ui.heading("redstring");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⏴").on_hover_text("collapse sidebar").clicked() {
+                    self.prefs.sidebar_collapsed = true;
+                    self.prefs.save();
+                }
+            });
+        });
         ui.label(RichText::new("evidentiary investigation board").weak().small());
         ui.separator();
 
@@ -471,29 +492,34 @@ impl RedstringApp {
             ui.label("file");
             ui.text_edit_singleline(&mut self.case_path);
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("💾 Save").clicked() {
                 self.save(ui);
             }
             if ui.button("📂 Load").clicked() {
                 self.load(ui);
             }
+            if ui.button("Open…").clicked()
+                && let Some(p) = case_dialog(&self.case_path).pick_file()
+            {
+                self.case_path = p.display().to_string();
+                self.load(ui);
+            }
+            if ui.button("Save as…").clicked()
+                && let Some(mut p) = case_dialog(&self.case_path).save_file()
+            {
+                if p.extension().is_none() {
+                    p.set_extension("ron");
+                }
+                self.case_path = p.display().to_string();
+                self.save(ui);
+            }
         });
         ui.separator();
 
         // add entity
         ui.label(RichText::new("Add entity").strong());
-        egui::ComboBox::from_id_salt("ne_kind")
-            .selected_text(format!("{} {}", self.ne_kind.icon(), self.ne_kind.label()))
-            .show_ui(ui, |ui| {
-                for k in EntityKind::ALL {
-                    ui.selectable_value(
-                        &mut self.ne_kind,
-                        k,
-                        format!("{} {}", k.icon(), k.label()),
-                    );
-                }
-            });
+        self.kind_picker(ui);
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.ne_label);
             let go = ui.button("+ entity").clicked();
@@ -560,6 +586,64 @@ impl RedstringApp {
                     ui.colored_label(OK_GREEN, "every link is sourced ✓");
                 }
             });
+    }
+
+    /// Add-entity kind picker: a multi-column selectable grid of every
+    /// `EntityKind`, in a scroll area resized by dragging the handle under it
+    /// (height persisted in prefs).
+    // RECONCILE(entities): iterates EntityKind::ALL, so the variant explosion
+    // lands for free; once a `category()` accessor exists, chunk per category
+    // with a small heading between groups.
+    fn kind_picker(&mut self, ui: &mut egui::Ui) {
+        const MIN_CELL_W: f32 = 92.0;
+        let gap = ui.spacing().item_spacing.x;
+        let avail = ui.available_width();
+        let cols = (((avail + gap) / (MIN_CELL_W + gap)) as usize).max(1);
+        let cell_w = (avail - gap * (cols as f32 - 1.0)) / cols as f32;
+        let cell_h = ui.spacing().interact_size.y;
+
+        egui::ScrollArea::vertical()
+            .id_salt("ne_kind_grid")
+            .max_height(self.prefs.kind_picker_height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for row in EntityKind::ALL.chunks(cols) {
+                    ui.horizontal(|ui| {
+                        for &k in row {
+                            let cell = egui::Button::selectable(
+                                self.ne_kind == k,
+                                format!("{} {}", k.icon(), k.label()),
+                            )
+                            .truncate();
+                            if ui.add_sized([cell_w, cell_h], cell).clicked() {
+                                self.ne_kind = k;
+                            }
+                        }
+                    });
+                }
+            });
+
+        // drag handle under the grid; persist height once per gesture
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), egui::Sense::drag());
+        if resp.hovered() || resp.dragged() {
+            ui.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        if resp.dragged() {
+            self.prefs.kind_picker_height =
+                (self.prefs.kind_picker_height + resp.drag_delta().y).clamp(40.0, 480.0);
+        }
+        if resp.drag_stopped() {
+            self.prefs.save();
+        }
+        let stroke = if resp.dragged() {
+            ui.style().visuals.widgets.active.fg_stroke
+        } else if resp.hovered() {
+            ui.style().visuals.widgets.hovered.fg_stroke
+        } else {
+            ui.style().visuals.widgets.noninteractive.bg_stroke
+        };
+        ui.painter().hline(rect.x_range(), rect.center().y, stroke);
     }
 
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -769,12 +853,25 @@ impl App for RedstringApp {
         self.sync_visuals();
         self.poll_external_edit(ui);
 
-        egui::Panel::left("left")
-            .resizable(true)
-            .default_size(270.0)
-            .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.left_panel(ui));
-            });
+        // left sidebar collapses to a thin strip holding only the expand toggle
+        let strip = egui::Panel::left("left_strip")
+            .resizable(false)
+            .exact_size(26.0)
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
+        let expanded = egui::Panel::left("left").resizable(true).default_size(270.0);
+        egui::Panel::show_animated_between_inside(
+            ui,
+            !self.prefs.sidebar_collapsed,
+            strip,
+            expanded,
+            |ui, how_expanded| {
+                if how_expanded == 0.0 {
+                    self.sidebar_strip(ui);
+                } else {
+                    egui::ScrollArea::vertical().show(ui, |ui| self.left_panel(ui));
+                }
+            },
+        );
         egui::Panel::right("right")
             .resizable(true)
             .default_size(310.0)
@@ -835,8 +932,6 @@ fn spiral(n: usize) -> Pos2 {
 /// scannable.
 // RECONCILE(edgedrag): the right-drag verb popup should reuse this grouped
 // iteration pattern — `ALL` is contiguous per `category()`.
-// RECONCILE(chrome): sidebar rework may restyle/replace this combo;
-// `RelationKind::category()` is the grouping key.
 fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
     egui::ComboBox::from_id_salt(id)
         .selected_text(kind.label())
@@ -850,6 +945,21 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
                 ui.selectable_value(kind, k, k.label());
             }
         });
+}
+
+/// Native .ron dialog seeded with the current path's directory and file name.
+/// Blocking is fine: a frozen frame while a modal picker is up is the desktop
+/// behaviour we want. RECONCILE(images): rfd also lands there for image picks.
+fn case_dialog(current: &str) -> rfd::FileDialog {
+    let mut d = rfd::FileDialog::new().add_filter("RON case", &["ron"]);
+    let p = std::path::Path::new(current);
+    if let Some(dir) = p.parent().filter(|d| d.is_dir()) {
+        d = d.set_directory(dir);
+    }
+    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+        d = d.set_file_name(name);
+    }
+    d
 }
 
 fn entity_combo(
