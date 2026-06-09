@@ -30,6 +30,12 @@ const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
 /// Stable id for the board's egui_graphs metadata (camera zoom/pan lives there).
 const BOARD_META_ID: &str = "redstring_board";
 
+/// Plain-wheel zoom feel: factor = exp(scroll_points * speed). Mirrors egui's
+/// own ctrl+scroll mapping (`InputOptions::scroll_zoom_speed` = 1/200), so an
+/// unmodified wheel notch (40 pt) zooms ~1.22x and trackpad scroll stays
+/// smooth + proportional.
+const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
+
 pub struct RedstringApp {
     g: RsGraph,
     case_path: String,
@@ -40,6 +46,10 @@ pub struct RedstringApp {
     last_watch_poll: Instant,
     /// Load `case_path` on the first frame (camera restore needs a live `ui`).
     pending_load: bool,
+    /// Camera from the last `load()`, re-asserted once AFTER the `GraphView`
+    /// ran: the widget force-fits on its first frame even with fit-to-screen
+    /// disabled, stomping a camera written before it (see `ui()`).
+    pending_camera: Option<Camera>,
 
     // add-entity form
     ne_kind: EntityKind,
@@ -65,6 +75,7 @@ impl RedstringApp {
             watched: None,
             last_watch_poll: Instant::now(),
             pending_load: false,
+            pending_camera: None,
             ne_kind: EntityKind::Person,
             ne_label: String::new(),
             nr_from: None,
@@ -237,6 +248,45 @@ impl RedstringApp {
         mf.save(ui);
     }
 
+    /// Plain mouse-wheel zoom over the board, centred on the pointer.
+    ///
+    /// egui_graphs 0.30 only zooms on `zoom_delta()` (graph_view.rs
+    /// `handle_zoom`), which egui feeds exclusively from ctrl/cmd+scroll and
+    /// pinch gestures; an unmodified wheel lands in `smooth_scroll_delta`
+    /// instead (`InputState::begin_pass` routes a wheel event to one OR the
+    /// other, never both). So driving zoom from `smooth_scroll_delta` here
+    /// can't double-apply with the lib, ctrl+scroll and trackpad pinch keep
+    /// working through the lib's own path, and the lib's drag-to-pan /
+    /// node-drag handling (pointer buttons) is untouched.
+    ///
+    /// Must run inside the central panel BEFORE the `GraphView` is added:
+    /// the widget loads the `MetadataFrame` at the start of its `ui()`, so a
+    /// write here is what it draws with this same frame.
+    // RECONCILE(edgedrag): this only READS scroll delta + hover pos; no
+    // pointer-button/drag state is consumed or altered.
+    fn scroll_zoom(ui: &mut egui::Ui) {
+        // the GraphView allocates exactly the remaining rect after us
+        let board = ui.available_rect_before_wrap();
+        let (dy, hover) = ui.input(|i| (i.smooth_scroll_delta.y, i.pointer.hover_pos()));
+        if dy == 0.0 {
+            return;
+        }
+        let Some(pointer) = hover else { return };
+        if !board.contains(pointer) {
+            return; // scrolling the side panels must not zoom the board
+        }
+
+        let mut mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        let new_zoom = mf.zoom * (dy * SCROLL_ZOOM_SPEED).exp();
+        // pan is widget-local (the lib adds rect.left_top at draw time), so
+        // the pointer must be too. Same zoom-about-pointer invariant as
+        // GraphView::zoom: pan' = pointer - (pointer - pan) * (z'/z).
+        let local = pointer - board.left_top();
+        mf.pan = local - (local - mf.pan) * (new_zoom / mf.zoom);
+        mf.zoom = new_zoom;
+        mf.save(ui);
+    }
+
     fn to_case_file(&self, ui: &egui::Ui) -> CaseFile {
         let g = self.g.g();
         let mut cf = CaseFile::default();
@@ -355,7 +405,12 @@ impl RedstringApp {
         self.g = g;
         self.nr_from = None;
         self.nr_to = None;
+        // Pre-write: the GraphView (added later this same frame) loads the
+        // MetadataFrame at its start, so this is the camera it draws with —
+        // flash-free for button loads and hot reloads. The widget's very
+        // first frame force-fits over it, hence the deferred re-assert.
         Self::camera_write(ui, cf.display.camera);
+        self.pending_camera = Some(cf.display.camera);
         self.watch_current();
 
         self.status = format!(
@@ -730,6 +785,7 @@ impl App for RedstringApp {
             ui.label(&self.status);
         });
         egui::CentralPanel::default().show_inside(ui, |ui| {
+            Self::scroll_zoom(ui);
             ui.add(
                 &mut GraphView::<_, _, _, _, _, SourcedEdgeShape>::new(&mut self.g)
                     .with_id(Some(BOARD_META_ID.to_owned()))
@@ -747,6 +803,23 @@ impl App for RedstringApp {
                     .with_styles(&SettingsStyle::default().with_labels_always(true)),
             );
         });
+
+        // Camera-restore ordering, verified against egui_graphs 0.30
+        // graph_view.rs: the widget loads our MetadataFrame (BOARD_META_ID
+        // key) at the start of its ui() and persists it back at the end, so
+        // a `camera_write` BEFORE the add() is what it draws with — EXCEPT
+        // on the widget's very first frame: `handle_fit_to_screen` force-fits
+        // whenever `MetadataInstance::first_frame_pending` is true, even with
+        // fit_to_screen disabled, overwriting the injected pan/zoom.
+        // `first_frame_pending` flips false (and is persisted) at the end of
+        // frame 1, and nothing else mutates pan/zoom without user input, so
+        // ONE re-assert here — after the widget ran — makes frame 2 onward
+        // render the case's camera. Costs a single fitted frame at startup;
+        // later loads/hot-reloads are already covered by the pre-write in
+        // load() and this write is a no-op for them.
+        if let Some(cam) = self.pending_camera.take() {
+            Self::camera_write(ui, cam);
+        }
     }
 }
 
