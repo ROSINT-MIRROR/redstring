@@ -1,0 +1,12 @@
+[package]
+name = "redstring"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.34.3"
+egui = "0.34.3"
+egui_graphs = "0.30.0"
+petgraph = { version = "0.8.3", features = ["serde-1"] }
+ron = "0.12.1"
+serde = { version = "1.0.228", features = ["derive"] }
