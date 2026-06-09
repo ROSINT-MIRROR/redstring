@@ -1,6 +1,7 @@
 mod app;
 mod edge_shape;
 mod model;
+mod node_shape;
 mod prefs;
 
 use app::RedstringApp;

@@ -924,6 +924,9 @@ pub struct Entity {
     pub label: String,
     pub attrs: Vec<(String, String)>,
     pub note: String,
+    /// Path to an image file (mugshot, logo, …) drawn on the board instead of
+    /// the kind-coloured circle. None / unreadable ⇒ circle fallback.
+    pub image: Option<String>,
 }
 
 /// Edge payload — carries the sources. `is_sourced() == false` ⇒ unproven.
@@ -978,6 +981,8 @@ pub struct EntityRec {
     pub attrs: Vec<(String, String)>,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
+    pub image: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -1063,6 +1068,7 @@ mod tests {
         let cf: CaseFile = ron::from_str(s).expect("minimal file must parse");
         assert_eq!(cf.data.entities.len(), 2);
         assert_eq!(cf.data.relations.len(), 1);
+        assert!(cf.data.entities[0].image.is_none());
         assert!(cf.data.relations[0].sources.is_empty());
         assert!(cf.display.positions.is_empty());
         assert_eq!(cf.display.camera, Camera::default());
@@ -1106,6 +1112,7 @@ mod tests {
             label: "J. Doe".into(),
             attrs: vec![("dob".into(), "1971-03-04".into())],
             note: "note".into(),
+            image: Some("mugshots/doe.png".into()),
         });
         cf.data.relations.push(RelationRec {
             from: "doe".into(),

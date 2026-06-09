@@ -12,8 +12,7 @@ use std::time::{Instant, SystemTime};
 use eframe::App;
 use egui::{Color32, Margin, Pos2, Rect, RichText, Shape, Stroke, Vec2};
 use egui_graphs::{
-    DefaultNodeShape, Graph, GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation,
-    SettingsStyle,
+    Graph, GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation, SettingsStyle,
 };
 use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
@@ -21,9 +20,10 @@ use petgraph::Directed;
 
 use crate::edge_shape::SourcedEdgeShape;
 use crate::model::*;
+use crate::node_shape::EntityNodeShape;
 use crate::prefs::Prefs;
 
-pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, DefaultNodeShape, SourcedEdgeShape>;
+pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
 const OK_GREEN: Color32 = Color32::from_rgb(120, 200, 140);
 const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
@@ -196,6 +196,7 @@ impl RedstringApp {
                 .map(|k| ((*k).to_owned(), String::new()))
                 .collect(),
             note: String::new(),
+            image: None,
         };
         self.g
             .add_node_with_label_and_location(ent, format!("{} {}", kind.icon(), label), pos)
@@ -331,6 +332,7 @@ impl RedstringApp {
                 label: e.label.clone(),
                 attrs: e.attrs.clone(),
                 note: e.note.clone(),
+                image: e.image.clone(),
             });
             let loc = n.location();
             cf.display.positions.insert(e.slug.clone(), (loc.x, loc.y));
@@ -407,6 +409,7 @@ impl RedstringApp {
                 label: er.label.clone(),
                 attrs: er.attrs.clone(),
                 note: er.note.clone(),
+                image: er.image.clone(),
             };
             let idx = g.add_node_with_label_and_location(
                 ent,
@@ -725,6 +728,30 @@ impl RedstringApp {
                     .weak()
                     .small(),
             );
+
+            ui.add_space(6.0);
+            ui.label(RichText::new("image").strong());
+            ui.horizontal(|ui| {
+                if ui.button("🖼 image…").clicked() {
+                    // RECONCILE(chrome): chrome adds the same `rfd` dep line
+                    // for the casefile picker — identical blocking-dialog use.
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("image", &["png", "jpg", "jpeg", "webp", "gif"])
+                        .pick_file()
+                    {
+                        let p = p.to_string_lossy().into_owned();
+                        // re-picking a path must reflect the file as it is now
+                        crate::node_shape::invalidate_texture(ui.ctx(), &p);
+                        e.image = Some(p);
+                    }
+                }
+                if e.image.is_some() && ui.button("✕").clicked() {
+                    e.image = None;
+                }
+            });
+            if let Some(p) = &e.image {
+                ui.label(RichText::new(p.as_str()).weak().small());
+            }
 
             ui.add_space(6.0);
             ui.label(RichText::new("attributes").strong());
