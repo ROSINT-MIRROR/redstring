@@ -110,10 +110,14 @@ impl RedstringApp {
 
     /// A tiny starter case so the board demonstrates the sourced/unsourced split
     /// on first launch.
+    // RECONCILE(relations): seed assumes RelationKind::{Controls, RegisteredTo,
+    // Financed} survive the relation-vocabulary explosion; swap labels here if
+    // they get renamed.
     fn seed_demo(&mut self) {
         let doe = self.add_entity(EntityKind::Person, "J. Doe".into(), spiral(0));
-        let shell = self.add_entity(EntityKind::Org, "Shell Co Ltd".into(), spiral(1));
+        let shell = self.add_entity(EntityKind::ShellCompany, "Shell Co Ltd".into(), spiral(1));
         let domain = self.add_entity(EntityKind::Domain, "evil.example".into(), spiral(2));
+        let minister = self.add_entity(EntityKind::Official, "Minister X".into(), spiral(3));
 
         // sourced link → solid green
         let mut controls = Relation::new(RelationKind::Controls);
@@ -125,12 +129,18 @@ impl RedstringApp {
         self.g
             .add_edge_with_label(doe, shell, controls, RelationKind::Controls.label().into());
 
-        // unsourced link → red + dashed (the thing you still have to prove)
+        // unsourced links → red + dashed (the things you still have to prove)
         self.g.add_edge_with_label(
             shell,
             domain,
             Relation::new(RelationKind::OwnsDomain),
             RelationKind::OwnsDomain.label().into(),
+        );
+        self.g.add_edge_with_label(
+            shell,
+            minister,
+            Relation::new(RelationKind::Financed),
+            RelationKind::Financed.label().into(),
         );
 
         self.status = "demo case — edit freely or Load your own".into();
@@ -176,7 +186,15 @@ impl RedstringApp {
             slug: self.unique_slug(&label),
             kind,
             label: label.clone(),
-            attrs: Vec::new(),
+            // pre-fill the kind's predictable attribute keys (empty values) so
+            // a fresh entity shows its expected fields immediately; "+ attr"
+            // still adds free-form pairs on top. Loaded files are never
+            // prefilled — the file is the truth.
+            attrs: kind
+                .default_attrs()
+                .iter()
+                .map(|k| ((*k).to_owned(), String::new()))
+                .collect(),
             note: String::new(),
         };
         self.g
@@ -686,14 +704,9 @@ impl RedstringApp {
         if let Some(node) = self.g.node_mut(nidx) {
             let e = node.payload_mut();
             ui.label(RichText::new(format!("{} {}", e.kind.icon(), e.kind.label())).strong());
+            ui.label(RichText::new(e.kind.category()).weak().small());
 
-            egui::ComboBox::from_id_salt("insp_kind")
-                .selected_text(format!("{} {}", e.kind.icon(), e.kind.label()))
-                .show_ui(ui, |ui| {
-                    for k in EntityKind::ALL {
-                        ui.selectable_value(&mut e.kind, k, format!("{} {}", k.icon(), k.label()));
-                    }
-                });
+            kind_combo(ui, "insp_kind", &mut e.kind);
 
             ui.horizontal(|ui| {
                 ui.label("label");
@@ -1138,6 +1151,22 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
                     ui.label(RichText::new(last_cat).weak().small());
                 }
                 ui.selectable_value(kind, k, k.label());
+            }
+        });
+}
+
+/// Kind picker dropdown sectioned by `EntityKind::category()` — used by the
+/// inspector; the add-entity flow uses the grid `kind_picker` instead.
+fn kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut EntityKind) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(format!("{} {}", kind.icon(), kind.label()))
+        .show_ui(ui, |ui| {
+            for cat in EntityKind::CATEGORIES {
+                ui.add_space(2.0);
+                ui.label(RichText::new(cat).weak().small());
+                for k in EntityKind::ALL.into_iter().filter(|k| k.category() == cat) {
+                    ui.selectable_value(kind, k, format!("{} {}", k.icon(), k.label()));
+                }
             }
         });
 }
