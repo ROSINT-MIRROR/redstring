@@ -1,7 +1,9 @@
 //! Custom edge renderer. The point of redstring: an unsourced link is drawn
 //! red + dashed (an accusation you can't back up), a sourced link solid green.
 //! Self-contained straight-line + arrowhead drawing; parallel edges between the
-//! same pair are fanned out by `order` so they don't overlap.
+//! same pair are fanned out by `order` so they don't overlap. Segment ends are
+//! trimmed to each node's drawn boundary (`closest_boundary_point`) so the
+//! arrowhead stays visible on circles and photo tiles alike.
 
 use egui::{Color32, Pos2, Shape, Stroke, Vec2};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
@@ -46,7 +48,8 @@ where
         end: &Node<N, Relation, Ty, Ix, D>,
         ctx: &DrawContext,
     ) -> Vec<Shape> {
-        let (s, e) = offset_ends(start.location(), end.location(), self.order);
+        let (s, e) = trim_to_boundaries(start, end);
+        let (s, e) = offset_ends(s, e, self.order);
         let color = if self.sourced { SOURCED } else { UNSOURCED };
 
         let a = ctx.meta.canvas_to_screen_pos(s);
@@ -90,9 +93,32 @@ where
         end: &Node<N, Relation, Ty, Ix, D>,
         pos: Pos2,
     ) -> bool {
-        let (s, e) = offset_ends(start.location(), end.location(), self.order);
+        let (s, e) = trim_to_boundaries(start, end);
+        let (s, e) = offset_ends(s, e, self.order);
         dist_point_segment(pos, s, e) <= HIT_TOLERANCE
     }
+}
+
+/// Pull both segment ends back from the node centers to the nodes' drawn
+/// boundaries, whatever shape the `DisplayNode` impl is currently using
+/// (default circle or `EntityNodeShape` photo rect).
+/// RECONCILE(edgedrag): is_inside uses the same trim, so edge hit-testing
+/// stays aligned with what's drawn.
+fn trim_to_boundaries<N, Ty, Ix, D>(
+    start: &Node<N, Relation, Ty, Ix, D>,
+    end: &Node<N, Relation, Ty, Ix, D>,
+) -> (Pos2, Pos2)
+where
+    N: Clone,
+    Ty: EdgeType,
+    Ix: IndexType,
+    D: DisplayNode<N, Relation, Ty, Ix>,
+{
+    let dir = (end.location() - start.location()).normalized();
+    (
+        start.display().closest_boundary_point(dir),
+        end.display().closest_boundary_point(-dir),
+    )
 }
 
 /// Fan parallel edges apart perpendicular to their direction.
