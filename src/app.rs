@@ -104,8 +104,8 @@ impl RedstringApp {
         self.g.add_edge_with_label(
             shell,
             domain,
-            Relation::new(RelationKind::RegisteredTo),
-            RelationKind::RegisteredTo.label().into(),
+            Relation::new(RelationKind::OwnsDomain),
+            RelationKind::OwnsDomain.label().into(),
         );
 
         self.status = "demo case — edit freely or Load your own".into();
@@ -461,13 +461,7 @@ impl RedstringApp {
             .collect();
         entity_combo(ui, "nr_from", "from", &mut self.nr_from, &entities);
         entity_combo(ui, "nr_to", "to", &mut self.nr_to, &entities);
-        egui::ComboBox::from_id_salt("nr_kind")
-            .selected_text(self.nr_kind.label())
-            .show_ui(ui, |ui| {
-                for k in RelationKind::ALL {
-                    ui.selectable_value(&mut self.nr_kind, k, k.label());
-                }
-            });
+        relation_kind_combo(ui, "nr_kind", &mut self.nr_kind);
         if ui.button("+ relation").clicked() {
             match (self.nr_from, self.nr_to) {
                 (Some(a), Some(b)) if a != b => {
@@ -633,13 +627,7 @@ impl RedstringApp {
                 RichText::new(format!("{from_l}  —{}→  {to_l}", r.kind.label())).strong(),
             );
 
-            egui::ComboBox::from_id_salt("insp_rel_kind")
-                .selected_text(r.kind.label())
-                .show_ui(ui, |ui| {
-                    for k in RelationKind::ALL {
-                        ui.selectable_value(&mut r.kind, k, k.label());
-                    }
-                });
+            relation_kind_combo(ui, "insp_rel_kind", &mut r.kind);
 
             if r.is_sourced() {
                 ui.colored_label(OK_GREEN, format!("✓ {} source(s)", r.sources.len()));
@@ -767,6 +755,28 @@ fn spiral(n: usize) -> Pos2 {
     let a = n as f32 * 2.399_963_2;
     let r = 40.0 + 16.0 * n as f32;
     Pos2::new(r * a.cos(), r * a.sin())
+}
+
+/// Verb picker: iterates `RelationKind::ALL` (category-ordered) and drops a
+/// weak section header whenever the category changes, so 78 verbs stay
+/// scannable.
+// RECONCILE(edgedrag): the right-drag verb popup should reuse this grouped
+// iteration pattern — `ALL` is contiguous per `category()`.
+// RECONCILE(chrome): sidebar rework may restyle/replace this combo;
+// `RelationKind::category()` is the grouping key.
+fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(kind.label())
+        .show_ui(ui, |ui| {
+            let mut last_cat = "";
+            for k in RelationKind::ALL {
+                if k.category() != last_cat {
+                    last_cat = k.category();
+                    ui.label(RichText::new(last_cat).weak().small());
+                }
+                ui.selectable_value(kind, k, k.label());
+            }
+        });
 }
 
 fn entity_combo(
