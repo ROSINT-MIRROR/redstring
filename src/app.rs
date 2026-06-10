@@ -662,18 +662,31 @@ impl RedstringApp {
                 ui.horizontal_wrapped(|ui| {
                     for k in EntityKind::ALL {
                         let cat_color = EntityKind::category_color(k.category());
+                        let text = format!("{} {}", k.icon(), k.label());
+                        // state-invariant cell size: Button::selectable
+                        // allocates +2px in the selected state vs hovered, so
+                        // without a covering min_size hovering the selected
+                        // cell reflows every cell after it (verified headless)
+                        let text_w = ui.fonts_mut(|f| {
+                            f.layout_no_wrap(
+                                text.clone(),
+                                egui::FontId::proportional(16.0f32),
+                                egui::Color32::WHITE,
+                            )
+                            .size()
+                            .x
+                        });
                         // added straight to the wrapped ui — wrapping only works
                         // for direct children (dnd_drag_source's inner scope
                         // breaks it: everything lands on one endless row)
                         let resp = ui.add(
                             egui::Button::selectable(
                                 self.ne_kind == k,
-                                RichText::new(format!("{} {}", k.icon(), k.label()))
-                                    .color(k.color())
-                                    .size(16.0f32),
+                                RichText::new(text).color(k.color()).size(16.0f32),
                             )
                             .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
-                            .sense(egui::Sense::click_and_drag()),
+                            .sense(egui::Sense::click_and_drag())
+                            .min_size(Vec2::new(text_w + 14.0, 26.0)),
                         );
                         if resp.clicked() {
                             self.ne_kind = k;
