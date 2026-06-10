@@ -10,7 +10,7 @@ use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
 
 const MAX_LABEL_PX: f32 = 256.0;
-const MIN_EDIT_PX: f32 = 10.0;
+const EDIT_FONT_PX: f32 = 13.0;
 const MIN_EDIT_W: f32 = 80.0;
 
 impl RedstringApp {
@@ -190,7 +190,7 @@ impl RedstringApp {
         let Some(idx) = self.label_edit else {
             return Ok(());
         };
-        let Some((zone, font_px)) = self.label_zone(ui, rect, idx)? else {
+        let Some(zone) = self.label_zone(ui, rect, idx)? else {
             self.label_edit = None;
             return Ok(());
         };
@@ -198,7 +198,7 @@ impl RedstringApp {
         let mut commit = false;
         let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
-        let edit_font = egui::FontId::new(font_px.max(MIN_EDIT_PX), egui::FontFamily::Monospace);
+        let edit_font = egui::FontId::monospace(EDIT_FONT_PX);
         let text_w = ui
             .ctx()
             .fonts_mut(|f| {
@@ -210,7 +210,7 @@ impl RedstringApp {
             })
             .size()
             .x;
-        let width = (text_w + 12.0).max(MIN_EDIT_W);
+        let width = (text_w + 16.0).max(MIN_EDIT_W);
         let pos = egui::Pos2::new(zone.center().x - width / 2.0, zone.top());
 
         let area = egui::Area::new(egui::Id::new("rs_label_edit"))
@@ -273,7 +273,7 @@ impl RedstringApp {
         };
         let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
         for idx in nodes {
-            let Some((zone, _)) = self.label_zone(ui, rect, idx)? else {
+            let Some(zone) = self.label_zone(ui, rect, idx)? else {
                 continue;
             };
             if zone.contains(p) {
@@ -303,7 +303,7 @@ impl RedstringApp {
         ui: &egui::Ui,
         rect: Rect,
         idx: NodeIndex,
-    ) -> Result<Option<(Rect, f32)>, Error> {
+    ) -> Result<Option<Rect>, Error> {
         let Some(node) = self.g.node(idx) else {
             return Ok(None);
         };
@@ -326,9 +326,6 @@ impl RedstringApp {
         });
         let gap = LABEL_GAP * e.size * mf.zoom;
         let top_left = egui::Pos2::new(center.x - galley.size().x / 2.0, center.y + half + gap);
-        Ok(Some((
-            Rect::from_min_size(top_left, galley.size()).expand(4.0),
-            font_px,
-        )))
+        Ok(Some(Rect::from_min_size(top_left, galley.size()).expand(4.0)))
     }
 }
