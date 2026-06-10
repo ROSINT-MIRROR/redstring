@@ -1203,7 +1203,12 @@ impl App for RedstringApp {
             .resizable(false)
             .exact_size(26.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
-        let expanded = egui::Panel::left("left").resizable(true).default_size(270.0);
+        // size_range caps auto-sizing: the wrapped kind grid reports its
+        // unwrapped width as desired and would otherwise balloon the panel
+        let expanded = egui::Panel::left("left")
+            .resizable(true)
+            .default_size(270.0)
+            .size_range(160.0..=480.0);
         egui::Panel::show_animated_between_inside(
             ui,
             !self.prefs.sidebar_collapsed,
