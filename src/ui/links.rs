@@ -197,6 +197,7 @@ impl RedstringApp {
 
         let mut commit = false;
         let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let just_opened = self.label_edit_focus;
 
         let edit_font = egui::FontId::monospace(EDIT_FONT_PX);
         let text_w = ui
@@ -237,7 +238,7 @@ impl RedstringApp {
                 }
             });
 
-        if area.response.clicked_elsewhere() {
+        if area.response.clicked_elsewhere() && !just_opened {
             commit = true;
         }
         if commit {
