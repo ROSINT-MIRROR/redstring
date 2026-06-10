@@ -161,6 +161,22 @@ impl EntityKind {
         "Other",
     ];
 
+    /// Anchor colour of a category — the broad ontology hue every kind in the
+    /// group varies around (see [`EntityKind::color`]). Drives the picker's
+    /// section headers and cell tinting.
+    pub fn category_color(category: &str) -> Color32 {
+        match category {
+            "People" => Color32::from_rgb(100, 170, 255),
+            "Organizations" => Color32::from_rgb(255, 170, 80),
+            "Digital" => Color32::from_rgb(100, 210, 175),
+            "Financial" => Color32::from_rgb(235, 210, 95),
+            "Physical" => Color32::from_rgb(185, 160, 120),
+            "Documents" => Color32::from_rgb(195, 195, 200),
+            "Events" => Color32::from_rgb(250, 125, 125),
+            _ => Color32::from_rgb(170, 170, 170),
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Person => "Person",

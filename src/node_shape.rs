@@ -150,14 +150,16 @@ impl EntityNodeShape {
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
 
-        let mut res: Vec<Shape> = Vec::with_capacity(2);
-        // textured rounded rect; WHITE fill = untinted texture, stroke inside
-        // so the border stays within the claimed geometry
+        let mut res: Vec<Shape> = Vec::with_capacity(3);
+        // textured fill and border as two shapes: epaint asserts when
+        // tessellating a stroke into a mesh that has an assigned texture
+        // (epaint mesh.rs "Mesh has an assigned texture")
         res.push(
-            RectShape::new(rect, cr, Color32::WHITE, stroke, StrokeKind::Inside)
+            RectShape::new(rect, cr, Color32::WHITE, Stroke::NONE, StrokeKind::Inside)
                 .with_texture(tex.id(), cover_uv(tex.size()))
                 .into(),
         );
+        res.push(RectShape::stroke(rect, cr, stroke, StrokeKind::Inside).into());
 
         // label drawn unconditionally: SettingsStyle::labels_always is
         // pub(crate) in egui_graphs 0.30 (no getter), and the app always

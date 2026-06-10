@@ -623,38 +623,48 @@ impl RedstringApp {
             });
     }
 
-    /// Add-entity kind picker: a multi-column selectable grid of every
-    /// `EntityKind`, in a scroll area resized by dragging the handle under it
-    /// (height persisted in prefs).
-    // RECONCILE(entities): iterates EntityKind::ALL, so the variant explosion
-    // lands for free; once a `category()` accessor exists, chunk per category
-    // with a small heading between groups.
+    /// Add-entity kind picker: kinds grouped under their broad ontology
+    /// category, each section headed and tinted with the category's anchor
+    /// colour, big 2× cells coloured per kind. Scroll area resized by dragging
+    /// the handle under it (height persisted in prefs).
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
-        const MIN_CELL_W: f32 = 92.0;
+        const MIN_CELL_W: f32 = 120.0;
         let gap = ui.spacing().item_spacing.x;
         let avail = ui.available_width();
         let cols = (((avail + gap) / (MIN_CELL_W + gap)) as usize).max(1);
         let cell_w = (avail - gap * (cols as f32 - 1.0)) / cols as f32;
-        let cell_h = ui.spacing().interact_size.y;
+        let cell_h = ui.spacing().interact_size.y * 2.0;
 
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
             .max_height(self.prefs.kind_picker_height)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for row in EntityKind::ALL.chunks(cols) {
-                    ui.horizontal(|ui| {
-                        for &k in row {
-                            let cell = egui::Button::selectable(
-                                self.ne_kind == k,
-                                format!("{} {}", k.icon(), k.label()),
-                            )
-                            .truncate();
-                            if ui.add_sized([cell_w, cell_h], cell).clicked() {
-                                self.ne_kind = k;
+                for cat in EntityKind::CATEGORIES {
+                    let cat_color = EntityKind::category_color(cat);
+                    ui.label(RichText::new(cat).color(cat_color).strong());
+                    let kinds: Vec<EntityKind> = EntityKind::ALL
+                        .iter()
+                        .copied()
+                        .filter(|k| k.category() == cat)
+                        .collect();
+                    for row in kinds.chunks(cols) {
+                        ui.horizontal(|ui| {
+                            for &k in row {
+                                let cell = egui::Button::selectable(
+                                    self.ne_kind == k,
+                                    RichText::new(format!("{} {}", k.icon(), k.label()))
+                                        .color(k.color())
+                                        .size(16.0f32),
+                                )
+                                .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
+                                .truncate();
+                                if ui.add_sized([cell_w, cell_h], cell).clicked() {
+                                    self.ne_kind = k;
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 }
             });
 
