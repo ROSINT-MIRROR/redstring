@@ -5,46 +5,61 @@ use crate::prefs::Theme;
 
 use super::app::RedstringApp;
 
+const TOOLBAR_TEXT: f32 = 25.0;
+const TOOLBAR_PATH: f32 = 20.0;
+
+fn tb(text: &str) -> RichText {
+    RichText::new(text).size(TOOLBAR_TEXT)
+}
+
 impl RedstringApp {
     pub fn toolbar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.horizontal(|ui| -> Result<(), Error> {
             if ui
-                .button("🏠")
+                .button(tb("🏠 Home"))
                 .on_hover_text("Welcome — new case, open, recents")
                 .clicked()
             {
                 self.show_welcome = true;
             }
-            if ui.button("💾").on_hover_text("Save (Ctrl+S)").clicked() {
+            if ui
+                .button(tb("💾 Save"))
+                .on_hover_text("Save (Ctrl+S)")
+                .clicked()
+            {
                 self.save(ui)?;
             }
             if ui
-                .button("💾…")
+                .button(tb("💾 Save as…"))
                 .on_hover_text("Save as new case directory… (Ctrl+Shift+S)")
                 .clicked()
             {
                 self.save_as_dialog(ui)?;
             }
             if ui
-                .button("📂")
+                .button(tb("📂 Open"))
                 .on_hover_text("Open case or bundle… (Ctrl+O)")
                 .clicked()
             {
                 self.open_dialog(ui)?;
             }
             if ui
-                .button("📦")
+                .button(tb("📦 Export"))
                 .on_hover_text("Export bundle — the case directory, zipped")
                 .clicked()
             {
                 self.export_bundle(ui)?;
             }
             ui.separator();
-            ui.label(RichText::new(&self.case_name).strong());
-            ui.label(RichText::new(self.project_label()?).weak().small());
+            ui.label(tb(&self.case_name).strong());
+            ui.label(
+                RichText::new(self.project_label()?)
+                    .weak()
+                    .size(TOOLBAR_PATH),
+            );
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("⛭").on_hover_text("Preferences").clicked() {
+                if ui.button(tb("⛭ Prefs")).on_hover_text("Preferences").clicked() {
                     self.prefs_open = !self.prefs_open;
                 }
                 ui.separator();

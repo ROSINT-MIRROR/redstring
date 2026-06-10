@@ -62,7 +62,10 @@ pub struct RedstringApp {
 
     pub board_size: Vec2,
 
-    pub node_drag: Option<(NodeIndex, Vec2)>,
+    pub node_drag: Option<Vec<(NodeIndex, Vec2)>>,
+
+    pub band: Option<Pos2>,
+    pub panning: bool,
 
     pub ns_kind: SourceKind,
     pub ns_ref: String,
@@ -92,6 +95,8 @@ impl RedstringApp {
             label_edit_focus: false,
             resize: None,
             node_drag: None,
+            band: None,
+            panning: false,
             prefs_open: false,
             show_welcome: false,
             welcome_name: String::new(),
