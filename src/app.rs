@@ -1,6 +1,7 @@
 //! The redstring board: three panels around an `egui_graphs` graph view.
-//! Left = case I/O + add entity/relation + unsourced audit. Right = inspector
-//! for the selected entity or relation (this is where sources get attached).
+//! Left = the entity palette (click to arm, drag onto the board to spawn).
+//! Right = inspector for the selected entity or relation (this is where
+//! sources get attached). File ops: Ctrl+S / Ctrl+Shift+S / Ctrl+O.
 //!
 //! Persistence is one RON `CaseFile` with a `data`/`display` split (see
 //! `model.rs`). The file is watched: an external edit (e.g. an AI appending
@@ -53,14 +54,8 @@ pub struct RedstringApp {
     /// disabled, stomping a camera written before it (see `ui()`).
     pending_camera: Option<Camera>,
 
-    // add-entity form
+    // selected kind in the entity palette (click) — also what a drop spawns
     ne_kind: EntityKind,
-    ne_label: String,
-
-    // add-relation form
-    nr_from: Option<NodeIndex>,
-    nr_to: Option<NodeIndex>,
-    nr_kind: RelationKind,
 
     // right-drag edge creation: press on A → rubber-band → release on B →
     // verb-picker popup. `pending_edge` is (from, to, popup screen pos).
@@ -94,10 +89,6 @@ impl RedstringApp {
             pending_load: false,
             pending_camera: None,
             ne_kind: EntityKind::Person,
-            ne_label: String::new(),
-            nr_from: None,
-            nr_to: None,
-            nr_kind: RelationKind::RelatedTo,
             edge_drag: None,
             pending_edge: None,
             verb_filter: String::new(),
@@ -242,19 +233,6 @@ impl RedstringApp {
                 ed.set_label(label);
             }
         }
-    }
-
-    fn stats(&self) -> (usize, usize, usize) {
-        let g = self.g.g();
-        let unsourced = g
-            .edge_indices()
-            .filter(|&e| {
-                g.edge_weight(e)
-                    .map(|w| !w.payload().is_sourced())
-                    .unwrap_or(false)
-            })
-            .count();
-        (g.node_count(), g.edge_count(), unsourced)
     }
 
     fn node_label(&self, idx: NodeIndex) -> String {
@@ -459,8 +437,6 @@ impl RedstringApp {
         }
 
         self.g = g;
-        self.nr_from = None;
-        self.nr_to = None;
         // node indices just got reassigned — abort any in-flight edge gesture
         self.edge_drag = None;
         self.pending_edge = None;
@@ -541,123 +517,22 @@ impl RedstringApp {
                 }
             });
         });
-        ui.label(RichText::new("evidentiary investigation board").weak().small());
         ui.separator();
 
-        ui.horizontal(|ui| {
-            ui.label("file");
-            ui.text_edit_singleline(&mut self.case_path);
-        });
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("💾 Save").clicked() {
-                self.save(ui);
-            }
-            if ui.button("📂 Load").clicked() {
-                self.load(ui);
-            }
-            if ui.button("Open…").clicked()
-                && let Some(p) = case_dialog(&self.case_path).pick_file()
-            {
-                self.case_path = p.display().to_string();
-                self.load(ui);
-            }
-            if ui.button("Save as…").clicked()
-                && let Some(mut p) = case_dialog(&self.case_path).save_file()
-            {
-                if p.extension().is_none() {
-                    p.set_extension("ron");
-                }
-                self.case_path = p.display().to_string();
-                self.save(ui);
-            }
-        });
-        ui.separator();
-
-        // add entity
-        ui.label(RichText::new("Add entity").strong());
+        // the sidebar is the entity palette, nothing else — file ops moved to
+        // keyboard shortcuts (Ctrl+S/O) until the toolbar exists
         self.kind_picker(ui);
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut self.ne_label);
-            let go = ui.button("+ entity").clicked();
-            if go && !self.ne_label.trim().is_empty() {
-                let pos = spiral(self.g.g().node_count());
-                let (kind, label) = (self.ne_kind, self.ne_label.trim().to_owned());
-                self.add_entity(kind, label, pos);
-                self.ne_label.clear();
-            }
-        });
-        ui.separator();
-
-        // add relation
-        ui.label(RichText::new("Add relation").strong());
-        let entities: Vec<(NodeIndex, String)> = self
-            .g
-            .g()
-            .node_indices()
-            .map(|i| (i, self.node_label(i)))
-            .collect();
-        entity_combo(ui, "nr_from", "from", &mut self.nr_from, &entities);
-        entity_combo(ui, "nr_to", "to", &mut self.nr_to, &entities);
-        relation_kind_combo(ui, "nr_kind", &mut self.nr_kind);
-        if ui.button("+ relation").clicked() {
-            match (self.nr_from, self.nr_to) {
-                (Some(a), Some(b)) if a != b => {
-                    self.g.add_edge_with_label(
-                        a,
-                        b,
-                        Relation::new(self.nr_kind),
-                        self.nr_kind.label().into(),
-                    );
-                    self.status = "added relation (unsourced — attach a source!)".into();
-                }
-                _ => self.status = "pick two distinct entities".into(),
-            }
-        }
-        ui.separator();
-
-        // stats + audit
-        let (ne, nr, unsourced) = self.stats();
-        ui.label(format!("entities {ne}  ·  links {nr}"));
-        let audit_color = if unsourced > 0 { ALARM_RED } else { OK_GREEN };
-        ui.colored_label(audit_color, format!("⚠ unsourced links: {unsourced}"));
-        egui::CollapsingHeader::new("unsourced audit")
-            .default_open(true)
-            .show(ui, |ui| {
-                let g = self.g.g();
-                let mut any = false;
-                for idx in g.edge_indices() {
-                    let unproven = g
-                        .edge_weight(idx)
-                        .map(|w| !w.payload().is_sourced())
-                        .unwrap_or(false);
-                    if !unproven {
-                        continue;
-                    }
-                    any = true;
-                    let kind = g.edge_weight(idx).unwrap().payload().kind.label();
-                    let (a, b) = self.edge_endpoints_labels(idx);
-                    ui.colored_label(ALARM_RED, format!("{a}  —{kind}→  {b}"));
-                }
-                if !any {
-                    ui.colored_label(OK_GREEN, "every link is sourced ✓");
-                }
-            });
     }
 
-    /// Add-entity kind picker: a responsive wrapped flow of every kind (ALL is
+    /// The entity palette: a responsive wrapped flow of every kind (ALL is
     /// category-grouped, so the ontology reads left-to-right), each cell
     /// outlined in its category's anchor colour with the kind's own colour on
     /// the text. Cells are drag sources — drop one on the board to spawn an
-    /// entity there. Scroll area resized by dragging the handle under it
-    /// (height persisted in prefs).
+    /// entity there.
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
-            .max_height(self.prefs.kind_picker_height)
             .auto_shrink([false, false])
-            // gutter always reserved: the default floating scrollbar solidifies
-            // on hover, stealing layout width and making every cell reflow
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for k in EntityKind::ALL {
@@ -695,28 +570,6 @@ impl RedstringApp {
                     }
                 });
             });
-
-        // drag handle under the grid; persist height once per gesture
-        let (rect, resp) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), egui::Sense::drag());
-        if resp.hovered() || resp.dragged() {
-            ui.set_cursor_icon(egui::CursorIcon::ResizeVertical);
-        }
-        if resp.dragged() {
-            self.prefs.kind_picker_height =
-                (self.prefs.kind_picker_height + resp.drag_delta().y).clamp(40.0, 480.0);
-        }
-        if resp.drag_stopped() {
-            self.prefs.save();
-        }
-        let stroke = if resp.dragged() {
-            ui.style().visuals.widgets.active.fg_stroke
-        } else if resp.hovered() {
-            ui.style().visuals.widgets.hovered.fg_stroke
-        } else {
-            ui.style().visuals.widgets.noninteractive.bg_stroke
-        };
-        ui.painter().hline(rect.x_range(), rect.center().y, stroke);
     }
 
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -1302,6 +1155,28 @@ impl App for RedstringApp {
         self.sync_visuals();
         self.poll_external_edit(ui);
 
+        // file ops live on shortcuts until the toolbar exists: Ctrl+S save,
+        // Ctrl+Shift+S save-as, Ctrl+O open
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.save(ui);
+        }
+        if ui.input_mut(|i| {
+            i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S)
+        }) && let Some(mut p) = case_dialog(&self.case_path).save_file()
+        {
+            if p.extension().is_none() {
+                p.set_extension("ron");
+            }
+            self.case_path = p.display().to_string();
+            self.save(ui);
+        }
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O))
+            && let Some(p) = case_dialog(&self.case_path).pick_file()
+        {
+            self.case_path = p.display().to_string();
+            self.load(ui);
+        }
+
         // left sidebar collapses to a thin strip holding only the expand toggle
         let strip = egui::Panel::left("left_strip")
             .resizable(false)
@@ -1322,11 +1197,7 @@ impl App for RedstringApp {
                 if how_expanded == 0.0 {
                     self.sidebar_strip(ui);
                 } else {
-                    egui::ScrollArea::vertical()
-                        .scroll_bar_visibility(
-                            egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
-                        )
-                        .show(ui, |ui| self.left_panel(ui));
+                    self.left_panel(ui);
                 }
             },
         );
@@ -1418,22 +1289,3 @@ fn case_dialog(current: &str) -> rfd::FileDialog {
     d
 }
 
-fn entity_combo(
-    ui: &mut egui::Ui,
-    id: &str,
-    label: &str,
-    target: &mut Option<NodeIndex>,
-    entities: &[(NodeIndex, String)],
-) {
-    let selected = target
-        .and_then(|sel| entities.iter().find(|(i, _)| *i == sel))
-        .map(|(_, l)| l.clone())
-        .unwrap_or_else(|| format!("{label}…"));
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(selected)
-        .show_ui(ui, |ui| {
-            for (i, l) in entities {
-                ui.selectable_value(target, Some(*i), l);
-            }
-        });
-}
