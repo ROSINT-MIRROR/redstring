@@ -27,7 +27,7 @@ use crate::model::Entity;
 
 /// Half-extent of the square photo tile, canvas units — ~2× the
 /// `DefaultNodeShape` radius (5.0) so the picture reads at board zoom.
-const IMG_RADIUS: f32 = 10.0;
+pub const IMG_RADIUS: f32 = 10.0;
 /// Corner rounding of the tile, canvas units.
 const IMG_CORNER: f32 = 3.0;
 /// Border width around the tile, canvas units (thicker when interacted).
@@ -35,7 +35,7 @@ const BORDER: f32 = 1.0;
 const BORDER_ACTIVE: f32 = 2.0;
 /// Hit/boundary radius of an imageless node, canvas units — sized to roughly
 /// cover the big icon glyph (stock DefaultNodeShape is 5.0).
-const NODE_RADIUS: f32 = 8.0;
+pub const NODE_RADIUS: f32 = 8.0;
 /// Icon glyph font size, canvas units — 3× the stock label size (5.0).
 const ICON_SIZE: f32 = 15.0;
 /// Label font size, canvas units — 2× the stock label size (5.0).
@@ -60,16 +60,20 @@ pub struct EntityNodeShape {
     /// `label_text` only survives on the photo-tile caption).
     icon: String,
     name: String,
+    /// Per-node scale multiplier from the payload — every metric (geometry,
+    /// glyph, text) multiplies by it, so resize grows the whole node.
+    size: f32,
 }
 
 impl From<NodeProps<Entity>> for EntityNodeShape {
     fn from(props: NodeProps<Entity>) -> Self {
         let mut circle = DefaultNodeShape::from(props.clone());
-        circle.radius = NODE_RADIUS;
+        circle.radius = NODE_RADIUS * props.payload.size;
         Self {
             image: props.payload.image.clone(),
             icon: props.payload.kind.icon().to_owned(),
             name: props.payload.label.clone(),
+            size: props.payload.size,
             circle,
             tex_ok: false,
         }
@@ -79,7 +83,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
 impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for EntityNodeShape {
     fn closest_boundary_point(&self, dir: Vec2) -> Pos2 {
         if self.image_active() {
-            rect_boundary_point(self.circle.pos, IMG_RADIUS, dir)
+            rect_boundary_point(self.circle.pos, IMG_RADIUS * self.size, dir)
         } else {
             <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::closest_boundary_point(
                 &self.circle,
@@ -107,7 +111,10 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         }
         self.icon = state.payload.kind.icon().to_owned();
         self.name = state.payload.label.clone();
+        self.size = state.payload.size;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
+        // update() rebuilds circle state from props — re-apply the scaled radius
+        self.circle.radius = NODE_RADIUS * self.size;
     }
 
     fn is_inside(&self, pos: Pos2) -> bool {
@@ -128,7 +135,7 @@ impl EntityNodeShape {
 
     /// The photo tile in canvas coordinates.
     fn rect(&self) -> Rect {
-        Rect::from_center_size(self.circle.pos, Vec2::splat(IMG_RADIUS * 2.0))
+        Rect::from_center_size(self.circle.pos, Vec2::splat(IMG_RADIUS * 2.0 * self.size))
     }
 
     fn interacted(&self) -> bool {
@@ -171,7 +178,10 @@ impl EntityNodeShape {
         let icon = ctx.ctx.fonts_mut(|f| {
             f.layout_no_wrap(
                 self.icon.clone(),
-                FontId::new(ctx.meta.canvas_to_screen_size(ICON_SIZE), FontFamily::Proportional),
+                FontId::new(
+                    ctx.meta.canvas_to_screen_size(ICON_SIZE * self.size),
+                    FontFamily::Proportional,
+                ),
                 color,
             )
         });
@@ -181,13 +191,16 @@ impl EntityNodeShape {
         let label = ctx.ctx.fonts_mut(|f| {
             f.layout_no_wrap(
                 self.name.clone(),
-                FontId::new(ctx.meta.canvas_to_screen_size(LABEL_SIZE), FontFamily::Monospace),
+                FontId::new(
+                    ctx.meta.canvas_to_screen_size(LABEL_SIZE * self.size),
+                    FontFamily::Monospace,
+                ),
                 color,
             )
         });
         let label_pos = Pos2::new(
             center.x - label.size().x / 2.0,
-            center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP),
+            center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size),
         );
         res.push(TextShape::new(label_pos, label, color).into());
         res
@@ -201,7 +214,7 @@ impl EntityNodeShape {
         );
         let cr = CornerRadius::same(
             ctx.meta
-                .canvas_to_screen_size(IMG_CORNER)
+                .canvas_to_screen_size(IMG_CORNER * self.size)
                 .round()
                 .clamp(0.0, 255.0) as u8,
         );
@@ -229,19 +242,22 @@ impl EntityNodeShape {
                 f.layout_no_wrap(
                     self.icon.clone(),
                     FontId::new(
-                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * 2.0),
+                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * 2.0 * self.size),
                         FontFamily::Proportional,
                     ),
                     color,
                 ),
                 f.layout_no_wrap(
                     self.name.clone(),
-                    FontId::new(ctx.meta.canvas_to_screen_size(LABEL_SIZE), FontFamily::Monospace),
+                    FontId::new(
+                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * self.size),
+                        FontFamily::Monospace,
+                    ),
                     color,
                 ),
             )
         });
-        let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP);
+        let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size);
         let total_w = icon.size().x + gap + name.size().x;
         let row_h = icon.size().y.max(name.size().y);
         let top = rect.bottom() + gap;

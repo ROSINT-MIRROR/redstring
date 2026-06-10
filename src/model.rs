@@ -943,6 +943,17 @@ pub struct Entity {
     /// Path to an image file (mugshot, logo, …) drawn on the board instead of
     /// the kind-coloured circle. None / unreadable ⇒ circle fallback.
     pub image: Option<String>,
+    /// Board scale multiplier — scenography, lives in `CaseDisplay::sizes`
+    /// in the case file, not in `data`. All node geometry and text scale by it.
+    #[serde(default = "default_node_size")]
+    pub size: f32,
+}
+
+/// New nodes draw at 2× the base metrics.
+pub const DEFAULT_NODE_SIZE: f32 = 2.0;
+
+fn default_node_size() -> f32 {
+    DEFAULT_NODE_SIZE
 }
 
 /// Edge payload — carries the sources. `is_sourced() == false` ⇒ unproven.
@@ -1017,6 +1028,9 @@ pub struct CaseDisplay {
     /// slug → (x, y). BTreeMap so saves serialize in sorted order → stable diffs.
     #[serde(default)]
     pub positions: BTreeMap<String, (f32, f32)>,
+    /// slug → node scale multiplier. Missing ⇒ [`DEFAULT_NODE_SIZE`].
+    #[serde(default)]
+    pub sizes: BTreeMap<String, f32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]

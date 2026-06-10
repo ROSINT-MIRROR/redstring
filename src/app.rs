@@ -20,7 +20,7 @@ use petgraph::Directed;
 
 use crate::edge_shape::SourcedEdgeShape;
 use crate::model::*;
-use crate::node_shape::EntityNodeShape;
+use crate::node_shape::{EntityNodeShape, IMG_RADIUS, NODE_RADIUS};
 use crate::prefs::Prefs;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
@@ -73,6 +73,8 @@ pub struct RedstringApp {
     label_edit: Option<(NodeIndex, Pos2)>,
     label_edit_buf: String,
     label_edit_focus: bool,
+    // node being resized via its corner handle (drag in progress)
+    resize: Option<NodeIndex>,
 
     // add-source form (targets the selected relation)
     ns_kind: SourceKind,
@@ -103,6 +105,7 @@ impl RedstringApp {
             label_edit: None,
             label_edit_buf: String::new(),
             label_edit_focus: false,
+            resize: None,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -205,6 +208,7 @@ impl RedstringApp {
                 .collect(),
             note: String::new(),
             image: None,
+            size: DEFAULT_NODE_SIZE,
         };
         self.g
             .add_node_with_label_and_location(ent, format!("{} {}", kind.icon(), label), pos)
@@ -344,6 +348,9 @@ impl RedstringApp {
             });
             let loc = n.location();
             cf.display.positions.insert(e.slug.clone(), (loc.x, loc.y));
+            if e.size != DEFAULT_NODE_SIZE {
+                cf.display.sizes.insert(e.slug.clone(), e.size);
+            }
         }
         for idx in g.edge_indices() {
             let (a, b) = g.edge_endpoints(idx).unwrap();
@@ -418,6 +425,12 @@ impl RedstringApp {
                 attrs: er.attrs.clone(),
                 note: er.note.clone(),
                 image: er.image.clone(),
+                size: cf
+                    .display
+                    .sizes
+                    .get(&er.slug)
+                    .copied()
+                    .unwrap_or(DEFAULT_NODE_SIZE),
             };
             let idx = g.add_node_with_label_and_location(
                 ent,
@@ -642,6 +655,9 @@ impl RedstringApp {
             .id_salt("ne_kind_grid")
             .max_height(self.prefs.kind_picker_height)
             .auto_shrink([false, false])
+            // gutter always reserved: the default floating scrollbar solidifies
+            // on hover, stealing layout width and making every cell reflow
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for k in EntityKind::ALL {
@@ -932,8 +948,8 @@ impl RedstringApp {
                 .with_interactions(
                     &SettingsInteraction::default()
                         // left-drag node moving, except while a right-drag edge
-                        // gesture is in flight (see edge_drag_input)
-                        .with_dragging_enabled(self.edge_drag.is_none())
+                        // gesture or a corner-handle resize is in flight
+                        .with_dragging_enabled(self.edge_drag.is_none() && self.resize.is_none())
                         .with_node_selection_enabled(true)
                         .with_edge_selection_enabled(true),
                 )
@@ -946,9 +962,82 @@ impl RedstringApp {
         );
 
         self.edge_drag_overlay(ui, rect);
+        self.resize_handle(ui, rect);
         self.kind_drop(ui, rect);
         self.verb_picker(ui);
         self.label_editor(ui);
+    }
+
+    /// Click-select a single entity → a drag handle appears at its
+    /// bottom-right corner. Dragging it scales the node about its center
+    /// (geometry, icon and text all ride `Entity::size`).
+    fn resize_handle(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        // an in-flight drag owns the handle even if the selection shifts
+        let idx = match self.resize {
+            Some(i) => i,
+            None => {
+                let sel = self.g.selected_nodes();
+                if sel.len() != 1 {
+                    return;
+                }
+                sel[0]
+            }
+        };
+        let Some(node) = self.g.node(idx) else {
+            self.resize = None; // vanished (delete / hot-reload)
+            return;
+        };
+        let e = node.payload();
+        let (base, size) = (
+            if e.image.is_some() { IMG_RADIUS } else { NODE_RADIUS },
+            e.size,
+        );
+        let loc = node.location();
+
+        let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        let center = mf.canvas_to_screen_pos(loc) + rect.left_top().to_vec2();
+        let half = base * size * mf.zoom;
+        let corner = center + Vec2::splat(half);
+
+        let hrect = Rect::from_center_size(corner, Vec2::splat(14.0));
+        let resp = ui.interact(
+            hrect,
+            egui::Id::new("rs_resize_handle"),
+            egui::Sense::drag(),
+        );
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+        }
+        if resp.drag_started() {
+            self.resize = Some(idx);
+        }
+        if resp.dragged()
+            && self.resize == Some(idx)
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            let d = p - center;
+            // corner tracks the pointer along the dominant axis
+            let new_half = d.x.max(d.y).max(4.0);
+            let new_size = (new_half / mf.zoom / base).clamp(0.5, 12.0);
+            if let Some(n) = self.g.node_mut(idx) {
+                n.payload_mut().size = new_size;
+            }
+        }
+        if resp.drag_stopped() {
+            self.resize = None;
+        }
+
+        let style = if resp.hovered() || resp.dragged() {
+            ui.style().visuals.widgets.active
+        } else {
+            ui.style().visuals.widgets.inactive
+        };
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.rect_filled(
+            Rect::from_center_size(corner, Vec2::splat(8.0)),
+            1.0,
+            style.fg_stroke.color,
+        );
     }
 
     /// Accept a kind dragged out of the picker: spawn the entity at the drop
@@ -1220,7 +1309,11 @@ impl App for RedstringApp {
                 if how_expanded == 0.0 {
                     self.sidebar_strip(ui);
                 } else {
-                    egui::ScrollArea::vertical().show(ui, |ui| self.left_panel(ui));
+                    egui::ScrollArea::vertical()
+                        .scroll_bar_visibility(
+                            egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                        )
+                        .show(ui, |ui| self.left_panel(ui));
                 }
             },
         );
