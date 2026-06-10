@@ -1,6 +1,8 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
     People,
@@ -203,6 +205,21 @@ fn default_node_size() -> f32 {
     DEFAULT_NODE_SIZE
 }
 
+impl Entity {
+
+
+    pub fn merge_template_attrs(&mut self) -> Result<usize, Error> {
+        let mut added = 0usize;
+        for key in KIND_META[self.kind as usize].attrs {
+            if !self.attrs.iter().any(|(k, _)| k == key) {
+                self.attrs.push(((*key).to_owned(), String::new()));
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +232,26 @@ mod tests {
         for (i, m) in KIND_META.iter().enumerate() {
             assert_eq!(m.kind as usize, i, "KIND_META[{i}] is {:?}", m.kind);
         }
+    }
+
+    #[test]
+    fn merge_template_attrs_fills_gaps_idempotently() {
+        let mut e = Entity {
+            slug: "j_doe".into(),
+            kind: EntityKind::Person,
+            label: "J. Doe".into(),
+            attrs: vec![("dob".into(), "1953-01-20".into()), ("custom".into(), "x".into())],
+            note: String::new(),
+            image: None,
+            size: DEFAULT_NODE_SIZE,
+        };
+        let added = e.merge_template_attrs().unwrap();
+        assert_eq!(added, 4);
+        assert!(e.attrs.iter().any(|(k, _)| k == "first_name"));
+
+        assert_eq!(e.attrs[0], ("dob".to_string(), "1953-01-20".to_string()));
+        assert!(e.attrs.iter().any(|(k, v)| k == "custom" && v == "x"));
+        assert_eq!(e.merge_template_attrs().unwrap(), 0);
     }
 
     #[test]

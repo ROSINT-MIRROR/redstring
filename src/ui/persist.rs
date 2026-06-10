@@ -230,6 +230,7 @@ impl RedstringApp {
         let mut g: RsGraph = Graph::from(&StableGraph::default());
         let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
         let mut healed = 0usize;
+        let mut upgraded = 0usize;
         let mut note_errs: Vec<String> = Vec::new();
         for (i, er) in cf.data.entities.iter().enumerate() {
             if by_slug.contains_key(&er.slug) {
@@ -245,7 +246,7 @@ impl RedstringApp {
                     String::new()
                 }
             };
-            let ent = Entity {
+            let mut ent = Entity {
                 slug: er.slug.clone(),
                 kind: er.kind,
                 label: er.label.clone(),
@@ -254,6 +255,7 @@ impl RedstringApp {
                 image: image_abs(&project, &er.image)?,
                 size: size_of(&cf.display, &er.slug),
             };
+            upgraded += ent.merge_template_attrs()?;
             let idx = g.add_node_with_label_and_location(
                 ent,
                 format!("{} {}", KIND_META[er.kind as usize].icon, er.label),
@@ -290,6 +292,10 @@ impl RedstringApp {
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;
         self.saved_fp = self.fingerprint()?;
+        if upgraded > 0 {
+
+            self.saved_fp.clear();
+        }
 
         self.status = format!(
             "loaded {} entities / {} links from {}",
@@ -299,6 +305,9 @@ impl RedstringApp {
         );
         if healed > 0 {
             self.status += &format!(" · placed {healed} unpositioned");
+        }
+        if upgraded > 0 {
+            self.status += &format!(" · added {upgraded} new template attrs — save to persist");
         }
         if !note_errs.is_empty() {
             self.status += &format!(" · {} notes unreadable: {}", note_errs.len(), note_errs[0]);

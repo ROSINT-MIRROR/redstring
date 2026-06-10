@@ -76,7 +76,7 @@ impl RedstringApp {
         let prev_kind = e.kind;
         kind_combo(ui, "insp_kind", &mut e.kind);
         if e.kind != prev_kind {
-            merge_template_attrs(e);
+            e.merge_template_attrs()?;
         }
 
         ui.horizontal(|ui| {
@@ -321,15 +321,6 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
-}
-
-
-fn merge_template_attrs(e: &mut crate::model::Entity) {
-    for key in KIND_META[e.kind as usize].attrs {
-        if !e.attrs.iter().any(|(k, _)| k == key) {
-            e.attrs.push(((*key).to_owned(), String::new()));
-        }
-    }
 }
 
 fn pick_image() -> Option<String> {
