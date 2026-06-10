@@ -93,6 +93,13 @@ impl RedstringApp {
         n.payload().slug == slug
     }
 
+    pub(super) fn node_slug(&self, idx: NodeIndex) -> String {
+        let Some(n) = self.g.g().node_weight(idx) else {
+            return String::new();
+        };
+        n.payload().slug.clone()
+    }
+
     pub(super) fn add_entity(&mut self, kind: EntityKind, label: String, pos: Pos2) -> NodeIndex {
         let ent = Entity {
             slug: self.unique_slug(&label),

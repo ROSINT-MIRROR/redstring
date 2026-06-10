@@ -1,7 +1,9 @@
-//! Case persistence: RON read/write with position healing, the open/save
-//! dialogs, and the mtime watch that hot-reloads external edits.
+//! Project persistence: save/load against the case directory — case file,
+//! per-entity note files, derived artifacts — plus the dialogs, bundle
+//! export, and the mtime watch that hot-reloads external edits.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use egui::Pos2;
@@ -9,8 +11,11 @@ use egui_graphs::Graph;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 
-use crate::error::{Error, RsResult};
-use crate::model::{CaseDisplay, CaseFile, DEFAULT_NODE_SIZE, Entity, EntityRec, Relation, RelationRec};
+use crate::error::RsResult;
+use crate::model::{
+    CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, Relation, RelationRec,
+};
+use crate::project::{self, Project};
 
 use super::app::{RedstringApp, RsGraph};
 use super::board::{camera_read, camera_write};
@@ -20,6 +25,7 @@ impl RedstringApp {
     pub(super) fn to_case_file(&self, ui: &egui::Ui) -> CaseFile {
         let g = self.g.g();
         let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped(&self.case_name);
         for n in g.node_weights() {
             let e = n.payload();
             cf.data.entities.push(EntityRec {
@@ -27,8 +33,7 @@ impl RedstringApp {
                 kind: e.kind,
                 label: e.label.clone(),
                 attrs: e.attrs.clone(),
-                note: e.note.clone(),
-                image: e.image.clone(),
+                image: self.image_rec(&e.image),
             });
             let loc = n.location();
             cf.display.positions.insert(e.slug.clone(), (loc.x, loc.y));
@@ -52,59 +57,116 @@ impl RedstringApp {
         cf
     }
 
-    fn write_case(&self, cf: &CaseFile) -> RsResult<()> {
-        let s = ron::ser::to_string_pretty(cf, ron::ser::PrettyConfig::default())
-            .map_err(|source| Error::RonSer { source })?;
-        std::fs::write(&self.case_path, s)
-            .map_err(|source| Error::io(self.case_path.as_str(), source))?;
-        Ok(())
+    /// Runtime image paths are absolute; the case file cites them
+    /// project-relative. Anything outside the project stays absolute and
+    /// the validator flags it.
+    fn image_rec(&self, image: &Option<String>) -> Option<String> {
+        let img = image.as_ref()?;
+        let Some(project) = &self.project else {
+            return Some(img.clone());
+        };
+        Some(project.rel_or_self(img))
     }
 
-    fn read_case(&self) -> RsResult<CaseFile> {
-        let s = std::fs::read_to_string(&self.case_path)
-            .map_err(|source| Error::io(self.case_path.as_str(), source))?;
-        ron::from_str(&s).map_err(|source| Error::ron_parse(self.case_path.as_str(), source))
-    }
-
+    /// Ctrl+S: save into the open case directory; with no case yet, fall
+    /// through to creating one.
     pub(super) fn save(&mut self, ui: &egui::Ui) {
+        if self.project.is_none() {
+            self.save_as_dialog(ui);
+            return;
+        }
+        self.save_to_project(ui);
+    }
+
+    fn save_to_project(&mut self, ui: &egui::Ui) {
+        let Some(project) = self.project.clone() else { return };
         let cf = self.to_case_file(ui);
-        match self.write_case(&cf) {
+        match self.write_all(&project, &cf) {
             Ok(()) => {
                 self.watch_current();
                 self.status = format!(
-                    "saved {} entities / {} links → {}",
+                    "saved {} entities / {} links → {}{}",
                     cf.data.entities.len(),
                     cf.data.relations.len(),
-                    self.case_path
+                    project.root().display(),
+                    warn_suffix(&project),
                 );
             }
             Err(err) => self.status = format!("save failed: {err}"),
         }
     }
 
-    /// Pick a case file and load it.
-    pub(super) fn open_dialog(&mut self, ui: &mut egui::Ui) {
-        let Some(p) = case_dialog(&self.case_path).pick_file() else {
-            return;
-        };
-        self.case_path = p.display().to_string();
-        self.load(ui);
+    /// One save = the case file, every entity's note file, and the derived
+    /// artifacts (case.json for the web viewer, graph.md for GitHub).
+    fn write_all(&self, project: &Project, cf: &CaseFile) -> RsResult<()> {
+        project::write_case(project, cf)?;
+        for n in self.g.g().node_weights() {
+            let e = n.payload();
+            project::write_note(project, &e.slug, &e.note)?;
+        }
+        project::write_json(project, cf)?;
+        project::write_graph_md(project, cf)?;
+        Ok(())
     }
 
-    /// Pick a destination and save the case there — it becomes the open file.
-    pub(super) fn save_as_dialog(&mut self, ui: &egui::Ui) {
-        let Some(mut p) = case_dialog(&self.case_path).save_file() else {
+    /// Save, then zip the case directory to <root>/<dirname>.redstring.zip.
+    pub(super) fn export_bundle(&mut self, ui: &egui::Ui) {
+        if self.project.is_none() {
+            self.status = "save the case first — a bundle is the case directory, zipped".into();
+            return;
+        }
+        self.save_to_project(ui);
+        let Some(project) = &self.project else { return };
+        match project::export(project) {
+            Ok((path, n)) => self.status = format!("bundled {n} files → {}", path.display()),
+            Err(err) => self.status = format!("export failed: {err}"),
+        }
+    }
+
+    /// Pick a case file or a bundle and open it.
+    pub(super) fn open_dialog(&mut self, ui: &mut egui::Ui) {
+        let Some(p) = open_picker(self.project.as_ref()).pick_file() else {
             return;
         };
-        if p.extension().is_none() {
-            p.set_extension("ron");
+        self.open_path(ui, &p);
+    }
+
+    fn open_path(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let opened = if path.extension().is_some_and(|e| e == "zip") {
+            project::open_bundle(path)
+        } else {
+            Project::open(path)
+        };
+        match opened {
+            Ok(project) => {
+                self.project = Some(project);
+                self.load(ui);
+            }
+            Err(err) => self.status = format!("open failed: {err}"),
         }
-        self.case_path = p.display().to_string();
-        self.save(ui);
+    }
+
+    /// Pick where the new case directory goes — the typed name becomes the
+    /// directory — then save into it.
+    pub(super) fn save_as_dialog(&mut self, ui: &egui::Ui) {
+        let Some(p) = create_picker(self.project.as_ref()).save_file() else {
+            return;
+        };
+        match Project::create(&p) {
+            Ok(project) => {
+                self.project = Some(project);
+                self.save_to_project(ui);
+            }
+            Err(err) => self.status = format!("create case failed: {err}"),
+        }
     }
 
     pub(super) fn load(&mut self, ui: &mut egui::Ui) {
-        let cf = match self.read_case() {
+        let Some(project) = self.project.clone() else {
+            self.status = "no case open".into();
+            return;
+        };
+        let cf = match project::read_case(&project) {
             Ok(cf) => cf,
             Err(err) => {
                 self.status = format!("load failed: {err}");
@@ -115,19 +177,32 @@ impl RedstringApp {
         let mut g: RsGraph = Graph::from(&StableGraph::default());
         let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
         let mut healed = 0usize;
+        let mut note_errs: Vec<String> = Vec::new();
         for (i, er) in cf.data.entities.iter().enumerate() {
             if by_slug.contains_key(&er.slug) {
                 self.status = format!("load failed: duplicate slug '{}'", er.slug);
                 return;
             }
             let pos = healed_pos(&cf.display, &er.slug, i, &mut healed);
+            let note = match project::read_note(&project, &er.slug) {
+                Ok(n) => n,
+                Err(err) => {
+                    note_errs.push(format!("{err}"));
+                    String::new()
+                }
+            };
             let ent = Entity {
                 slug: er.slug.clone(),
                 kind: er.kind,
                 label: er.label.clone(),
                 attrs: er.attrs.clone(),
-                note: er.note.clone(),
-                image: er.image.clone(),
+                note,
+                // relative in the file, absolute at runtime; joining an
+                // absolute legacy path leaves it unchanged
+                image: er
+                    .image
+                    .as_ref()
+                    .map(|rel| project.resolve(rel).display().to_string()),
                 size: cf.display.size_of(&er.slug),
             };
             let idx = g.add_node_with_label_and_location(
@@ -156,6 +231,7 @@ impl RedstringApp {
         }
 
         self.g = g;
+        self.case_name = cf.meta.name.clone();
         // node indices just got reassigned — abort any in-flight gesture
         self.edge_drag = None;
         self.pending_edge = None;
@@ -173,42 +249,75 @@ impl RedstringApp {
             "loaded {} entities / {} links from {}",
             cf.data.entities.len(),
             cf.data.relations.len(),
-            self.case_path
+            project.root().display()
         );
         if healed > 0 {
             self.status += &format!(" · placed {healed} unpositioned");
+        }
+        if !note_errs.is_empty() {
+            self.status += &format!(" · {} notes unreadable: {}", note_errs.len(), note_errs[0]);
         }
         if !skipped.is_empty() {
             self.status += &format!(" · SKIPPED unknown slugs: {}", skipped.join(", "));
         }
     }
 
-    /// Remember the current path + mtime as the hot-reload baseline.
+    /// Remember the case file's path + mtime as the hot-reload baseline.
     pub(super) fn watch_current(&mut self) {
-        self.watched = mtime(&self.case_path).map(|t| (self.case_path.clone(), t));
+        let Some(project) = &self.project else {
+            self.watched = None;
+            return;
+        };
+        let path = project.case_path().display().to_string();
+        self.watched = mtime(&path).map(|t| (path, t));
     }
 
-    /// Hot-reload: when the watched file changed under us — external editor,
-    /// AI appending to the case — pull it in. Polled at most about once a second.
+    /// Hot-reload: when the watched case file changed under us — external
+    /// editor, AI appending — pull it in. Polled at most about once a second.
     pub(super) fn poll_external_edit(&mut self, ui: &mut egui::Ui) {
         if self.last_watch_poll.elapsed().as_millis() < 1000 {
             return;
         }
         self.last_watch_poll = Instant::now();
-        let Some((path, seen)) = &self.watched else {
+        let Some((path, seen)) = self.watched.clone() else {
             return;
         };
-        if *path != self.case_path {
-            return; // user retargeted the path — don't auto-load
+        if Some(path.as_str()) != self.current_case_path().as_deref() {
+            return; // a different case got opened — stale watch, ignore
         }
-        let Some(t) = mtime(path) else { return };
-        if t > *seen {
+        let Some(t) = mtime(&path) else { return };
+        if t > seen {
             self.load(ui);
-            self.status = format!("external edit detected — reloaded {}", self.case_path);
+            self.status = format!("external edit detected — reloaded {path}");
         }
         // request a wakeup so the watcher ticks even when the user is idle
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(1100));
+    }
+
+    fn current_case_path(&self) -> Option<String> {
+        let project = self.project.as_ref()?;
+        Some(project.case_path().display().to_string())
+    }
+
+    /// Toolbar label: where the case lives.
+    pub(super) fn project_label(&self) -> String {
+        let Some(project) = &self.project else {
+            return "unsaved — Ctrl+S creates the case directory".to_owned();
+        };
+        project.root().display().to_string()
+    }
+}
+
+/// Post-save consistency summary for the status bar.
+fn warn_suffix(project: &Project) -> String {
+    match project::validate(project) {
+        Ok(findings) if findings.is_empty() => String::new(),
+        Ok(findings) => format!(
+            " · ⚠ {} finding(s) — run redstring --check",
+            findings.len()
+        ),
+        Err(err) => format!(" · validate failed: {err}"),
     }
 }
 
@@ -233,26 +342,26 @@ fn mtime(path: &str) -> Option<SystemTime> {
     Some(t)
 }
 
-/// Native .ron dialog seeded with the current path's directory + file name.
-/// Blocking is fine: a frozen frame behind a modal picker is the desktop
-/// behaviour we want.
-fn case_dialog(current: &str) -> rfd::FileDialog {
-    let d = rfd::FileDialog::new().add_filter("RON case", &["ron"]);
-    let p = std::path::Path::new(current);
-    let d = seed_dir(d, p);
-    seed_name(d, p)
+/// Open picker: the case file itself or a bundle.
+fn open_picker(current: Option<&Project>) -> rfd::FileDialog {
+    let d = rfd::FileDialog::new()
+        .add_filter("redstring case", &["redstring"])
+        .add_filter("redstring bundle", &["zip"]);
+    seed_dir(d, current)
 }
 
-fn seed_dir(d: rfd::FileDialog, p: &std::path::Path) -> rfd::FileDialog {
-    let Some(dir) = p.parent().filter(|d| d.is_dir()) else {
-        return d;
-    };
-    d.set_directory(dir)
+/// Create picker: the typed name becomes the new case directory.
+fn create_picker(current: Option<&Project>) -> rfd::FileDialog {
+    let d = rfd::FileDialog::new()
+        .set_title("create case directory")
+        .set_file_name("mycase");
+    seed_dir(d, current)
 }
 
-fn seed_name(d: rfd::FileDialog, p: &std::path::Path) -> rfd::FileDialog {
-    let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+fn seed_dir(d: rfd::FileDialog, current: Option<&Project>) -> rfd::FileDialog {
+    let Some(project) = current else { return d };
+    let Some(parent) = project.root().parent() else {
         return d;
     };
-    d.set_file_name(name)
+    d.set_directory(parent)
 }

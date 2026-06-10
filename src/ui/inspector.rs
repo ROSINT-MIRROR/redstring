@@ -5,7 +5,7 @@
 use egui::RichText;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::model::{Category, EntityKind, RelationKind, Source, SourceKind};
+use crate::model::{Category, EntityKind, MAX_CASE_NAME, RelationKind, Source, SourceKind};
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
 
@@ -18,6 +18,14 @@ impl RedstringApp {
         let Some(nidx) = sel_node else {
             let sel_edge = self.g.selected_edges().first().copied();
             let Some(eidx) = sel_edge else {
+                ui.label(RichText::new("case").strong());
+                let name = ui.add(
+                    egui::TextEdit::singleline(&mut self.case_name).char_limit(MAX_CASE_NAME),
+                );
+                if name.changed() {
+                    self.status = "case renamed — save to persist".into();
+                }
+                ui.separator();
                 ui.label(RichText::new("select an entity or relation").weak());
                 ui.add_space(8.0);
                 ui.label("• drag to move · scroll to zoom");
@@ -33,9 +41,10 @@ impl RedstringApp {
     }
 
     fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) {
-        // slug edits collect into a local and apply after the borrow ends,
-        // because dedupe needs to read the whole graph
+        // slug + image edits collect into locals and apply after the borrow
+        // ends — dedupe and copy-on-attach both need more than this node
         let mut slug_edit: Option<String> = None;
+        let mut picked_image: Option<String> = None;
         let mut delete = false;
 
         let Some(node) = self.g.node_mut(nidx) else { return };
@@ -69,10 +78,10 @@ impl RedstringApp {
             if ui.button("🖼 image…").clicked()
                 && let Some(p) = pick_image()
             {
-                // re-picking a path must reflect the file as it is now
-                crate::shapes::invalidate_texture(ui.ctx(), &p);
-                e.image = Some(p);
+                picked_image = Some(p);
             }
+            // unlink drops the reference only — the canonical copy stays in
+            // the case directory, never deleted by redstring
             if e.image.is_some() && ui.button("✕").clicked() {
                 e.image = None;
             }
@@ -105,9 +114,40 @@ impl RedstringApp {
             delete = true;
         }
 
+        self.apply_picked_image(ui.ctx(), nidx, picked_image);
         self.apply_slug_edit(nidx, slug_edit);
         if delete {
             self.g.remove_node(nidx);
+        }
+    }
+
+    /// Copy a picked image to entities/<slug>/ — the iron rule — then point
+    /// the node at the canonical copy.
+    fn apply_picked_image(&mut self, ctx: &egui::Context, nidx: NodeIndex, picked: Option<String>) {
+        let Some(src) = picked else { return };
+        let resolved = self.canonical_image(nidx, &src);
+        // re-picking a path must reflect the file as it is now
+        crate::shapes::invalidate_texture(ctx, &resolved);
+        let Some(node) = self.g.node_mut(nidx) else { return };
+        node.payload_mut().image = Some(resolved);
+    }
+
+    fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> String {
+        let slug = self.node_slug(nidx);
+        let Some(project) = &self.project else {
+            self.status = "image linked in place — save the case first to copy it in".into();
+            return src.to_owned();
+        };
+        match crate::project::import_entity_image(project, &slug, std::path::Path::new(src)) {
+            Ok(abs) => {
+                let abs = abs.display().to_string();
+                self.status = format!("image copied → {}", project.rel_or_self(&abs));
+                abs
+            }
+            Err(err) => {
+                self.status = format!("image import failed — linked in place: {err}");
+                src.to_owned()
+            }
         }
     }
 
@@ -140,7 +180,21 @@ impl RedstringApp {
                     ui.selectable_value(&mut self.ns_kind, k, k.label());
                 }
             });
-        ui.add(egui::TextEdit::singleline(&mut self.ns_ref).hint_text(self.ns_kind.hint()));
+        let mut pick_source = false;
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.ns_ref).hint_text(self.ns_kind.hint()));
+            if self.ns_kind.is_file_backed()
+                && ui
+                    .button("📎")
+                    .on_hover_text("copy a file into the case and cite it")
+                    .clicked()
+            {
+                pick_source = true;
+            }
+        });
+        if pick_source {
+            self.pick_source_file();
+        }
         ui.add(
             egui::TextEdit::multiline(&mut self.ns_excerpt)
                 .hint_text("excerpt / quote (optional)")
@@ -194,6 +248,23 @@ impl RedstringApp {
             });
         }
         remove_marked(&mut r.sources, remove);
+    }
+
+    /// Copy a picked evidence file to its canonical home and cite it in the
+    /// reference field — the iron rule again.
+    fn pick_source_file(&mut self) {
+        let Some(p) = rfd::FileDialog::new().pick_file() else { return };
+        let Some(project) = &self.project else {
+            self.status = "save the case first — evidence is copied into the case dir".into();
+            return;
+        };
+        match crate::project::import_source_file(project, self.ns_kind, &p) {
+            Ok(rel) => {
+                self.ns_ref = rel;
+                self.status = "file copied into the case — add the source".into();
+            }
+            Err(err) => self.status = format!("evidence import failed: {err}"),
+        }
     }
 
     /// Push the add-source form contents onto the relation and reset the form.

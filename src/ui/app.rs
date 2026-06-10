@@ -2,6 +2,7 @@
 //! lays out the panels; behaviour lives in the sibling modules — palette,
 //! board, links, inspector, persist, chrome.
 
+use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use eframe::App;
@@ -11,8 +12,10 @@ use petgraph::Directed;
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
+use crate::error::Error;
 use crate::model::{Camera, Entity, EntityKind, Relation, SourceKind};
 use crate::prefs::{Prefs, Theme};
+use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
 use super::board;
@@ -27,14 +30,17 @@ pub(super) const BOARD_META_ID: &str = "redstring_board";
 
 pub struct RedstringApp {
     pub(super) g: RsGraph,
-    pub(super) case_path: String,
+    /// The open case directory. None until the first save creates one.
+    pub(super) project: Option<Project>,
+    /// Case display name — persisted in the file's meta block on save.
+    pub(super) case_name: String,
     pub(super) status: String,
     pub(super) prefs: Prefs,
 
-    /// Path + mtime of the file as last written/read — the hot-reload watch.
+    /// Path + mtime of the case file as last written/read — the hot-reload watch.
     pub(super) watched: Option<(String, SystemTime)>,
     pub(super) last_watch_poll: Instant,
-    /// Load `case_path` on the first frame — camera restore needs a live `ui`.
+    /// Load the project on the first frame — camera restore needs a live `ui`.
     pub(super) pending_load: bool,
     /// Camera from the last load, re-asserted once AFTER the GraphView ran —
     /// the widget force-fits on its very first frame and would stomp it.
@@ -76,7 +82,8 @@ impl RedstringApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
-            case_path: "case.ron".to_owned(),
+            project: None,
+            case_name: "untitled case".to_owned(),
             status: "new case".to_owned(),
             prefs: Prefs::default(),
             watched: None,
@@ -99,11 +106,17 @@ impl RedstringApp {
             ns_ref: String::new(),
             ns_excerpt: String::new(),
         };
-        // a case file sitting in cwd wins over the demo seed
-        if std::path::Path::new(&app.case_path).exists() {
-            app.pending_load = true;
-        } else {
-            app.seed_demo();
+        // a case directory in cwd wins over the demo seed
+        match Project::open(Path::new(".")) {
+            Ok(project) => {
+                app.project = Some(project);
+                app.pending_load = true;
+            }
+            Err(Error::NotAProject { .. }) => app.seed_demo(),
+            Err(err) => {
+                app.seed_demo();
+                app.status = format!("case in cwd unreadable: {err}");
+            }
         }
         match Prefs::load() {
             Ok(p) => app.prefs = p,

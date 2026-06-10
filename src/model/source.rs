@@ -35,6 +35,15 @@ impl SourceKind {
         }
     }
 
+    /// Whether the reference names a file in the case directory — these
+    /// kinds participate in copy-on-attach, validation and bundle integrity.
+    pub fn is_file_backed(self) -> bool {
+        match self {
+            Self::Markdown | Self::Archive | Self::Transcript | Self::Document => true,
+            Self::Url | Self::Note => false,
+        }
+    }
+
     /// Placeholder shown in the reference field.
     pub fn hint(self) -> &'static str {
         match self {

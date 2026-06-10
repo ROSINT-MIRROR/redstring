@@ -16,16 +16,24 @@ impl RedstringApp {
             }
             if ui
                 .button("💾…")
-                .on_hover_text("Save as… (Ctrl+Shift+S)")
+                .on_hover_text("Save as new case directory… (Ctrl+Shift+S)")
                 .clicked()
             {
                 self.save_as_dialog(ui);
             }
-            if ui.button("📂").on_hover_text("Open… (Ctrl+O)").clicked() {
+            if ui.button("📂").on_hover_text("Open case or bundle… (Ctrl+O)").clicked() {
                 self.open_dialog(ui);
             }
+            if ui
+                .button("📦")
+                .on_hover_text("Export bundle — the case directory, zipped")
+                .clicked()
+            {
+                self.export_bundle(ui);
+            }
             ui.separator();
-            ui.label(RichText::new(&self.case_path).weak().small());
+            ui.label(RichText::new(&self.case_name).strong());
+            ui.label(RichText::new(self.project_label()).weak().small());
 
             // layout engines land later — stubs so the bar has its final shape
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
