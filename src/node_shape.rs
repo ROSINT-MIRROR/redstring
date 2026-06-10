@@ -220,22 +220,37 @@ impl EntityNodeShape {
         );
         res.push(RectShape::stroke(rect, cr, stroke, StrokeKind::Inside).into());
 
-        // label drawn unconditionally: SettingsStyle::labels_always is
+        // caption drawn unconditionally: SettingsStyle::labels_always is
         // pub(crate) in egui_graphs 0.30 (no getter), and the app always
-        // passes with_labels_always(true) anyway
-        let galley = ctx.ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                self.circle.label_text.clone(),
-                FontId::new(ctx.meta.canvas_to_screen_size(LABEL_SIZE), FontFamily::Monospace),
-                color,
+        // passes with_labels_always(true) anyway. Kind icon at 2× the name,
+        // side by side under the photo, vertically centered on each other.
+        let (icon, name) = ctx.ctx.fonts_mut(|f| {
+            (
+                f.layout_no_wrap(
+                    self.icon.clone(),
+                    FontId::new(
+                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * 2.0),
+                        FontFamily::Proportional,
+                    ),
+                    color,
+                ),
+                f.layout_no_wrap(
+                    self.name.clone(),
+                    FontId::new(ctx.meta.canvas_to_screen_size(LABEL_SIZE), FontFamily::Monospace),
+                    color,
+                ),
             )
         });
-        // label under the photo (the default circle floats it above)
-        let label_pos = Pos2::new(
-            rect.center().x - galley.size().x / 2.0,
-            rect.bottom() + ctx.meta.canvas_to_screen_size(LABEL_GAP),
-        );
-        res.push(TextShape::new(label_pos, galley, color).into());
+        let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP);
+        let total_w = icon.size().x + gap + name.size().x;
+        let row_h = icon.size().y.max(name.size().y);
+        let top = rect.bottom() + gap;
+        let left = rect.center().x - total_w / 2.0;
+        let icon_pos = Pos2::new(left, top + (row_h - icon.size().y) / 2.0);
+        let name_pos =
+            Pos2::new(left + icon.size().x + gap, top + (row_h - name.size().y) / 2.0);
+        res.push(TextShape::new(icon_pos, icon, color).into());
+        res.push(TextShape::new(name_pos, name, color).into());
         res
     }
 }
