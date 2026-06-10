@@ -5,6 +5,8 @@ use crate::model::{CATEGORY_META, KIND_META};
 
 use super::app::RedstringApp;
 
+const SEARCH_TEXT: f32 = 19.0;
+
 impl RedstringApp {
     pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.vertical_centered(|ui| -> Result<(), Error> {
@@ -26,9 +28,22 @@ impl RedstringApp {
                         self.prefs.sidebar_collapsed = true;
                         self.prefs.save()?;
                     }
+                    let row_h = ui.spacing().interact_size.y * 1.5;
+                    if ui
+                        .add_sized(
+                            Vec2::new(row_h, row_h),
+                            egui::Button::new(RichText::new("✖").size(SEARCH_TEXT)),
+                        )
+                        .on_hover_text("clear search")
+                        .clicked()
+                    {
+                        self.kind_search.clear();
+                    }
                     ui.add_sized(
-                        Vec2::new(ui.available_width(), ui.spacing().interact_size.y),
-                        egui::TextEdit::singleline(&mut self.kind_search).hint_text("🔍 search"),
+                        Vec2::new(ui.available_width(), row_h),
+                        egui::TextEdit::singleline(&mut self.kind_search)
+                            .font(egui::FontId::proportional(SEARCH_TEXT))
+                            .hint_text("🔍 search"),
                     );
                     Ok(())
                 },

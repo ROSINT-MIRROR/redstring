@@ -162,13 +162,31 @@ impl EntityNodeShape {
 
     
     
+    fn selection_ring(&self, ctx: &DrawContext) -> Option<Stroke> {
+        if !self.circle.selected {
+            return None;
+        }
+        Some(Stroke::new(
+            3.0,
+            ctx.ctx.global_style().visuals.selection.stroke.color,
+        ))
+    }
+
     fn icon_shapes(&self, ctx: &DrawContext) -> Vec<Shape> {
         let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
         let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
         let color = self.frame_color(ctx);
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
 
-        let mut res: Vec<Shape> = Vec::with_capacity(3);
+        let mut res: Vec<Shape> = Vec::with_capacity(4);
+        res.extend(self.selection_ring(ctx).map(|ring| {
+            Shape::from(CircleShape {
+                center,
+                radius: r + 3.0,
+                fill: ring.color.gamma_multiply(0.15),
+                stroke: ring,
+            })
+        }));
         res.push(
             CircleShape {
                 center,
@@ -220,9 +238,12 @@ impl EntityNodeShape {
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
 
-        let mut res: Vec<Shape> = Vec::with_capacity(3);
-        
-        
+        let mut res: Vec<Shape> = Vec::with_capacity(4);
+        res.extend(self.selection_ring(ctx).map(|ring| {
+            Shape::from(RectShape::stroke(rect.expand(3.0), cr, ring, StrokeKind::Outside))
+        }));
+
+
         res.push(
             RectShape::new(rect, cr, Color32::WHITE, Stroke::NONE, StrokeKind::Inside)
                 .with_texture(tex.id(), cover_uv(tex.size()))
