@@ -7,19 +7,28 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+}
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(default)] // older prefs files keep loading as fields get added
 pub struct Prefs {
     pub sidebar_collapsed: bool,
-    /// Height of the add-entity kind grid (user-draggable).
-    pub kind_picker_height: f32,
+    /// Global UI scale (egui zoom factor) — bump on hi-DPI/4K monitors.
+    pub ui_scale: f32,
+    pub theme: Theme,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             sidebar_collapsed: false,
-            kind_picker_height: 140.0,
+            ui_scale: 1.0,
+            theme: Theme::Dark,
         }
     }
 }
@@ -64,7 +73,8 @@ mod tests {
     fn partial_and_empty_files_load() {
         let p: Prefs = ron::from_str("(sidebar_collapsed: true)").unwrap();
         assert!(p.sidebar_collapsed);
-        assert_eq!(p.kind_picker_height, Prefs::default().kind_picker_height);
+        assert_eq!(p.ui_scale, Prefs::default().ui_scale);
+        assert_eq!(p.theme, Theme::Dark);
 
         let p: Prefs = ron::from_str("()").unwrap();
         assert_eq!(p, Prefs::default());
@@ -74,7 +84,8 @@ mod tests {
     fn round_trip() {
         let p = Prefs {
             sidebar_collapsed: true,
-            kind_picker_height: 222.5,
+            ui_scale: 1.75,
+            theme: Theme::Light,
         };
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();

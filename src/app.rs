@@ -22,7 +22,7 @@ use petgraph::Directed;
 use crate::edge_shape::SourcedEdgeShape;
 use crate::model::*;
 use crate::node_shape::{EntityNodeShape, IMG_RADIUS, NODE_RADIUS};
-use crate::prefs::Prefs;
+use crate::prefs::{Prefs, Theme};
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
@@ -72,6 +72,8 @@ pub struct RedstringApp {
     label_edit_focus: bool,
     // node being resized via its corner handle (drag in progress)
     resize: Option<NodeIndex>,
+    // preferences window visibility (the prefs themselves live in `prefs`)
+    prefs_open: bool,
     // left-drag node move: (node, canvas-space grab offset pointer−center).
     // Replaces egui_graphs' built-in dragging, whose "compensation" step
     // snaps the node center onto the cursor (graph_view.rs handle_node_drag).
@@ -84,7 +86,7 @@ pub struct RedstringApp {
 }
 
 impl RedstringApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             case_path: "case.ron".to_owned(),
@@ -105,6 +107,7 @@ impl RedstringApp {
             label_edit_focus: false,
             resize: None,
             node_drag: None,
+            prefs_open: false,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -115,7 +118,17 @@ impl RedstringApp {
         } else {
             app.seed_demo();
         }
+        app.apply_prefs(&cc.egui_ctx);
         app
+    }
+
+    /// Push scale + theme prefs onto the egui context (startup and on change).
+    fn apply_prefs(&self, ctx: &egui::Context) {
+        ctx.set_zoom_factor(self.prefs.ui_scale);
+        ctx.set_theme(match self.prefs.theme {
+            Theme::Dark => egui::Theme::Dark,
+            Theme::Light => egui::Theme::Light,
+        });
     }
 
     /// A tiny starter case so the board demonstrates the sourced/unsourced split
@@ -412,6 +425,10 @@ impl RedstringApp {
 
             // layout engines land later — stubs so the bar has its final shape
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⛭").on_hover_text("Preferences").clicked() {
+                    self.prefs_open = !self.prefs_open;
+                }
+                ui.separator();
                 for name in ["Grid", "Circle", "Tree", "Force"] {
                     ui.add_enabled(false, egui::Button::new(name))
                         .on_disabled_hover_text("layout — coming soon");
@@ -419,6 +436,45 @@ impl RedstringApp {
                 ui.label(RichText::new("layout:").weak().small());
             });
         });
+    }
+
+    /// Preferences window: machine-local chrome (scale, theme) — never case data.
+    fn prefs_window(&mut self, ui: &egui::Ui) {
+        let mut open = self.prefs_open;
+        let mut changed = false;
+        egui::Window::new("preferences")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("UI scale");
+                    let slider = ui.add(
+                        egui::Slider::new(&mut self.prefs.ui_scale, 0.75..=3.0)
+                            .step_by(0.05)
+                            .suffix("×"),
+                    );
+                    // apply on release: live zoom rescales the slider under
+                    // the cursor mid-drag
+                    if slider.drag_stopped() || slider.lost_focus() {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("theme");
+                    changed |= ui
+                        .selectable_value(&mut self.prefs.theme, Theme::Dark, "dark")
+                        .clicked();
+                    changed |= ui
+                        .selectable_value(&mut self.prefs.theme, Theme::Light, "light")
+                        .clicked();
+                });
+            });
+        self.prefs_open = open;
+        if changed {
+            self.apply_prefs(ui.ctx());
+            self.prefs.save();
+        }
     }
 
     fn load(&mut self, ui: &mut egui::Ui) {
@@ -1286,6 +1342,7 @@ impl App for RedstringApp {
         egui::Panel::top("toolbar")
             .resizable(false)
             .show_inside(ui, |ui| self.toolbar(ui));
+        self.prefs_window(ui);
 
         // left sidebar collapses to a thin strip holding only the expand toggle
         let strip = egui::Panel::left("left_strip")
