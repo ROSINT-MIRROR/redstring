@@ -1,0 +1,83 @@
+//! Top toolbar — file ops, layout stubs, the preferences toggle — and the
+//! preferences window itself.
+
+use egui::RichText;
+
+use crate::prefs::Theme;
+
+use super::app::RedstringApp;
+
+impl RedstringApp {
+    /// Full-width top bar: file ops plus stub layout buttons, Maltego-style.
+    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("💾").on_hover_text("Save (Ctrl+S)").clicked() {
+                self.save(ui);
+            }
+            if ui
+                .button("💾…")
+                .on_hover_text("Save as… (Ctrl+Shift+S)")
+                .clicked()
+            {
+                self.save_as_dialog(ui);
+            }
+            if ui.button("📂").on_hover_text("Open… (Ctrl+O)").clicked() {
+                self.open_dialog(ui);
+            }
+            ui.separator();
+            ui.label(RichText::new(&self.case_path).weak().small());
+
+            // layout engines land later — stubs so the bar has its final shape
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⛭").on_hover_text("Preferences").clicked() {
+                    self.prefs_open = !self.prefs_open;
+                }
+                ui.separator();
+                for name in ["Grid", "Circle", "Tree", "Force"] {
+                    ui.add_enabled(false, egui::Button::new(name))
+                        .on_disabled_hover_text("layout — coming soon");
+                }
+                ui.label(RichText::new("layout:").weak().small());
+            });
+        });
+    }
+
+    /// Preferences window: machine-local chrome — scale, theme — never case data.
+    pub(super) fn prefs_window(&mut self, ui: &egui::Ui) {
+        let mut open = self.prefs_open;
+        let mut changed = false;
+        egui::Window::new("preferences")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("UI scale");
+                    let slider = ui.add(
+                        egui::Slider::new(&mut self.prefs.ui_scale, 0.75..=3.0)
+                            .step_by(0.05)
+                            .suffix("×"),
+                    );
+                    // apply on release — live zoom would rescale the slider
+                    // under the cursor mid-drag
+                    if slider.drag_stopped() || slider.lost_focus() {
+                        changed = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("theme");
+                    changed |= ui
+                        .selectable_value(&mut self.prefs.theme, Theme::Dark, "dark")
+                        .clicked();
+                    changed |= ui
+                        .selectable_value(&mut self.prefs.theme, Theme::Light, "light")
+                        .clicked();
+                });
+            });
+        self.prefs_open = open;
+        if changed {
+            self.apply_prefs(ui.ctx());
+            self.persist_prefs();
+        }
+    }
+}

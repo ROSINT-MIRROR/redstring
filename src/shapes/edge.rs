@@ -2,12 +2,12 @@
 //! red + dashed (an accusation you can't back up), a sourced link solid green.
 //! Self-contained straight-line + arrowhead drawing; parallel edges between the
 //! same pair are fanned out by `order` so they don't overlap. Segment ends are
-//! trimmed to each node's drawn boundary (`closest_boundary_point`) so the
-//! arrowhead stays visible on circles and photo tiles alike.
+//! trimmed to each node's drawn boundary so the arrowhead stays visible on
+//! circles and photo tiles alike.
 
 use egui::{Color32, Pos2, Shape, Stroke, Vec2};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
-use petgraph::{stable_graph::IndexType, EdgeType};
+use petgraph::{EdgeType, stable_graph::IndexType};
 
 use crate::model::Relation;
 
@@ -100,10 +100,9 @@ where
 }
 
 /// Pull both segment ends back from the node centers to the nodes' drawn
-/// boundaries, whatever shape the `DisplayNode` impl is currently using
-/// (default circle or `EntityNodeShape` photo rect).
-/// RECONCILE(edgedrag): is_inside uses the same trim, so edge hit-testing
-/// stays aligned with what's drawn.
+/// boundaries, whatever shape each display impl is currently using — default
+/// circle or photo rect. Edge hit-testing uses the same trim, so it stays
+/// aligned with what's drawn.
 fn trim_to_boundaries<N, Ty, Ix, D>(
     start: &Node<N, Relation, Ty, Ix, D>,
     end: &Node<N, Relation, Ty, Ix, D>,

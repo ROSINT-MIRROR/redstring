@@ -1,10 +1,10 @@
-mod app;
-mod edge_shape;
+mod error;
 mod model;
-mod node_shape;
 mod prefs;
+mod shapes;
+mod ui;
 
-use app::RedstringApp;
+use ui::RedstringApp;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions::default();
