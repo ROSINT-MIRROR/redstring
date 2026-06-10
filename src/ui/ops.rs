@@ -111,6 +111,7 @@ impl RedstringApp {
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
         };
         Ok(self
             .g
@@ -139,6 +140,7 @@ impl RedstringApp {
     pub fn sync_visuals(&mut self) -> Result<(), Error> {
         let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
         for idx in nodes {
+            let boost = self.degree_boost(idx);
             let Some(n) = self.g.node(idx) else { continue };
             let e = n.payload();
             let meta = &KIND_META[e.kind as usize];
@@ -147,6 +149,7 @@ impl RedstringApp {
             let Some(n) = self.g.node_mut(idx) else { continue };
             n.set_color(color);
             n.set_label(label);
+            n.payload_mut().boost = boost;
         }
 
         let edges: Vec<EdgeIndex> = self.g.g().edge_indices().collect();
@@ -163,6 +166,20 @@ impl RedstringApp {
             ed.set_label(label);
         }
         Ok(())
+    }
+
+
+
+    fn degree_boost(&self, idx: NodeIndex) -> f32 {
+        if !self.size_by_degree {
+            return 1.0;
+        }
+        let g = self.g.g();
+        let degree = g
+            .edges_directed(idx, petgraph::Direction::Incoming)
+            .count()
+            + g.edges_directed(idx, petgraph::Direction::Outgoing).count();
+        (1.0 + 0.18 * degree as f32).sqrt().clamp(1.0, 2.5)
     }
 
     pub fn node_label(&self, idx: NodeIndex) -> Result<String, Error> {

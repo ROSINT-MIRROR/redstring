@@ -128,6 +128,9 @@ pub struct CaseDisplay {
     
     #[serde(default)]
     pub sizes: BTreeMap<String, f32>,
+
+    #[serde(default)]
+    pub size_by_degree: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]

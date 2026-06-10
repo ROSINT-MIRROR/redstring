@@ -43,10 +43,10 @@ impl RedstringApp {
                     .desired_width(f32::INFINITY),
             );
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.horizontal(|ui| -> Result<(), Error> {
             if ui
-                .button("new case…")
+                .button(format!("{} new case…", egui_phosphor::regular::FOLDER_PLUS))
                 .on_hover_text("Pick where the case directory goes — it scaffolds the canonical tree")
                 .clicked()
             {
@@ -54,14 +54,14 @@ impl RedstringApp {
                 self.save_as_dialog(ui)?;
             }
             if ui
-                .button("open…")
+                .button(format!("{} open…", egui_phosphor::regular::FOLDER_OPEN))
                 .on_hover_text("A case.redstring or a .zip bundle")
                 .clicked()
             {
                 self.open_dialog(ui)?;
             }
             if ui
-                .button("open folder…")
+                .button(format!("{} open folder…", egui_phosphor::regular::FOLDER))
                 .on_hover_text("A case directory")
                 .clicked()
             {
@@ -70,16 +70,16 @@ impl RedstringApp {
             Ok(())
         })
         .inner?;
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.label(
             RichText::new("dropping a case directory, case file or bundle here works too")
-                .weak()
-                .small(),
+                .weak(),
         );
 
-        ui.add_space(8.0);
+        ui.add_space(10.0);
         ui.separator();
-        ui.label(RichText::new("recent").weak().small());
+        ui.add_space(4.0);
+        ui.label(RichText::new("recent").strong());
         if self.prefs.recent.is_empty() {
             ui.weak("nothing yet — cases you open or create land here");
         }
@@ -91,11 +91,15 @@ impl RedstringApp {
         self.forget_recent_request(forget_req)?;
         self.open_recent_request(ui, open_req)?;
 
-        ui.add_space(8.0);
+        ui.add_space(10.0);
         ui.separator();
+        ui.add_space(4.0);
         ui.horizontal(|ui| -> Result<(), Error> {
             ui.weak("just looking?");
-            if ui.small_button("load the demo board").clicked() {
+            if ui
+                .button(format!("{} load the demo board", egui_phosphor::regular::PLAY))
+                .clicked()
+            {
                 self.seed_demo()?;
                 self.show_welcome = false;
             }
@@ -134,7 +138,11 @@ fn recent_row(
     forget_req: &mut Option<String>,
 ) {
     ui.horizontal(|ui| {
-        if ui.small_button("✕").on_hover_text("forget this entry").clicked() {
+        if ui
+            .small_button(egui_phosphor::regular::X)
+            .on_hover_text("forget this entry")
+            .clicked()
+        {
             *forget_req = Some(path.to_owned());
         }
         if !Path::new(path).is_dir() {

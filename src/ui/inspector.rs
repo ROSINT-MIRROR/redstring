@@ -8,11 +8,12 @@ use crate::model::{
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
+use super::style;
 
 impl RedstringApp {
     pub fn inspector_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.vertical_centered(|ui| -> Result<(), Error> {
-            if ui.button("⏴").on_hover_text("expand inspector").clicked() {
+            if style::square_btn(ui, egui_phosphor::regular::CARET_LEFT, "expand inspector")? {
                 self.prefs.inspector_collapsed = false;
                 self.prefs.save()?;
             }
@@ -23,18 +24,13 @@ impl RedstringApp {
 
     pub fn inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.horizontal(|ui| -> Result<(), Error> {
+
+            if style::square_btn(ui, egui_phosphor::regular::CARET_RIGHT, "collapse inspector")? {
+                self.prefs.inspector_collapsed = true;
+                self.prefs.save()?;
+            }
             ui.heading("inspector");
-            ui.with_layout(
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| -> Result<(), Error> {
-                    if ui.button("⏵").on_hover_text("collapse inspector").clicked() {
-                        self.prefs.inspector_collapsed = true;
-                        self.prefs.save()?;
-                    }
-                    Ok(())
-                },
-            )
-            .inner
+            Ok(())
         })
         .inner?;
         ui.separator();
@@ -43,25 +39,35 @@ impl RedstringApp {
         let Some(nidx) = sel_node else {
             let sel_edge = self.g.selected_edges().first().copied();
             let Some(eidx) = sel_edge else {
-                ui.label(RichText::new("case").strong());
-                let name = ui.add(
-                    egui::TextEdit::singleline(&mut self.case_name).char_limit(MAX_CASE_NAME),
-                );
-                if name.changed() {
-                    self.status = "case renamed — save to persist".into();
-                }
-                ui.separator();
-                ui.label(RichText::new("select an entity or relation").weak());
-                ui.add_space(8.0);
-                ui.label("• drag to move · scroll to zoom");
-                ui.label("• right-drag entity → entity to link");
-                ui.label("• red dashed link = unsourced");
-                ui.label("• green link = has ≥1 source");
-                return Ok(());
+                return self.case_inspector(ui);
             };
             return self.edge_inspector(ui, eidx);
         };
         self.node_inspector(ui, nidx)
+    }
+
+    fn case_inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        style::section(ui, egui_phosphor::regular::FOLDER, "case")?;
+        let name = ui.add(
+            egui::TextEdit::singleline(&mut self.case_name).char_limit(MAX_CASE_NAME),
+        );
+        if name.changed() {
+            self.status = "case renamed — save to persist".into();
+        }
+
+        style::section(ui, egui_phosphor::regular::GRAPH, "graph settings")?;
+        ui.checkbox(&mut self.size_by_degree, "scale nodes by connections")
+            .on_hover_text("well-connected entities draw bigger — saved with the case");
+
+        ui.add_space(style::GAP);
+        ui.separator();
+        ui.label(RichText::new("select an entity or relation").weak());
+        ui.add_space(style::GAP);
+        ui.label("• drag to move · scroll to zoom");
+        ui.label("• right-drag entity → entity to link");
+        ui.label("• red dashed link = unsourced");
+        ui.label("• green link = has ≥1 source");
+        Ok(())
     }
 
     fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> Result<(), Error> {
@@ -84,55 +90,70 @@ impl RedstringApp {
             ui.text_edit_singleline(&mut e.label);
         });
 
-        ui.add_space(6.0);
-        ui.label(RichText::new("image").strong());
-        ui.horizontal(|ui| {
-            if ui.button("🖼 image…").clicked()
+        style::section(ui, egui_phosphor::regular::IMAGE, "image")?;
+        ui.horizontal(|ui| -> Result<(), Error> {
+            if style::action_btn(ui, egui_phosphor::regular::IMAGE, "pick image…")?
                 && let Some(p) = pick_image()
             {
                 picked_image = Some(p);
             }
             if e.image.is_some()
-                && ui
-                    .button(egui_phosphor::regular::TRASH)
-                    .on_hover_text("remove image")
-                    .clicked()
+                && style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove image")?
             {
                 e.image = None;
             }
-        });
+            Ok(())
+        })
+        .inner?;
         image_path_label(ui, &e.image);
 
-        ui.add_space(6.0);
-        ui.label(RichText::new("attributes").strong());
+        style::section(ui, egui_phosphor::regular::TAG, "attributes")?;
         let mut remove: Option<usize> = None;
         for (i, (k, v)) in e.attrs.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(k).desired_width(80.0).hint_text("key"));
+            ui.horizontal(|ui| -> Result<(), Error> {
+                ui.add_sized(
+                    egui::Vec2::new(110.0, ui.spacing().interact_size.y),
+                    egui::Label::new(pretty_key(k)).truncate(),
+                );
                 ui.add(egui::TextEdit::singleline(v).hint_text("value"));
-                if ui
-                    .button(egui_phosphor::regular::TRASH)
-                    .on_hover_text("remove attribute")
-                    .clicked()
-                {
+                if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
                     remove = Some(i);
                 }
-            });
+                Ok(())
+            })
+            .inner?;
         }
         remove_marked(&mut e.attrs, remove);
-        if ui.button("+ attr").clicked() {
-            e.attrs.push((String::new(), String::new()));
-        }
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.new_attr_key)
+                    .desired_width(150.0)
+                    .hint_text("new attribute name"),
+            );
+            if style::action_btn(ui, egui_phosphor::regular::PLUS, "add attribute")?
+                && !self.new_attr_key.trim().is_empty()
+            {
+                let key = slugify(&self.new_attr_key);
+                if !e.attrs.iter().any(|(k, _)| *k == key) {
+                    e.attrs.push((key, String::new()));
+                }
+                self.new_attr_key.clear();
+            }
+            Ok(())
+        })
+        .inner?;
 
-        ui.add_space(6.0);
-        ui.label(RichText::new("note").strong());
+        style::section(ui, egui_phosphor::regular::NOTE_PENCIL, "note")?;
         ui.text_edit_multiline(&mut e.note);
 
+        ui.add_space(style::GAP);
         ui.separator();
-        if ui
-            .button(format!("{} delete entity", egui_phosphor::regular::TRASH))
-            .clicked()
-        {
+        if style::danger_btn(
+            ui,
+            egui_phosphor::regular::TRASH,
+            "delete entity",
+            "remove this entity and its relations",
+        )? {
             delete = true;
         }
 
@@ -182,10 +203,9 @@ impl RedstringApp {
 
     fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) -> Result<(), Error> {
         let (from_l, to_l) = self.edge_endpoints_labels(eidx)?;
-        self.edge_form(ui, eidx, &from_l, &to_l);
+        self.edge_form(ui, eidx, &from_l, &to_l)?;
 
-        ui.separator();
-        ui.label(RichText::new("attach source").strong());
+        style::section(ui, egui_phosphor::regular::PAPERCLIP, "attach source")?;
         egui::ComboBox::from_id_salt("ns_kind")
             .selected_text(SOURCE_META[self.ns_kind as usize].label)
             .show_ui(ui, |ui| {
@@ -201,7 +221,7 @@ impl RedstringApp {
             );
             if SOURCE_META[self.ns_kind as usize].file_backed
                 && ui
-                    .button("📎")
+                    .button(egui_phosphor::regular::PAPERCLIP)
                     .on_hover_text("copy a file into the case and cite it")
                     .clicked()
             {
@@ -216,22 +236,35 @@ impl RedstringApp {
                 .hint_text("excerpt / quote (optional)")
                 .desired_rows(2),
         );
-        if ui.button("+ source").clicked() && !self.ns_ref.trim().is_empty() {
+        if style::action_btn(ui, egui_phosphor::regular::PLUS, "add source")?
+            && !self.ns_ref.trim().is_empty()
+        {
             self.attach_source(eidx);
         }
 
+        ui.add_space(style::GAP);
         ui.separator();
-        if ui
-            .button(format!("{} delete relation", egui_phosphor::regular::TRASH))
-            .clicked()
-        {
+        if style::danger_btn(
+            ui,
+            egui_phosphor::regular::TRASH,
+            "delete relation",
+            "remove this relation and its sources",
+        )? {
             self.g.remove_edge(eidx);
         }
         Ok(())
     }
 
-    fn edge_form(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex, from_l: &str, to_l: &str) {
-        let Some(edge) = self.g.edge_mut(eidx) else { return };
+    fn edge_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        eidx: EdgeIndex,
+        from_l: &str,
+        to_l: &str,
+    ) -> Result<(), Error> {
+        let Some(edge) = self.g.edge_mut(eidx) else {
+            return Ok(());
+        };
         let r = edge.payload_mut();
         ui.label(
             RichText::new(format!(
@@ -249,11 +282,10 @@ impl RedstringApp {
             ui.colored_label(OK_GREEN, format!("✓ {} source(s)", r.sources.len()));
         }
 
-        ui.separator();
-        ui.label(RichText::new("sources").strong());
+        style::section(ui, egui_phosphor::regular::LINK, "sources")?;
         let mut remove: Option<usize> = None;
         for (i, src) in r.sources.iter_mut().enumerate() {
-            ui.group(|ui| {
+            ui.group(|ui| -> Result<(), Error> {
                 egui::ComboBox::from_id_salt(("src_kind", i))
                     .selected_text(SOURCE_META[src.kind as usize].label)
                     .show_ui(ui, |ui| {
@@ -270,15 +302,20 @@ impl RedstringApp {
                         .hint_text("excerpt / quote (optional)")
                         .desired_rows(2),
                 );
-                if ui
-                    .button(format!("{} remove source", egui_phosphor::regular::TRASH))
-                    .clicked()
-                {
+                if style::danger_btn(
+                    ui,
+                    egui_phosphor::regular::TRASH,
+                    "remove source",
+                    "detach this source",
+                )? {
                     remove = Some(i);
                 }
-            });
+                Ok(())
+            })
+            .inner?;
         }
         remove_marked(&mut r.sources, remove);
+        Ok(())
     }
 
     fn pick_source_file(&mut self) -> Result<(), Error> {
@@ -321,6 +358,48 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
+}
+
+
+
+fn pretty_key(slug: &str) -> String {
+    slug.split('_')
+        .filter(|s| !s.is_empty())
+        .map(|w| {
+            let mut cs = w.chars();
+            let Some(c) = cs.next() else {
+                return String::new();
+            };
+            c.to_uppercase().collect::<String>() + cs.as_str()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+
+fn slugify(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keys_round_trip_pretty_and_slug() {
+        assert_eq!(pretty_key("first_name"), "First Name");
+        assert_eq!(pretty_key("swift_bic"), "Swift Bic");
+        assert_eq!(slugify("Shoe Size"), "shoe_size");
+        assert_eq!(slugify("  Weird--Key!! "), "weird_key");
+        assert_eq!(slugify(&pretty_key("date_of_birth")), "date_of_birth");
+    }
 }
 
 fn pick_image() -> Option<String> {

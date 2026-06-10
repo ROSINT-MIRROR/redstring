@@ -62,31 +62,31 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
 impl RedstringApp {
     pub fn toolbar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.horizontal(|ui| -> Result<(), Error> {
-            if tb_button(ui, "🏠", "Home")
+            if tb_button(ui, egui_phosphor::regular::HOUSE, "Home")
                 .on_hover_text("Welcome — new case, open, recents")
                 .clicked()
             {
                 self.show_welcome = true;
             }
-            if tb_button(ui, "💾", "Save")
+            if tb_button(ui, egui_phosphor::regular::FLOPPY_DISK, "Save")
                 .on_hover_text("Save (Ctrl+S)")
                 .clicked()
             {
                 self.save(ui)?;
             }
-            if tb_button(ui, "💾", "Save as…")
+            if tb_button(ui, egui_phosphor::regular::FLOPPY_DISK_BACK, "Save as…")
                 .on_hover_text("Save as new case directory… (Ctrl+Shift+S)")
                 .clicked()
             {
                 self.save_as_dialog(ui)?;
             }
-            if tb_button(ui, "📂", "Open")
+            if tb_button(ui, egui_phosphor::regular::FOLDER_OPEN, "Open")
                 .on_hover_text("Open case or bundle… (Ctrl+O)")
                 .clicked()
             {
                 self.open_dialog(ui)?;
             }
-            if tb_button(ui, "📦", "Export")
+            if tb_button(ui, egui_phosphor::regular::PACKAGE, "Export")
                 .on_hover_text("Export bundle — the case directory, zipped")
                 .clicked()
             {
@@ -113,21 +113,20 @@ impl RedstringApp {
                     }
                     ui.separator();
                     let layouts = [
-                        ("Force", "organic — force-directed", LayoutKind::Force),
-                        ("Tree", "hierarchy — roots on top", LayoutKind::Tree),
-                        ("Circle", "everything on a ring", LayoutKind::Circle),
-                        ("Grid", "block grid, grouped by kind", LayoutKind::Grid),
+                        (egui_phosphor::regular::GRAPH, "Force", "organic — force-directed", LayoutKind::Force),
+                        (egui_phosphor::regular::TREE_STRUCTURE, "Tree", "hierarchy — roots on top", LayoutKind::Tree),
+                        (egui_phosphor::regular::CIRCLE_DASHED, "Circle", "everything on a ring", LayoutKind::Circle),
+                        (egui_phosphor::regular::SQUARES_FOUR, "Grid", "block grid, grouped by kind", LayoutKind::Grid),
                     ];
-                    for (name, hover, kind) in layouts {
-                        if ui
-                            .button(name)
+                    for (icon, name, hover, kind) in layouts {
+                        if tb_button(ui, icon, name)
                             .on_hover_text(format!("{hover} — selection if any, else all"))
                             .clicked()
                         {
                             self.apply_layout(ui, kind)?;
                         }
                     }
-                    ui.label(RichText::new("layout:").weak().small());
+                    ui.label(RichText::new("layout:").weak());
                     Ok(())
                 },
             )
@@ -150,13 +149,21 @@ impl RedstringApp {
             .show(ui.ctx(), |ui| {
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
-                        ui.set_min_width(110.0);
-                        ui.selectable_value(&mut self.settings_tab, SettingsTab::General, "General");
-                        ui.selectable_value(&mut self.settings_tab, SettingsTab::ApiKeys, "API keys");
+                        ui.set_min_width(120.0);
+                        ui.selectable_value(
+                            &mut self.settings_tab,
+                            SettingsTab::General,
+                            format!("{} General", egui_phosphor::regular::SLIDERS_HORIZONTAL),
+                        );
+                        ui.selectable_value(
+                            &mut self.settings_tab,
+                            SettingsTab::ApiKeys,
+                            format!("{} API keys", egui_phosphor::regular::KEY),
+                        );
                     });
                     ui.separator();
                     ui.vertical(|ui| {
-                        ui.set_min_width(300.0);
+                        ui.set_min_width(320.0);
                         match self.settings_tab {
                             SettingsTab::General => changed |= general_tab(ui, &mut self.prefs),
                             SettingsTab::ApiKeys => changed |= api_keys_tab(ui, &mut self.prefs),
@@ -238,7 +245,7 @@ impl RedstringApp {
 fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label("UI scale");
+        ui.label(format!("{} UI scale", egui_phosphor::regular::MAGNIFYING_GLASS));
         let slider = ui.add(
             egui::Slider::new(&mut prefs.ui_scale, 0.75..=3.0)
                 .step_by(0.05)
@@ -248,50 +255,51 @@ fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
             changed = true;
         }
     });
+    ui.add_space(super::style::GAP_SM);
     ui.horizontal(|ui| {
-        ui.label("theme");
+        ui.label(format!("{} theme", egui_phosphor::regular::PALETTE));
         changed |= ui.selectable_value(&mut prefs.theme, Theme::Dark, "dark").clicked();
         changed |= ui.selectable_value(&mut prefs.theme, Theme::Light, "light").clicked();
     });
     changed
 }
 
+
+
+const API_SERVICES: [(&str, &str, &str); 1] = [(
+    "web_archive",
+    "Web Archive",
+    egui_phosphor::regular::GLOBE_SIMPLE,
+)];
+
 fn api_keys_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     let mut changed = false;
-    ui.label(RichText::new("keys for lookup services — stored in prefs.ron").weak());
-    ui.add_space(4.0);
-    let mut remove: Option<usize> = None;
-    for (i, (name, key)) in prefs.api_keys.iter_mut().enumerate() {
+    ui.label(RichText::new("keys for lookup services — stored locally, never in the case").weak());
+    ui.add_space(super::style::GAP_SM);
+    for (id, label, icon) in API_SERVICES {
+        let key = ensure_key(&mut prefs.api_keys, id);
         ui.horizontal(|ui| {
-            changed |= ui
-                .add(egui::TextEdit::singleline(name).desired_width(110.0).hint_text("service"))
-                .lost_focus();
+            ui.label(format!("{icon} {label}"));
             changed |= ui
                 .add(
                     egui::TextEdit::singleline(key)
-                        .desired_width(180.0)
+                        .desired_width(200.0)
                         .password(true)
-                        .hint_text("key"),
+                        .hint_text("paste key"),
                 )
                 .lost_focus();
-            if ui
-                .button(egui_phosphor::regular::TRASH)
-                .on_hover_text("remove key")
-                .clicked()
-            {
-                remove = Some(i);
-            }
         });
-    }
-    changed |= remove.is_some();
-    drop_key(&mut prefs.api_keys, remove);
-    if ui.button("+ key").clicked() {
-        prefs.api_keys.push((String::new(), String::new()));
     }
     changed
 }
 
-fn drop_key(keys: &mut Vec<(String, String)>, marked: Option<usize>) {
-    let Some(i) = marked else { return };
-    keys.remove(i);
+
+fn ensure_key<'a>(keys: &'a mut Vec<(String, String)>, id: &str) -> &'a mut String {
+    let pos = keys.iter().position(|(k, _)| k == id);
+    let Some(p) = pos else {
+        keys.push((id.to_owned(), String::new()));
+        let last = keys.len() - 1;
+        return &mut keys[last].1;
+    };
+    &mut keys[p].1
 }

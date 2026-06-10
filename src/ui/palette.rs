@@ -4,14 +4,14 @@ use crate::error::Error;
 use crate::model::{CATEGORY_META, KIND_META, KindMeta};
 
 use super::app::RedstringApp;
+use super::style;
 
 const SEARCH_TEXT: f32 = 19.0;
-const SEARCH_BTN: f32 = 16.0;
 
 impl RedstringApp {
     pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.vertical_centered(|ui| -> Result<(), Error> {
-            if ui.button("⏵").on_hover_text("expand sidebar").clicked() {
+            if style::square_btn(ui, egui_phosphor::regular::CARET_RIGHT, "expand palette")? {
                 self.prefs.sidebar_collapsed = false;
                 self.prefs.save()?;
             }
@@ -25,35 +25,25 @@ impl RedstringApp {
             ui.with_layout(
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| -> Result<(), Error> {
-                    let row_h = ui.spacing().interact_size.y * 1.5;
-                    let square = Vec2::splat(row_h);
-                    if ui
-                        .add_sized(
-                            square,
-                            egui::Button::new(RichText::new("⏴").size(SEARCH_BTN)),
-                        )
-                        .on_hover_text("collapse sidebar")
-                        .clicked()
-                    {
+                    if style::square_btn(ui, egui_phosphor::regular::CARET_LEFT, "collapse palette")? {
                         self.prefs.sidebar_collapsed = true;
                         self.prefs.save()?;
                     }
-                    if ui
-                        .add_sized(
-                            square,
-                            egui::Button::new(RichText::new("✖").size(SEARCH_BTN)),
-                        )
-                        .on_hover_text("clear search")
-                        .clicked()
-                    {
+                    if style::square_btn(ui, egui_phosphor::regular::X, "clear search")? {
                         self.kind_search.clear();
                     }
                     ui.add_sized(
-                        Vec2::new(ui.available_width(), row_h),
+                        Vec2::new(ui.available_width(), style::ROW_H),
                         egui::TextEdit::singleline(&mut self.kind_search)
                             .font(egui::FontId::proportional(SEARCH_TEXT))
                             .vertical_align(egui::Align::Center)
-                            .hint_text(RichText::new("🔍 search").size(SEARCH_TEXT)),
+                            .hint_text(
+                                RichText::new(format!(
+                                    "{} search",
+                                    egui_phosphor::regular::MAGNIFYING_GLASS
+                                ))
+                                .size(SEARCH_TEXT),
+                            ),
                     );
                     Ok(())
                 },

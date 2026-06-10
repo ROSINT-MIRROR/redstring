@@ -74,12 +74,12 @@ pub struct EntityNodeShape {
 impl From<NodeProps<Entity>> for EntityNodeShape {
     fn from(props: NodeProps<Entity>) -> Self {
         let mut circle = DefaultNodeShape::from(props.clone());
-        circle.radius = NODE_RADIUS * props.payload.size;
+        circle.radius = NODE_RADIUS * props.payload.size * props.payload.boost;
         Self {
             image: props.payload.image.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: props.payload.label.clone(),
-            size: props.payload.size,
+            size: props.payload.size * props.payload.boost,
             circle,
             tex_ok: false,
         }
@@ -115,7 +115,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = state.payload.label.clone();
-        self.size = state.payload.size;
+        self.size = state.payload.size * state.payload.boost;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
         
         self.circle.radius = NODE_RADIUS * self.size;

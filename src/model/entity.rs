@@ -197,12 +197,20 @@ pub struct Entity {
     pub image: Option<String>,
     #[serde(default = "default_node_size")]
     pub size: f32,
+
+
+    #[serde(skip, default = "default_boost")]
+    pub boost: f32,
 }
 
 pub const DEFAULT_NODE_SIZE: f32 = 2.0;
 
 fn default_node_size() -> f32 {
     DEFAULT_NODE_SIZE
+}
+
+fn default_boost() -> f32 {
+    1.0
 }
 
 impl Entity {
@@ -244,6 +252,7 @@ mod tests {
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
         };
         let added = e.merge_template_attrs().unwrap();
         assert_eq!(added, 4);

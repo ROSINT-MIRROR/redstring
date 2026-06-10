@@ -51,6 +51,7 @@ impl RedstringApp {
             });
         }
         cf.display.camera = camera_read(ui)?;
+        cf.display.size_by_degree = self.size_by_degree;
         Ok(cf)
     }
 
@@ -100,7 +101,7 @@ impl RedstringApp {
             ));
         }
         parts.sort();
-        parts.insert(0, self.case_name.clone());
+        parts.insert(0, format!("{}|{}", self.case_name, self.size_by_degree));
         Ok(parts.join("\n"))
     }
 
@@ -254,6 +255,7 @@ impl RedstringApp {
                 note,
                 image: image_abs(&project, &er.image)?,
                 size: size_of(&cf.display, &er.slug),
+                boost: 1.0,
             };
             upgraded += ent.merge_template_attrs()?;
             let idx = g.add_node_with_label_and_location(
@@ -283,6 +285,7 @@ impl RedstringApp {
 
         self.g = g;
         self.case_name = cf.meta.name.clone();
+        self.size_by_degree = cf.display.size_by_degree;
         self.edge_drag = None;
         self.pending_edge = None;
         self.node_drag = None;

@@ -318,17 +318,18 @@ impl RedstringApp {
         };
         let mf = meta(ui)?;
         let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
-        let half = base * e.size * mf.zoom;
-        let font_px = (LABEL_SIZE * e.size * mf.zoom).min(MAX_LABEL_PX);
+        let vsize = e.size * e.boost;
+        let half = base * vsize * mf.zoom;
+        let font_px = (LABEL_SIZE * vsize * mf.zoom).min(MAX_LABEL_PX);
         let mut job = egui::text::LayoutJob::simple(
             e.label.clone(),
             egui::FontId::new(font_px, egui::FontFamily::Monospace),
             egui::Color32::WHITE,
-            LABEL_WRAP * e.size * mf.zoom,
+            LABEL_WRAP * vsize * mf.zoom,
         );
         job.halign = egui::Align::Center;
         let galley = ui.ctx().fonts_mut(|f| f.layout_job(job));
-        let gap = LABEL_GAP * e.size * mf.zoom;
+        let gap = LABEL_GAP * vsize * mf.zoom;
         let top_left = egui::Pos2::new(center.x - galley.size().x / 2.0, center.y + half + gap);
         Ok(Some((
             Rect::from_min_size(top_left, galley.size()).expand(4.0),

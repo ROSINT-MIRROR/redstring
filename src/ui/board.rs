@@ -165,7 +165,7 @@ impl RedstringApp {
         };
         let mf = meta(ui)?;
         let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
-        let corner = center + Vec2::splat(base * e.size * mf.zoom);
+        let corner = center + Vec2::splat(base * e.size * e.boost * mf.zoom);
         Ok(Some((idx, Rect::from_center_size(corner, Vec2::splat(14.0)))))
     }
 
@@ -344,7 +344,7 @@ impl RedstringApp {
                 NODE_RADIUS
             };
             let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
-            let half = base * e.size * mf.zoom;
+            let half = base * e.size * e.boost * mf.zoom;
             let hit = band.intersects(Rect::from_center_size(center, Vec2::splat(half * 2.0)));
             let Some(n) = self.g.node_mut(idx) else {
                 continue;
@@ -369,6 +369,7 @@ impl RedstringApp {
         } else {
             NODE_RADIUS
         };
+        let boost = e.boost;
         let loc = node.location();
 
         let mf = meta(ui)?;
@@ -392,7 +393,7 @@ impl RedstringApp {
             let d = p - center;
 
             let new_half = d.x.max(d.y).max(4.0);
-            self.set_node_size(idx, (new_half / mf.zoom / base).clamp(0.5, 12.0))?;
+            self.set_node_size(idx, (new_half / mf.zoom / base / boost).clamp(0.5, 12.0))?;
         }
         if resp.drag_stopped() {
             self.resize = None;

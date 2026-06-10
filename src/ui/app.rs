@@ -52,6 +52,8 @@ pub struct RedstringApp {
     pub label_edit_buf: String,
     pub label_edit_focus: bool,
 
+    pub new_attr_key: String,
+
     pub resize: Option<NodeIndex>,
 
     pub prefs_open: bool,
@@ -61,6 +63,9 @@ pub struct RedstringApp {
     pub allow_close: bool,
 
     pub saved_fp: String,
+
+
+    pub size_by_degree: bool,
 
     pub show_welcome: bool,
 
@@ -104,6 +109,7 @@ impl RedstringApp {
             label_edit: None,
             label_edit_buf: String::new(),
             label_edit_focus: false,
+            new_attr_key: String::new(),
             resize: None,
             node_drag: None,
             band: None,
@@ -114,6 +120,7 @@ impl RedstringApp {
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
+            size_by_degree: false,
             show_welcome: false,
             welcome_name: String::new(),
             board_size: Vec2::ZERO,
@@ -158,6 +165,11 @@ impl RedstringApp {
         ctx.all_styles_mut(|s| {
             s.text_styles
                 .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+
+            s.spacing.item_spacing = Vec2::new(8.0, 6.0);
+            s.spacing.button_padding = Vec2::new(8.0, 5.0);
+            s.spacing.window_margin = Margin::same(12);
+            s.spacing.menu_margin = Margin::same(8);
         });
         Ok(())
     }
@@ -202,7 +214,7 @@ impl RedstringApp {
 
         let strip = egui::Panel::left("left_strip")
             .resizable(false)
-            .exact_size(26.0)
+            .exact_size(super::style::STRIP_W + 8.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
 
         let expanded = egui::Panel::left("left")
@@ -225,7 +237,7 @@ impl RedstringApp {
         .inner?;
         let insp_strip = egui::Panel::right("right_strip")
             .resizable(false)
-            .exact_size(26.0)
+            .exact_size(super::style::STRIP_W + 8.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
         let insp_expanded = egui::Panel::right("right")
             .resizable(true)

@@ -109,17 +109,18 @@ impl RedstringApp {
             } else {
                 NODE_RADIUS
             };
-            let half = base * e.size;
+            let vsize = e.size * e.boost;
+            let half = base * vsize;
             let label = ui.ctx().fonts_mut(|f| {
                 f.layout(
                     e.label.clone(),
-                    egui::FontId::monospace(LABEL_SIZE * e.size),
+                    egui::FontId::monospace(LABEL_SIZE * vsize),
                     egui::Color32::WHITE,
-                    LABEL_WRAP * e.size,
+                    LABEL_WRAP * vsize,
                 )
             });
             let w = (2.0 * half).max(label.size().x);
-            let h = 2.0 * half + LABEL_GAP * e.size + label.size().y;
+            let h = 2.0 * half + LABEL_GAP * vsize + label.size().y;
             max_footprint = max_footprint.max(w.max(h));
         }
         STEP.max(max_footprint + STEP_MARGIN)
