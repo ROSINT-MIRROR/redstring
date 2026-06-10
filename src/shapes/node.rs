@@ -32,12 +32,12 @@ const BORDER: f32 = 1.0;
 const BORDER_ACTIVE: f32 = 2.0;
 
 
-pub const NODE_RADIUS: f32 = 8.0;
+pub const NODE_RADIUS: f32 = 11.0;
 
-const ICON_SIZE: f32 = 15.0;
+const ICON_SIZE: f32 = 20.0;
 
-const LABEL_SIZE: f32 = 10.0;
-const LABEL_GAP: f32 = 2.0;
+pub const LABEL_SIZE: f32 = 7.0;
+pub const LABEL_GAP: f32 = 2.0;
 
 
 const MAX_TEX_SIDE: u32 = 512;

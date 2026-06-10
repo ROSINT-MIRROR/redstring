@@ -48,7 +48,7 @@ pub struct RedstringApp {
     pub verb_filter: String,
     pub verb_filter_focus: bool,
 
-    pub label_edit: Option<(NodeIndex, Pos2)>,
+    pub label_edit: Option<NodeIndex>,
     pub label_edit_buf: String,
     pub label_edit_focus: bool,
 

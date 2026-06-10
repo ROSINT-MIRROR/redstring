@@ -1,11 +1,17 @@
+use egui::text::{CCursor, CCursorRange};
 use egui::{Rect, RichText, Shape, Stroke};
 use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind};
+use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, NODE_RADIUS};
 
 use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
+
+const MAX_LABEL_PX: f32 = 256.0;
+const MIN_EDIT_PX: f32 = 10.0;
+const MIN_EDIT_W: f32 = 80.0;
 
 impl RedstringApp {
     pub fn edge_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
@@ -179,43 +185,55 @@ impl RedstringApp {
         true
     }
 
-    pub fn label_editor(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
-        let Some((idx, at)) = self.label_edit else {
+    pub fn label_editor(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
+        self.label_double_click(ui, rect)?;
+        let Some(idx) = self.label_edit else {
             return Ok(());
         };
-        if self.g.node(idx).is_none() {
+        let Some((zone, font_px)) = self.label_zone(ui, rect, idx)? else {
             self.label_edit = None;
             return Ok(());
-        }
+        };
 
         let mut commit = false;
         let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
         let area = egui::Area::new(egui::Id::new("rs_label_edit"))
             .order(egui::Order::Foreground)
-            .fixed_pos(at)
+            .fixed_pos(zone.left_top())
             .constrain(true)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.label(RichText::new("name the entity").small().weak());
-                    let edit = ui.text_edit_singleline(&mut self.label_edit_buf);
-                    if std::mem::take(&mut self.label_edit_focus) {
-                        edit.request_focus();
-                    }
-                    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        commit = true;
-                    }
-                });
+                let out = egui::TextEdit::singleline(&mut self.label_edit_buf)
+                    .font(egui::FontId::new(
+                        font_px.max(MIN_EDIT_PX),
+                        egui::FontFamily::Monospace,
+                    ))
+                    .desired_width(zone.width().max(MIN_EDIT_W))
+                    .margin(egui::Margin::symmetric(4, 2))
+                    .show(ui);
+                if std::mem::take(&mut self.label_edit_focus) {
+                    out.response.request_focus();
+                    let mut state = out.state;
+                    state.cursor.set_char_range(Some(CCursorRange::two(
+                        CCursor::new(0),
+                        CCursor::new(self.label_edit_buf.chars().count()),
+                    )));
+                    state.store(ui.ctx(), out.response.id);
+                }
+                if out.response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    commit = true;
+                }
             });
 
         if area.response.clicked_elsewhere() {
-            close = true;
+            commit = true;
         }
         if commit {
             let label = self.label_edit_buf.trim().to_owned();
-            if !label.is_empty() {
+            if !label.is_empty() && label != self.node_payload_label(idx) {
                 self.apply_label(idx, &label)?;
-                self.status = format!("added {label}");
+                self.sync_visuals()?;
+                self.status = format!("named {label}");
             }
             close = true;
         }
@@ -223,5 +241,82 @@ impl RedstringApp {
             self.label_edit = None;
         }
         Ok(())
+    }
+
+    fn label_double_click(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
+        if self.label_edit.is_some() {
+            return Ok(());
+        }
+        let (dbl, pointer) = ui.input(|i| {
+            (
+                i.pointer.button_double_clicked(egui::PointerButton::Primary),
+                i.pointer.interact_pos(),
+            )
+        });
+        if !dbl {
+            return Ok(());
+        }
+        let Some(p) = pointer.filter(|p| rect.contains(*p)) else {
+            return Ok(());
+        };
+        let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
+        for idx in nodes {
+            let Some((zone, _)) = self.label_zone(ui, rect, idx)? else {
+                continue;
+            };
+            if zone.contains(p) {
+                self.start_label_edit(idx)?;
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn start_label_edit(&mut self, idx: NodeIndex) -> Result<(), Error> {
+        self.label_edit_buf = self.node_payload_label(idx);
+        self.label_edit = Some(idx);
+        self.label_edit_focus = true;
+        Ok(())
+    }
+
+    fn node_payload_label(&self, idx: NodeIndex) -> String {
+        let Some(n) = self.g.node(idx) else {
+            return String::new();
+        };
+        n.payload().label.clone()
+    }
+
+    fn label_zone(
+        &self,
+        ui: &egui::Ui,
+        rect: Rect,
+        idx: NodeIndex,
+    ) -> Result<Option<(Rect, f32)>, Error> {
+        let Some(node) = self.g.node(idx) else {
+            return Ok(None);
+        };
+        let e = node.payload();
+        let base = if e.image.is_some() {
+            IMG_RADIUS
+        } else {
+            NODE_RADIUS
+        };
+        let mf = meta(ui)?;
+        let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
+        let half = base * e.size * mf.zoom;
+        let font_px = (LABEL_SIZE * e.size * mf.zoom).min(MAX_LABEL_PX);
+        let galley = ui.ctx().fonts_mut(|f| {
+            f.layout_no_wrap(
+                e.label.clone(),
+                egui::FontId::new(font_px, egui::FontFamily::Monospace),
+                egui::Color32::WHITE,
+            )
+        });
+        let gap = LABEL_GAP * e.size * mf.zoom;
+        let top_left = egui::Pos2::new(center.x - galley.size().x / 2.0, center.y + half + gap);
+        Ok(Some((
+            Rect::from_min_size(top_left, galley.size()).expand(4.0),
+            font_px,
+        )))
     }
 }

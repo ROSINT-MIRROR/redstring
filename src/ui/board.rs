@@ -116,7 +116,7 @@ impl RedstringApp {
         self.resize_handle(ui, rect)?;
         self.kind_drop(ui, rect)?;
         self.verb_picker(ui)?;
-        self.label_editor(ui)?;
+        self.label_editor(ui, rect)?;
         Ok(())
     }
 
@@ -299,9 +299,6 @@ impl RedstringApp {
         let canvas = meta(ui)?.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
         let idx = self.add_entity(kind, KIND_META[kind as usize].label.to_owned(), canvas)?;
         self.ne_kind = kind;
-        self.label_edit = Some((idx, p));
-        self.label_edit_buf.clear();
-        self.label_edit_focus = true;
-        Ok(())
+        self.start_label_edit(idx)
     }
 }
