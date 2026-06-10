@@ -646,21 +646,23 @@ impl RedstringApp {
                 ui.horizontal_wrapped(|ui| {
                     for k in EntityKind::ALL {
                         let cat_color = EntityKind::category_color(k.category());
-                        let cell = egui::Button::selectable(
-                            self.ne_kind == k,
-                            RichText::new(format!("{} {}", k.icon(), k.label()))
-                                .color(k.color())
-                                .size(16.0f32),
-                        )
-                        .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)));
-                        let resp = ui.dnd_drag_source(
-                            egui::Id::new(("ne_kind_drag", k.label())),
-                            k,
-                            |ui| ui.add(cell),
+                        // added straight to the wrapped ui — wrapping only works
+                        // for direct children (dnd_drag_source's inner scope
+                        // breaks it: everything lands on one endless row)
+                        let resp = ui.add(
+                            egui::Button::selectable(
+                                self.ne_kind == k,
+                                RichText::new(format!("{} {}", k.icon(), k.label()))
+                                    .color(k.color())
+                                    .size(16.0f32),
+                            )
+                            .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
+                            .sense(egui::Sense::click_and_drag()),
                         );
-                        if resp.inner.clicked() || resp.response.clicked() {
+                        if resp.clicked() {
                             self.ne_kind = k;
                         }
+                        resp.dnd_set_drag_payload(k);
                     }
                 });
             });
