@@ -68,6 +68,11 @@ pub struct RedstringApp {
     pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
     verb_filter: String,
     verb_filter_focus: bool,
+    // inline name editor for an entity just dropped from the kind picker:
+    // (node, popup screen pos); buf is the in-progress label text
+    label_edit: Option<(NodeIndex, Pos2)>,
+    label_edit_buf: String,
+    label_edit_focus: bool,
 
     // add-source form (targets the selected relation)
     ns_kind: SourceKind,
@@ -95,6 +100,9 @@ impl RedstringApp {
             pending_edge: None,
             verb_filter: String::new(),
             verb_filter_focus: false,
+            label_edit: None,
+            label_edit_buf: String::new(),
+            label_edit_focus: false,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -623,49 +631,38 @@ impl RedstringApp {
             });
     }
 
-    /// Add-entity kind picker: kinds grouped under their broad ontology
-    /// category, each section headed and tinted with the category's anchor
-    /// colour, big 2× cells coloured per kind. Scroll area resized by dragging
-    /// the handle under it (height persisted in prefs).
+    /// Add-entity kind picker: a responsive wrapped flow of every kind (ALL is
+    /// category-grouped, so the ontology reads left-to-right), each cell
+    /// outlined in its category's anchor colour with the kind's own colour on
+    /// the text. Cells are drag sources — drop one on the board to spawn an
+    /// entity there. Scroll area resized by dragging the handle under it
+    /// (height persisted in prefs).
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
-        const MIN_CELL_W: f32 = 120.0;
-        let gap = ui.spacing().item_spacing.x;
-        let avail = ui.available_width();
-        let cols = (((avail + gap) / (MIN_CELL_W + gap)) as usize).max(1);
-        let cell_w = (avail - gap * (cols as f32 - 1.0)) / cols as f32;
-        let cell_h = ui.spacing().interact_size.y * 2.0;
-
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
             .max_height(self.prefs.kind_picker_height)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for cat in EntityKind::CATEGORIES {
-                    let cat_color = EntityKind::category_color(cat);
-                    ui.label(RichText::new(cat).color(cat_color).strong());
-                    let kinds: Vec<EntityKind> = EntityKind::ALL
-                        .iter()
-                        .copied()
-                        .filter(|k| k.category() == cat)
-                        .collect();
-                    for row in kinds.chunks(cols) {
-                        ui.horizontal(|ui| {
-                            for &k in row {
-                                let cell = egui::Button::selectable(
-                                    self.ne_kind == k,
-                                    RichText::new(format!("{} {}", k.icon(), k.label()))
-                                        .color(k.color())
-                                        .size(16.0f32),
-                                )
-                                .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
-                                .truncate();
-                                if ui.add_sized([cell_w, cell_h], cell).clicked() {
-                                    self.ne_kind = k;
-                                }
-                            }
-                        });
+                ui.horizontal_wrapped(|ui| {
+                    for k in EntityKind::ALL {
+                        let cat_color = EntityKind::category_color(k.category());
+                        let cell = egui::Button::selectable(
+                            self.ne_kind == k,
+                            RichText::new(format!("{} {}", k.icon(), k.label()))
+                                .color(k.color())
+                                .size(16.0f32),
+                        )
+                        .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)));
+                        let resp = ui.dnd_drag_source(
+                            egui::Id::new(("ne_kind_drag", k.label())),
+                            k,
+                            |ui| ui.add(cell),
+                        );
+                        if resp.inner.clicked() || resp.response.clicked() {
+                            self.ne_kind = k;
+                        }
                     }
-                }
+                });
             });
 
         // drag handle under the grid; persist height once per gesture
@@ -947,7 +944,92 @@ impl RedstringApp {
         );
 
         self.edge_drag_overlay(ui, rect);
+        self.kind_drop(ui, rect);
         self.verb_picker(ui);
+        self.label_editor(ui);
+    }
+
+    /// Accept a kind dragged out of the picker: spawn the entity at the drop
+    /// point and open the inline name editor there, input pre-focused.
+    fn kind_drop(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        if !egui::DragAndDrop::has_payload_of_type::<EntityKind>(ui.ctx()) {
+            return;
+        }
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let over = pointer.is_some_and(|p| rect.contains(p));
+        if over {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+        }
+        if !ui.input(|i| i.pointer.any_released()) {
+            return;
+        }
+        // take (not peek) so a drop outside the board clears the payload too
+        let Some(kind) = egui::DragAndDrop::take_payload::<EntityKind>(ui.ctx()) else {
+            return;
+        };
+        let (Some(p), true) = (pointer, over) else {
+            return;
+        };
+        let kind = *kind;
+        let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        let canvas = mf.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
+        let idx = self.add_entity(kind, kind.label().to_owned(), canvas);
+        self.ne_kind = kind;
+        self.label_edit = Some((idx, p));
+        self.label_edit_buf.clear();
+        self.label_edit_focus = true;
+    }
+
+    /// Inline name editor for a just-dropped entity. Enter commits (label +
+    /// regenerated slug), Esc / click-away keeps the kind-label placeholder.
+    fn label_editor(&mut self, ui: &mut egui::Ui) {
+        let Some((idx, at)) = self.label_edit else {
+            return;
+        };
+        if self.g.node(idx).is_none() {
+            self.label_edit = None; // vanished (delete / hot-reload)
+            return;
+        }
+
+        let mut commit = false;
+        let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        let area = egui::Area::new(egui::Id::new("rs_label_edit"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .constrain(true)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label(RichText::new("name the entity").small().weak());
+                    let edit = ui.text_edit_singleline(&mut self.label_edit_buf);
+                    if std::mem::take(&mut self.label_edit_focus) {
+                        edit.request_focus();
+                    }
+                    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        commit = true;
+                    }
+                });
+            });
+
+        if area.response.clicked_elsewhere() {
+            close = true;
+        }
+        if commit {
+            let label = self.label_edit_buf.trim().to_owned();
+            if !label.is_empty() {
+                let slug = self.unique_slug(&label);
+                if let Some(n) = self.g.node_mut(idx) {
+                    let e = n.payload_mut();
+                    e.label = label.clone();
+                    e.slug = slug;
+                }
+                self.status = format!("added {label}");
+            }
+            close = true;
+        }
+        if close {
+            self.label_edit = None;
+        }
     }
 
     /// Which entity is under an absolute screen position? Camera transform via
