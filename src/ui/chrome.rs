@@ -6,10 +6,10 @@ use crate::prefs::Theme;
 use super::app::RedstringApp;
 
 const TB_ICON: f32 = 22.0;
-const TB_TEXT: f32 = 11.0;
+const TB_TEXT: f32 = 13.0;
 const TB_GAP: f32 = 2.0;
-const TB_NAME: f32 = 20.0;
-const TB_PATH: f32 = 15.0;
+const TB_NAME: f32 = 16.0;
+const TB_PATH: f32 = 12.0;
 
 fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     let icon_galley = ui.painter().layout_no_wrap(
@@ -23,7 +23,7 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
         Color32::PLACEHOLDER,
     );
     let pad = ui.spacing().button_padding;
-    let w = icon_galley.size().x.max(text_galley.size().x) + 2.0 * pad.x + 8.0;
+    let w = icon_galley.size().x.max(text_galley.size().x) + 2.0 * pad.x;
     let h = icon_galley.size().y + text_galley.size().y + 2.0 * pad.y + TB_GAP;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     let visuals = ui.style().interact(&resp);
