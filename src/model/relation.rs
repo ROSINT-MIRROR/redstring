@@ -1,17 +1,9 @@
-//! The verb on the red string. Edges are directed and the board renders them
-//! `A —label→ B`, so every label is phrased to sit between subject and object:
-//! "doe —beneficial owner of→ shell_co", "shell_co —registered at→ registry".
-
 use serde::{Deserialize, Serialize};
 
 use super::source::Source;
 
-/// Relation vocabulary, grouped by investigation family — see `category`.
-/// Both the enum and `ALL` keep that grouping order, so anything iterating
-/// `ALL` comes out visually grouped for free.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum RelationKind {
-    // ownership/control
     Owns,
     PartOwns,
     ShareholderOf,
@@ -22,7 +14,6 @@ pub enum RelationKind {
     Founded,
     Dissolved,
     Acquired,
-    // roles
     DirectorOf,
     CeoOf,
     BoardMemberOf,
@@ -33,7 +24,6 @@ pub enum RelationKind {
     AgentOf,
     AdvisorTo,
     Represents,
-    // people
     MarriedTo,
     PartnerOf,
     ParentOf,
@@ -44,14 +34,12 @@ pub enum RelationKind {
     AssociateOf,
     AliasOf,
     SameAs,
-    // comms/meetings
     MetWith,
     CommunicatedWith,
     Emailed,
     Called,
     Messaged,
     Introduced,
-    // money
     Paid,
     Financed,
     LoanedTo,
@@ -62,7 +50,6 @@ pub enum RelationKind {
     TransferredTo,
     LaunderedThrough,
     Owes,
-    // legal/state
     Sued,
     Prosecuted,
     Investigated,
@@ -73,14 +60,12 @@ pub enum RelationKind {
     LicensedBy,
     RegisteredAt,
     IncorporatedIn,
-    // digital/infra
     OwnsDomain,
     Hosts,
     ResolvesTo,
     UsesAccount,
     Operates,
     Accessed,
-    // movement/physical
     LocatedAt,
     ResidesAt,
     TraveledTo,
@@ -88,7 +73,6 @@ pub enum RelationKind {
     Supplied,
     Smuggled,
     ShippedTo,
-    // info
     ReportedOn,
     LeakedTo,
     SourceFor,
@@ -97,330 +81,133 @@ pub enum RelationKind {
     Witnessed,
     MentionedIn,
     AppearedIn,
-    // fallback
     RelatedTo,
 }
 
-impl RelationKind {
-    /// Iteration order for every verb picker. Category-ordered in contiguous
-    /// runs — a test below enforces it — so lists read grouped.
-    pub const ALL: [RelationKind; 78] = [
-        // ownership/control
-        Self::Owns,
-        Self::PartOwns,
-        Self::ShareholderOf,
-        Self::BeneficialOwnerOf,
-        Self::Controls,
-        Self::SubsidiaryOf,
-        Self::Manages,
-        Self::Founded,
-        Self::Dissolved,
-        Self::Acquired,
-        // roles
-        Self::DirectorOf,
-        Self::CeoOf,
-        Self::BoardMemberOf,
-        Self::MemberOf,
-        Self::EmployeeOf,
-        Self::ContractorFor,
-        Self::LawyerFor,
-        Self::AgentOf,
-        Self::AdvisorTo,
-        Self::Represents,
-        // people
-        Self::MarriedTo,
-        Self::PartnerOf,
-        Self::ParentOf,
-        Self::ChildOf,
-        Self::SiblingOf,
-        Self::RelativeOf,
-        Self::FriendOf,
-        Self::AssociateOf,
-        Self::AliasOf,
-        Self::SameAs,
-        // comms/meetings
-        Self::MetWith,
-        Self::CommunicatedWith,
-        Self::Emailed,
-        Self::Called,
-        Self::Messaged,
-        Self::Introduced,
-        // money
-        Self::Paid,
-        Self::Financed,
-        Self::LoanedTo,
-        Self::DonatedTo,
-        Self::InvestedIn,
-        Self::Bribed,
-        Self::Invoiced,
-        Self::TransferredTo,
-        Self::LaunderedThrough,
-        Self::Owes,
-        // legal/state
-        Self::Sued,
-        Self::Prosecuted,
-        Self::Investigated,
-        Self::Sanctioned,
-        Self::ConvictedOf,
-        Self::WitnessIn,
-        Self::RegulatedBy,
-        Self::LicensedBy,
-        Self::RegisteredAt,
-        Self::IncorporatedIn,
-        // digital/infra
-        Self::OwnsDomain,
-        Self::Hosts,
-        Self::ResolvesTo,
-        Self::UsesAccount,
-        Self::Operates,
-        Self::Accessed,
-        // movement/physical
-        Self::LocatedAt,
-        Self::ResidesAt,
-        Self::TraveledTo,
-        Self::Transported,
-        Self::Supplied,
-        Self::Smuggled,
-        Self::ShippedTo,
-        // info
-        Self::ReportedOn,
-        Self::LeakedTo,
-        Self::SourceFor,
-        Self::Authored,
-        Self::Signed,
-        Self::Witnessed,
-        Self::MentionedIn,
-        Self::AppearedIn,
-        // fallback
-        Self::RelatedTo,
-    ];
+pub struct RelMeta {
+    pub kind: RelationKind,
+    pub label: &'static str,
+    pub category: &'static str,
+}
 
-    pub fn label(self) -> &'static str {
-        match self {
-            // ownership/control
-            Self::Owns => "owns",
-            Self::PartOwns => "part-owns",
-            Self::ShareholderOf => "shareholder of",
-            Self::BeneficialOwnerOf => "beneficial owner of",
-            Self::Controls => "controls",
-            Self::SubsidiaryOf => "subsidiary of",
-            Self::Manages => "manages",
-            Self::Founded => "founded",
-            Self::Dissolved => "dissolved",
-            Self::Acquired => "acquired",
-            // roles
-            Self::DirectorOf => "director of",
-            Self::CeoOf => "CEO of",
-            Self::BoardMemberOf => "board member of",
-            Self::MemberOf => "member of",
-            Self::EmployeeOf => "employee of",
-            Self::ContractorFor => "contractor for",
-            Self::LawyerFor => "lawyer for",
-            Self::AgentOf => "agent of",
-            Self::AdvisorTo => "advisor to",
-            Self::Represents => "represents",
-            // people
-            Self::MarriedTo => "married to",
-            Self::PartnerOf => "partner of",
-            Self::ParentOf => "parent of",
-            Self::ChildOf => "child of",
-            Self::SiblingOf => "sibling of",
-            Self::RelativeOf => "relative of",
-            Self::FriendOf => "friend of",
-            Self::AssociateOf => "associate of",
-            Self::AliasOf => "alias of",
-            Self::SameAs => "same as",
-            // comms/meetings
-            Self::MetWith => "met with",
-            Self::CommunicatedWith => "communicated with",
-            Self::Emailed => "emailed",
-            Self::Called => "called",
-            Self::Messaged => "messaged",
-            Self::Introduced => "introduced",
-            // money
-            Self::Paid => "paid",
-            Self::Financed => "financed",
-            Self::LoanedTo => "loaned to",
-            Self::DonatedTo => "donated to",
-            Self::InvestedIn => "invested in",
-            Self::Bribed => "bribed",
-            Self::Invoiced => "invoiced",
-            Self::TransferredTo => "transferred to",
-            Self::LaunderedThrough => "laundered through",
-            Self::Owes => "owes",
-            // legal/state
-            Self::Sued => "sued",
-            Self::Prosecuted => "prosecuted",
-            Self::Investigated => "investigated",
-            Self::Sanctioned => "sanctioned",
-            Self::ConvictedOf => "convicted of",
-            Self::WitnessIn => "witness in",
-            Self::RegulatedBy => "regulated by",
-            Self::LicensedBy => "licensed by",
-            Self::RegisteredAt => "registered at",
-            Self::IncorporatedIn => "incorporated in",
-            // digital/infra
-            Self::OwnsDomain => "owns domain",
-            Self::Hosts => "hosts",
-            Self::ResolvesTo => "resolves to",
-            Self::UsesAccount => "uses account",
-            Self::Operates => "operates",
-            Self::Accessed => "accessed",
-            // movement/physical
-            Self::LocatedAt => "located at",
-            Self::ResidesAt => "resides at",
-            Self::TraveledTo => "traveled to",
-            Self::Transported => "transported",
-            Self::Supplied => "supplied",
-            Self::Smuggled => "smuggled",
-            Self::ShippedTo => "shipped to",
-            // info
-            Self::ReportedOn => "reported on",
-            Self::LeakedTo => "leaked to",
-            Self::SourceFor => "source for",
-            Self::Authored => "authored",
-            Self::Signed => "signed",
-            Self::Witnessed => "witnessed",
-            Self::MentionedIn => "mentioned in",
-            Self::AppearedIn => "appeared in",
-            // fallback
-            Self::RelatedTo => "related to",
-        }
-    }
-
-    /// Investigation family of the verb — grouping key for picker UIs.
-    /// Stable display strings, ordered as in `ALL`.
-    pub fn category(self) -> &'static str {
-        match self {
-            Self::Owns
-            | Self::PartOwns
-            | Self::ShareholderOf
-            | Self::BeneficialOwnerOf
-            | Self::Controls
-            | Self::SubsidiaryOf
-            | Self::Manages
-            | Self::Founded
-            | Self::Dissolved
-            | Self::Acquired => "ownership/control",
-            Self::DirectorOf
-            | Self::CeoOf
-            | Self::BoardMemberOf
-            | Self::MemberOf
-            | Self::EmployeeOf
-            | Self::ContractorFor
-            | Self::LawyerFor
-            | Self::AgentOf
-            | Self::AdvisorTo
-            | Self::Represents => "roles",
-            Self::MarriedTo
-            | Self::PartnerOf
-            | Self::ParentOf
-            | Self::ChildOf
-            | Self::SiblingOf
-            | Self::RelativeOf
-            | Self::FriendOf
-            | Self::AssociateOf
-            | Self::AliasOf
-            | Self::SameAs => "people",
-            Self::MetWith
-            | Self::CommunicatedWith
-            | Self::Emailed
-            | Self::Called
-            | Self::Messaged
-            | Self::Introduced => "comms/meetings",
-            Self::Paid
-            | Self::Financed
-            | Self::LoanedTo
-            | Self::DonatedTo
-            | Self::InvestedIn
-            | Self::Bribed
-            | Self::Invoiced
-            | Self::TransferredTo
-            | Self::LaunderedThrough
-            | Self::Owes => "money",
-            Self::Sued
-            | Self::Prosecuted
-            | Self::Investigated
-            | Self::Sanctioned
-            | Self::ConvictedOf
-            | Self::WitnessIn
-            | Self::RegulatedBy
-            | Self::LicensedBy
-            | Self::RegisteredAt
-            | Self::IncorporatedIn => "legal/state",
-            Self::OwnsDomain
-            | Self::Hosts
-            | Self::ResolvesTo
-            | Self::UsesAccount
-            | Self::Operates
-            | Self::Accessed => "digital/infra",
-            Self::LocatedAt
-            | Self::ResidesAt
-            | Self::TraveledTo
-            | Self::Transported
-            | Self::Supplied
-            | Self::Smuggled
-            | Self::ShippedTo => "movement/physical",
-            Self::ReportedOn
-            | Self::LeakedTo
-            | Self::SourceFor
-            | Self::Authored
-            | Self::Signed
-            | Self::Witnessed
-            | Self::MentionedIn
-            | Self::AppearedIn => "info",
-            Self::RelatedTo => "fallback",
-        }
+const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> RelMeta {
+    RelMeta {
+        kind,
+        label,
+        category,
     }
 }
 
-/// Edge payload — carries the sources. An unsourced relation is an unproven
-/// assertion and the board flags it visibly.
+#[rustfmt::skip]
+pub const RELATION_META: [RelMeta; 78] = [
+    r(RelationKind::Owns, "owns", "ownership/control"),
+    r(RelationKind::PartOwns, "part-owns", "ownership/control"),
+    r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
+    r(RelationKind::BeneficialOwnerOf, "beneficial owner of", "ownership/control"),
+    r(RelationKind::Controls, "controls", "ownership/control"),
+    r(RelationKind::SubsidiaryOf, "subsidiary of", "ownership/control"),
+    r(RelationKind::Manages, "manages", "ownership/control"),
+    r(RelationKind::Founded, "founded", "ownership/control"),
+    r(RelationKind::Dissolved, "dissolved", "ownership/control"),
+    r(RelationKind::Acquired, "acquired", "ownership/control"),
+    r(RelationKind::DirectorOf, "director of", "roles"),
+    r(RelationKind::CeoOf, "CEO of", "roles"),
+    r(RelationKind::BoardMemberOf, "board member of", "roles"),
+    r(RelationKind::MemberOf, "member of", "roles"),
+    r(RelationKind::EmployeeOf, "employee of", "roles"),
+    r(RelationKind::ContractorFor, "contractor for", "roles"),
+    r(RelationKind::LawyerFor, "lawyer for", "roles"),
+    r(RelationKind::AgentOf, "agent of", "roles"),
+    r(RelationKind::AdvisorTo, "advisor to", "roles"),
+    r(RelationKind::Represents, "represents", "roles"),
+    r(RelationKind::MarriedTo, "married to", "people"),
+    r(RelationKind::PartnerOf, "partner of", "people"),
+    r(RelationKind::ParentOf, "parent of", "people"),
+    r(RelationKind::ChildOf, "child of", "people"),
+    r(RelationKind::SiblingOf, "sibling of", "people"),
+    r(RelationKind::RelativeOf, "relative of", "people"),
+    r(RelationKind::FriendOf, "friend of", "people"),
+    r(RelationKind::AssociateOf, "associate of", "people"),
+    r(RelationKind::AliasOf, "alias of", "people"),
+    r(RelationKind::SameAs, "same as", "people"),
+    r(RelationKind::MetWith, "met with", "comms/meetings"),
+    r(RelationKind::CommunicatedWith, "communicated with", "comms/meetings"),
+    r(RelationKind::Emailed, "emailed", "comms/meetings"),
+    r(RelationKind::Called, "called", "comms/meetings"),
+    r(RelationKind::Messaged, "messaged", "comms/meetings"),
+    r(RelationKind::Introduced, "introduced", "comms/meetings"),
+    r(RelationKind::Paid, "paid", "money"),
+    r(RelationKind::Financed, "financed", "money"),
+    r(RelationKind::LoanedTo, "loaned to", "money"),
+    r(RelationKind::DonatedTo, "donated to", "money"),
+    r(RelationKind::InvestedIn, "invested in", "money"),
+    r(RelationKind::Bribed, "bribed", "money"),
+    r(RelationKind::Invoiced, "invoiced", "money"),
+    r(RelationKind::TransferredTo, "transferred to", "money"),
+    r(RelationKind::LaunderedThrough, "laundered through", "money"),
+    r(RelationKind::Owes, "owes", "money"),
+    r(RelationKind::Sued, "sued", "legal/state"),
+    r(RelationKind::Prosecuted, "prosecuted", "legal/state"),
+    r(RelationKind::Investigated, "investigated", "legal/state"),
+    r(RelationKind::Sanctioned, "sanctioned", "legal/state"),
+    r(RelationKind::ConvictedOf, "convicted of", "legal/state"),
+    r(RelationKind::WitnessIn, "witness in", "legal/state"),
+    r(RelationKind::RegulatedBy, "regulated by", "legal/state"),
+    r(RelationKind::LicensedBy, "licensed by", "legal/state"),
+    r(RelationKind::RegisteredAt, "registered at", "legal/state"),
+    r(RelationKind::IncorporatedIn, "incorporated in", "legal/state"),
+    r(RelationKind::OwnsDomain, "owns domain", "digital/infra"),
+    r(RelationKind::Hosts, "hosts", "digital/infra"),
+    r(RelationKind::ResolvesTo, "resolves to", "digital/infra"),
+    r(RelationKind::UsesAccount, "uses account", "digital/infra"),
+    r(RelationKind::Operates, "operates", "digital/infra"),
+    r(RelationKind::Accessed, "accessed", "digital/infra"),
+    r(RelationKind::LocatedAt, "located at", "movement/physical"),
+    r(RelationKind::ResidesAt, "resides at", "movement/physical"),
+    r(RelationKind::TraveledTo, "traveled to", "movement/physical"),
+    r(RelationKind::Transported, "transported", "movement/physical"),
+    r(RelationKind::Supplied, "supplied", "movement/physical"),
+    r(RelationKind::Smuggled, "smuggled", "movement/physical"),
+    r(RelationKind::ShippedTo, "shipped to", "movement/physical"),
+    r(RelationKind::ReportedOn, "reported on", "info"),
+    r(RelationKind::LeakedTo, "leaked to", "info"),
+    r(RelationKind::SourceFor, "source for", "info"),
+    r(RelationKind::Authored, "authored", "info"),
+    r(RelationKind::Signed, "signed", "info"),
+    r(RelationKind::Witnessed, "witnessed", "info"),
+    r(RelationKind::MentionedIn, "mentioned in", "info"),
+    r(RelationKind::AppearedIn, "appeared in", "info"),
+    r(RelationKind::RelatedTo, "related to", "fallback"),
+];
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Relation {
     pub kind: RelationKind,
     pub sources: Vec<Source>,
 }
 
-impl Relation {
-    pub fn new(kind: RelationKind) -> Self {
-        Self {
-            kind,
-            sources: Vec::new(),
-        }
-    }
-
-    pub fn is_sourced(&self) -> bool {
-        !self.sources.is_empty()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// `ALL` is the iteration order every picker uses: categories must form
-    /// contiguous runs so the list reads grouped, and no variant may repeat.
     #[test]
-    fn relation_kinds_grouped_and_unique() {
+    fn table_mirrors_declaration_order_and_groups() {
+        for (i, m) in RELATION_META.iter().enumerate() {
+            assert_eq!(m.kind as usize, i, "RELATION_META[{i}] is {:?}", m.kind);
+            assert!(!m.label.is_empty(), "{:?} label", m.kind);
+        }
+
         let mut seen_cats: Vec<&str> = Vec::new();
-        for k in RelationKind::ALL {
-            let c = k.category();
-            if seen_cats.last() != Some(&c) {
+        for m in &RELATION_META {
+            if seen_cats.last() != Some(&m.category) {
                 assert!(
-                    !seen_cats.contains(&c),
-                    "category '{c}' is split into non-contiguous runs in ALL"
+                    !seen_cats.contains(&m.category),
+                    "category '{}' split into non-contiguous runs",
+                    m.category
                 );
-                seen_cats.push(c);
+                seen_cats.push(m.category);
             }
         }
         assert_eq!(seen_cats.len(), 10, "expected the 10 verb families");
-
-        for (i, a) in RelationKind::ALL.iter().enumerate() {
-            assert!(
-                !RelationKind::ALL[i + 1..].contains(a),
-                "duplicate variant {a:?} in ALL"
-            );
-        }
     }
 }

@@ -126,6 +126,17 @@ fn rule_help(rule: &str) -> &'static str {
             "todo!(), unimplemented!(), unreachable!() are runtime panics wearing a trenchcoat.\n",
             "    either implement it now or remove the function. half-built code that compiles is worse than missing code.",
         ),
+        "DEAD:11" => concat!(
+            "/// and //! are library cosplay — this is an application, not an API shipped to strangers.\n",
+            "    a doc comment restating the signature is noise. a constraint actually worth keeping\n",
+            "    is a plain // line, and it answers to DEAD:9 like every other comment.",
+        ),
+        "TYPE:12" => concat!(
+            "every pub fn — pub, pub(crate), pub(super), pub(in ...) — is an interface, and interfaces\n",
+            "    report failure: return RsResult/Result. no visibility qualifier, const, async or unsafe\n",
+            "    dodges. internal wiring goes private; data goes in pub fields and consts; trait impls\n",
+            "    implement someone else's contract and are the only exemption.",
+        ),
         _ => "",
     }
 }
@@ -294,6 +305,10 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
             continue;
         }
 
+        if trimmed.starts_with("///") || trimmed.starts_with("//!") {
+            hit(hits, "DEAD:11", rel, line_no + 1);
+            continue;
+        }
         if trimmed.starts_with("//") {
             check_commented_out_code(rel, line_no, trimmed, hits);
             continue;
@@ -500,7 +515,7 @@ fn check_result_types(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
             continue;
         }
 
-        if is_fn_start(trimmed) {
+        if let Some(is_pub) = fn_visibility(trimmed) {
             let start_line = idx + 1;
             let mut sig = trimmed.to_string();
             let mut j = idx + 1;
@@ -516,7 +531,7 @@ fn check_result_types(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
                 }
                 j += 1;
             }
-            check_return_type(rel, start_line, &sig, hits);
+            check_return_type(rel, start_line, &sig, is_pub, hits);
             idx = j;
             continue;
         }
@@ -525,21 +540,68 @@ fn check_result_types(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
     }
 }
 
-fn is_fn_start(trimmed: &str) -> bool {
-    trimmed.starts_with("fn ")
-        || trimmed.starts_with("pub fn ")
-        || trimmed.starts_with("pub(crate) fn ")
-        || trimmed.starts_with("pub(super) fn ")
-        || trimmed.starts_with("pub async fn ")
-        || trimmed.starts_with("pub(crate) async fn ")
-        || trimmed.starts_with("pub(super) async fn ")
-        || trimmed.starts_with("async fn ")
+// Recognizes a fn declaration through ANY prefix of visibility and fn
+// qualifiers — pub, pub(crate), pub(super), pub(in path), const, async,
+// unsafe, extern — so no qualifier combination dodges the scan.
+// Returns Some(is_pub) for fn declarations, None otherwise.
+fn fn_visibility(trimmed: &str) -> Option<bool> {
+    let mut rest = trimmed;
+    let mut is_pub = false;
+    loop {
+        rest = rest.trim_start();
+        if let Some(after) = rest.strip_prefix("pub") {
+            if after.starts_with('(') {
+                let close = after.find(')')?;
+                is_pub = true;
+                rest = &after[close + 1..];
+                continue;
+            }
+            if after.starts_with(' ') {
+                is_pub = true;
+                rest = after;
+                continue;
+            }
+            return None;
+        }
+        let mut advanced = false;
+        for q in ["const ", "async ", "unsafe ", "extern \"C\" ", "extern "] {
+            if let Some(after) = rest.strip_prefix(q) {
+                rest = after;
+                advanced = true;
+                break;
+            }
+        }
+        if advanced {
+            continue;
+        }
+        break;
+    }
+    if rest.starts_with("fn ") {
+        return Some(is_pub);
+    }
+    None
 }
 
-fn check_return_type(rel: &Path, line_no: usize, sig: &str, hits: &mut Vec<Hit>) {
+const RESULT_RETURNS: &[&str] = &[
+    "RsResult<",
+    "Result<",
+    "std::result::Result<",
+    "crate::error::RsResult<",
+];
+
+fn check_return_type(rel: &Path, line_no: usize, sig: &str, is_pub: bool, hits: &mut Vec<Hit>) {
     let normalized = sig.split_whitespace().collect::<Vec<_>>().join(" ");
     if normalized.contains("fn main(") {
         return;
+    }
+
+    if is_pub {
+        let returns_result = ret_of(sig)
+            .map(|ret| RESULT_RETURNS.iter().any(|ok| ret.starts_with(ok)))
+            .unwrap_or(false);
+        if !returns_result {
+            hit(hits, "TYPE:12", rel, line_no);
+        }
     }
 
     let Some(arrow_idx) = sig.find("->") else {
@@ -584,6 +646,20 @@ fn check_return_type(rel: &Path, line_no: usize, sig: &str, hits: &mut Vec<Hit>)
     if is_erased_err_type(err_ty) {
         hit(hits, "TYPE:7", rel, line_no);
     }
+}
+
+// The return type of a signature, with where clauses, bodies and trailing
+// semicolons stripped. None when the fn returns ().
+fn ret_of(sig: &str) -> Option<&str> {
+    let arrow_idx = sig.find("->")?;
+    let mut ret = sig[arrow_idx + 2..].trim();
+    if let Some(w) = ret.find(" where ") {
+        ret = ret[..w].trim();
+    }
+    if let Some(b) = ret.find('{') {
+        ret = ret[..b].trim();
+    }
+    Some(ret.trim_end_matches(';').trim())
 }
 
 fn is_erased_err_type(err_ty: &str) -> bool {

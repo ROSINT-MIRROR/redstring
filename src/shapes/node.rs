@@ -1,15 +1,15 @@
-//! Custom node renderer. An entity with a loadable `image` is drawn as a
-//! rounded-rect photo tile — the pinned picture on the corkboard. An
-//! imageless entity is a big kind-coloured icon glyph on a tinted disc with
-//! the entity name underneath; `DefaultNodeShape` survives only as shared
-//! state plus circle hit-geometry.
-//!
-//! Geometry contract: `is_inside` / `closest_boundary_point` always describe
-//! whichever shape is actually drawn. The photo tile only becomes the active
-//! geometry once its texture has resolved, so a missing or corrupt file
-//! degrades to the default circle — silently, never a panic. All geometry
-//! lives in canvas space; screen projection goes through ctx.meta only, so
-//! zoom/pan changes need nothing here.
+
+
+
+
+
+
+
+
+
+
+
+
 
 use egui::epaint::{CircleShape, RectShape, TextShape};
 use egui::{
@@ -20,48 +20,48 @@ use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
 use crate::error::{Error, RsResult};
-use crate::model::Entity;
+use crate::model::{Entity, KIND_META};
 
-/// Half-extent of the square photo tile, canvas units — roughly twice the
-/// stock node radius so the picture reads at board zoom.
+
+
 pub const IMG_RADIUS: f32 = 10.0;
-/// Corner rounding of the tile, canvas units.
+
 const IMG_CORNER: f32 = 3.0;
-/// Border width around the tile, canvas units — thicker when interacted.
+
 const BORDER: f32 = 1.0;
 const BORDER_ACTIVE: f32 = 2.0;
-/// Hit/boundary radius of an imageless node, canvas units — sized to roughly
-/// cover the big icon glyph.
+
+
 pub const NODE_RADIUS: f32 = 8.0;
-/// Icon glyph font size, canvas units — 3x the stock label size.
+
 const ICON_SIZE: f32 = 15.0;
-/// Label font size, canvas units — 2x the stock label size.
+
 const LABEL_SIZE: f32 = 10.0;
 const LABEL_GAP: f32 = 2.0;
-/// Decoded images are downscaled to fit this square before GPU upload — a
-/// node is ~20 canvas units, so 512px survives any sane zoom.
+
+
 const MAX_TEX_SIDE: u32 = 512;
-/// Glyph rasterization ceiling, screen px. Text past this is unreadable
-/// anyway, and huge font sizes blow up the glyph atlas — a runaway zoom once
-/// froze the app rasterizing five-digit-px glyphs.
+
+
+
 const MAX_FONT_PX: f32 = 256.0;
 
 #[derive(Clone)]
 pub struct EntityNodeShape {
-    /// The stock shape — fallback rendering *and* shared state. Position,
-    /// colour, label and interaction flags are all pub on it.
+    
+    
     circle: DefaultNodeShape,
-    /// Image path from the entity payload.
+    
     image: Option<String>,
-    /// Sticky "the texture actually resolved" flag, set by `shapes` and reset
-    /// when the path changes. Gates the photo-rect geometry so hit-testing
-    /// and anchoring never claim a picture that isn't drawn.
+    
+    
+    
     tex_ok: bool,
-    /// Kind icon glyph and entity name, drawn separately.
+    
     icon: String,
     name: String,
-    /// Per-node scale multiplier from the payload — every metric multiplies
-    /// by it, so resize grows the whole node.
+    
+    
     size: f32,
 }
 
@@ -71,7 +71,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
         circle.radius = NODE_RADIUS * props.payload.size;
         Self {
             image: props.payload.image.clone(),
-            icon: props.payload.kind.icon().to_owned(),
+            icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: props.payload.label.clone(),
             size: props.payload.size,
             circle,
@@ -94,7 +94,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
 
     fn shapes(&mut self, ctx: &DrawContext) -> Vec<Shape> {
         let Some(tex) = self.resolve_texture(ctx) else {
-            // no image set, or the file is missing/unreadable — big icon node
+            
             self.tex_ok = false;
             return self.icon_shapes(ctx);
         };
@@ -105,20 +105,20 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
     fn update(&mut self, state: &NodeProps<Entity>) {
         if self.image != state.payload.image {
             self.image = state.payload.image.clone();
-            self.tex_ok = false; // re-resolve on the next draw
+            self.tex_ok = false; 
         }
-        self.icon = state.payload.kind.icon().to_owned();
+        self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = state.payload.label.clone();
         self.size = state.payload.size;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
-        // the lib rebuilds circle state from props — re-apply the scaled radius
+        
         self.circle.radius = NODE_RADIUS * self.size;
     }
 
     fn is_inside(&self, pos: Pos2) -> bool {
         if self.image_active() {
-            // plain rect test: at IMG_CORNER rounding the corner error is
-            // ~1.5 canvas units — well under interaction tolerances
+            
+            
             self.rect().contains(pos)
         } else {
             <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::is_inside(&self.circle, pos)
@@ -131,7 +131,7 @@ impl EntityNodeShape {
         self.image.is_some() && self.tex_ok
     }
 
-    /// The photo tile in canvas coordinates.
+    
     fn rect(&self) -> Rect {
         Rect::from_center_size(self.circle.pos, Vec2::splat(IMG_RADIUS * 2.0 * self.size))
     }
@@ -140,14 +140,14 @@ impl EntityNodeShape {
         self.circle.selected || self.circle.dragged || self.circle.hovered
     }
 
-    /// Cached texture for the entity's image path, when one is set and loads.
+    
     fn resolve_texture(&self, ctx: &DrawContext) -> Option<TextureHandle> {
         let path = self.image.as_deref()?;
         texture_for(ctx.ctx, path)
     }
 
-    /// Border/label colour: the entity kind's colour pushed by the per-frame
-    /// payload sync, like the fallback circle's fill.
+    
+    
     fn frame_color(&self, ctx: &DrawContext) -> Color32 {
         let Some(c) = self.circle.color else {
             let style = if self.interacted() {
@@ -160,8 +160,8 @@ impl EntityNodeShape {
         c
     }
 
-    /// Imageless node: tinted kind-coloured disc (the hit geometry), the kind
-    /// icon glyph 3x centered on it, the entity name 2x underneath.
+    
+    
     fn icon_shapes(&self, ctx: &DrawContext) -> Vec<Shape> {
         let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
         let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
@@ -221,8 +221,8 @@ impl EntityNodeShape {
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
 
         let mut res: Vec<Shape> = Vec::with_capacity(3);
-        // textured fill and border as two shapes: epaint asserts when
-        // tessellating a stroke into a mesh that has an assigned texture
+        
+        
         res.push(
             RectShape::new(rect, cr, Color32::WHITE, Stroke::NONE, StrokeKind::Inside)
                 .with_texture(tex.id(), cover_uv(tex.size()))
@@ -230,9 +230,9 @@ impl EntityNodeShape {
         );
         res.push(RectShape::stroke(rect, cr, stroke, StrokeKind::Inside).into());
 
-        // caption drawn unconditionally — the app always renders labels.
-        // Kind icon at 2x the name, side by side under the photo, vertically
-        // centered on each other.
+        
+        
+        
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             (
                 f.layout_no_wrap(
@@ -264,13 +264,13 @@ impl EntityNodeShape {
     }
 }
 
-/// Zoom-scaled font size with the atlas-protecting ceiling applied.
+
 fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
     ctx.meta.canvas_to_screen_size(canvas_size).min(MAX_FONT_PX)
 }
 
-/// Ray from the rect center along `dir` to the square boundary with
-/// half-extent `half`. Corner rounding is ignored — see note in `is_inside`.
+
+
 fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
     let d = dir.normalized();
     if d == Vec2::ZERO {
@@ -281,8 +281,8 @@ fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
     center + d * tx.min(ty)
 }
 
-/// Cover-fit UV: centered square crop of the texture so any aspect ratio
-/// fills the tile without distortion.
+
+
 fn cover_uv(tex_size: [usize; 2]) -> Rect {
     let (w, h) = (tex_size[0].max(1) as f32, tex_size[1].max(1) as f32);
     let (u, v) = if w > h { (h / w, 1.0) } else { (1.0, w / h) };
@@ -292,12 +292,12 @@ fn cover_uv(tex_size: [usize; 2]) -> Rect {
     )
 }
 
-// ---- texture cache ----
-//
-// Decode happens once per path. The cache lives in egui temp memory, keyed
-// by path, value Option of TextureHandle — a cached None remembers *failure*
-// so a broken path costs one fs hit per run, not one per frame. The handle
-// is refcounted, so the cached copy keeps the GPU texture alive.
+
+
+
+
+
+
 
 fn cache_id(path: &str) -> egui::Id {
     egui::Id::new(("redstring_entity_image", path))
@@ -311,33 +311,34 @@ fn texture_for(ctx: &egui::Context, path: &str) -> Option<TextureHandle> {
     hit
 }
 
-/// Decode + upload once; cache the outcome either way. The silent circle
-/// fallback on failure is the documented contract of this renderer — the
-/// board draws whatever the disk state allows, every frame, without panics.
+
+
+
 fn load_and_cache(ctx: &egui::Context, path: &str, id: egui::Id) -> Option<TextureHandle> {
     let Ok(ci) = decode(path) else {
         ctx.data_mut(|d| d.insert_temp::<Option<TextureHandle>>(id, None));
         return None;
     };
     let tex = ctx.load_texture(format!("entity_image:{path}"), ci, TextureOptions::LINEAR);
-    // cloned outside data_mut — the clone locks the texture manager
+    
     let stored = Some(tex.clone());
     ctx.data_mut(|d| d.insert_temp(id, stored));
     Some(tex)
 }
 
-/// Forget the cached texture (and any cached failure) for `path` so the next
-/// frame re-decodes the file. The inspector calls this on every re-pick.
-pub fn invalidate_texture(ctx: &egui::Context, path: &str) {
+
+
+pub fn invalidate_texture(ctx: &egui::Context, path: &str) -> RsResult<()> {
     ctx.data_mut(|d| d.remove::<Option<TextureHandle>>(cache_id(path)));
+    Ok(())
 }
 
 fn decode(path: &str) -> RsResult<ColorImage> {
-    let bytes = std::fs::read(path).map_err(|source| Error::io(path, source))?;
-    // gif decodes to its first frame
-    let img = image::load_from_memory(&bytes).map_err(|source| Error::image(path, source))?;
-    // cap oversized photos before GPU upload — thumbnail alone would also
-    // *up*scale small images to fit the box, so gate it
+    let bytes = std::fs::read(path).map_err(|source| Error::Io { path: path.into(), source })?;
+    
+    let img = image::load_from_memory(&bytes).map_err(|source| Error::Image { path: path.into(), source })?;
+    
+    
     let img = if img.width() > MAX_TEX_SIDE || img.height() > MAX_TEX_SIDE {
         img.thumbnail(MAX_TEX_SIDE, MAX_TEX_SIDE)
     } else {
@@ -363,17 +364,17 @@ mod tests {
             rect_boundary_point(c, 10.0, Vec2::new(0.0, -3.0)),
             Pos2::new(0.0, -10.0)
         );
-        // diagonal lands on the corner
+        
         let p = rect_boundary_point(c, 10.0, Vec2::new(1.0, 1.0));
         assert!((p.x - 10.0).abs() < 1e-4 && (p.y - 10.0).abs() < 1e-4);
-        // zero dir must not NaN
+        
         let p = rect_boundary_point(c, 10.0, Vec2::ZERO);
         assert!(p.x.is_finite() && p.y.is_finite());
     }
 
-    /// The fallback contract: a decodable file yields pixels, a missing or
-    /// garbage file yields a named error (silent circle fallback upstream)
-    /// — never a panic.
+    
+    
+    
     #[test]
     fn decode_or_named_error() {
         let dir = std::env::temp_dir();
@@ -382,7 +383,7 @@ mod tests {
             .save(&ok)
             .unwrap();
         let ci = decode(ok.to_str().unwrap()).expect("png must decode");
-        assert_eq!((ci.width(), ci.height()), (3, 2)); // small stays small
+        assert_eq!((ci.width(), ci.height()), (3, 2)); 
         std::fs::remove_file(&ok).ok();
 
         let big = dir.join("redstring_node_shape_test_big.png");
@@ -390,7 +391,7 @@ mod tests {
             .save(&big)
             .unwrap();
         let ci = decode(big.to_str().unwrap()).expect("png must decode");
-        assert!(ci.width() <= MAX_TEX_SIDE as usize); // oversized gets capped
+        assert!(ci.width() <= MAX_TEX_SIDE as usize); 
         std::fs::remove_file(&big).ok();
 
         assert!(decode("/nonexistent/redstring.png").is_err());
@@ -403,11 +404,11 @@ mod tests {
 
     #[test]
     fn cover_uv_crops_long_axis() {
-        // landscape 200x100 keeps the middle half of u
+        
         let uv = cover_uv([200, 100]);
         assert!((uv.min.x - 0.25).abs() < 1e-4 && (uv.max.x - 0.75).abs() < 1e-4);
         assert!((uv.min.y - 0.0).abs() < 1e-4 && (uv.max.y - 1.0).abs() < 1e-4);
-        // square keeps the full texture
+        
         let uv = cover_uv([64, 64]);
         assert_eq!(uv, Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)));
     }

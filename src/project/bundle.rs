@@ -1,8 +1,8 @@
-//! Bundling: a bundle is the case directory, zipped — nothing more clever.
-//! Anyone without redstring can unzip it and read the evidence with stock
-//! tools; redstring itself opens it directly: verify integrity, extract
-//! beside the zip, open the extracted case. Export lands in the project
-//! root by default, so bundles never bundle bundles.
+
+
+
+
+
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -18,42 +18,42 @@ use super::validate::cited_paths;
 
 pub const BUNDLE_SUFFIX: &str = ".redstring.zip";
 
-/// Zip the case directory to `<root>/<dirname>.redstring.zip`. Excluded:
-/// .git, anything .rsignore matches, and other bundles. Returns the bundle
-/// path and how many files went in.
+
+
+
 pub fn export(project: &Project) -> RsResult<(PathBuf, usize)> {
-    let ignore = RsIgnore::load(project.root())?;
+    let ignore = RsIgnore::load(&project.root)?;
     let out = project
-        .root()
-        .join(format!("{}{BUNDLE_SUFFIX}", project.dir_name()));
+        .root
+        .join(format!("{}{BUNDLE_SUFFIX}", project.dir_name()?));
 
     let mut files: Vec<String> = Vec::new();
-    collect_files(project.root(), "", &ignore, &mut files)?;
+    collect_files(&project.root, "", &ignore, &mut files)?;
     files.sort();
 
-    let f = std::fs::File::create(&out).map_err(|source| Error::io(&out, source))?;
+    let f = std::fs::File::create(&out).map_err(|source| Error::Io { path: out.to_path_buf(), source })?;
     let mut zip = zip::ZipWriter::new(f);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for rel in &files {
         zip.start_file(rel, opts)
-            .map_err(|source| Error::zip(&out, source))?;
-        let abs = project.resolve(rel);
-        let mut src = std::fs::File::open(&abs).map_err(|source| Error::io(&abs, source))?;
-        std::io::copy(&mut src, &mut zip).map_err(|source| Error::io(&abs, source))?;
+            .map_err(|source| Error::Zip { path: out.to_path_buf(), source })?;
+        let abs = project.resolve(rel)?;
+        let mut src = std::fs::File::open(&abs).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
+        std::io::copy(&mut src, &mut zip).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
     }
-    zip.finish().map_err(|source| Error::zip(&out, source))?;
+    zip.finish().map_err(|source| Error::Zip { path: out.to_path_buf(), source })?;
     Ok((out, files.len()))
 }
 
-/// Walk the tree depth-first collecting project-relative file paths.
-/// Skipped: .git directories, bundle files, .rsignore matches, and entries
-/// with non-UTF-8 names or of exotic types — symlinks don't belong in a
-/// portable evidence bundle.
+
+
+
+
 fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<String>) -> RsResult<()> {
     let abs = root.join(rel_dir);
-    let entries = std::fs::read_dir(&abs).map_err(|source| Error::io(&abs, source))?;
+    let entries = std::fs::read_dir(&abs).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
     for entry in entries {
-        let entry = entry.map_err(|source| Error::io(&abs, source))?;
+        let entry = entry.map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
         let name_os = entry.file_name();
         let Some(name) = name_os.to_str() else { continue };
         let rel = if rel_dir.is_empty() {
@@ -61,10 +61,10 @@ fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<St
         } else {
             format!("{rel_dir}/{name}")
         };
-        if ignore.matches(&rel) {
+        if ignore.matches(&rel)? {
             continue;
         }
-        let ft = entry.file_type().map_err(|source| Error::io(&abs, source))?;
+        let ft = entry.file_type().map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
         if ft.is_dir() {
             if name == ".git" {
                 continue;
@@ -80,31 +80,31 @@ fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<St
     Ok(())
 }
 
-/// Open a bundle: check integrity — readable archive, a case file that
-/// parses at a supported format, every cited file present — then extract to
-/// a directory named after the bundle, beside it, and open that case.
-/// Per-entry CRCs are verified by the zip reader as each file streams out.
+
+
+
+
 pub fn open_bundle(zip_path: &Path) -> RsResult<Project> {
     let Some(parent) = zip_path.parent().filter(|p| !p.as_os_str().is_empty()) else {
         return Err(Error::NotAProject {
             path: zip_path.to_path_buf(),
         });
     };
-    // the default export location is inside the case dir — opening that
-    // bundle should open the surrounding case, not nest a copy into it
+    
+    
     if parent.join(CASE_FILE).is_file() {
         return Err(Error::BundleInsideProject {
             path: parent.to_path_buf(),
         });
     }
 
-    let f = std::fs::File::open(zip_path).map_err(|source| Error::io(zip_path, source))?;
+    let f = std::fs::File::open(zip_path).map_err(|source| Error::Io { path: zip_path.to_path_buf(), source })?;
     let mut archive =
-        zip::ZipArchive::new(f).map_err(|source| Error::zip(zip_path, source))?;
+        zip::ZipArchive::new(f).map_err(|source| Error::Zip { path: zip_path.to_path_buf(), source })?;
 
     let case_text = read_case_entry(&mut archive, zip_path)?;
     let cf: CaseFile =
-        ron::from_str(&case_text).map_err(|source| Error::ron_parse(zip_path, source))?;
+        ron::from_str(&case_text).map_err(|source| Error::RonParse { path: zip_path.to_path_buf(), source })?;
     if cf.meta.format > FORMAT_VERSION {
         return Err(Error::FormatTooNew {
             found: cf.meta.format,
@@ -112,7 +112,7 @@ pub fn open_bundle(zip_path: &Path) -> RsResult<Project> {
         });
     }
     let names: HashSet<String> = archive.file_names().map(str::to_owned).collect();
-    for (_, rel) in cited_paths(&cf) {
+    for (_, rel) in cited_paths(&cf)? {
         if !names.contains(&rel) {
             return Err(Error::BundleMissingRef { reference: rel });
         }
@@ -137,11 +137,11 @@ fn read_case_entry(
     };
     let mut text = String::new();
     std::io::Read::read_to_string(&mut entry, &mut text)
-        .map_err(|source| Error::io(zip_path, source))?;
+        .map_err(|source| Error::Io { path: zip_path.to_path_buf(), source })?;
     Ok(text)
 }
 
-/// "asfalt.redstring.zip" extracts into "asfalt"; a plain "asfalt.zip" too.
+
 fn bundle_stem(p: &Path) -> String {
     let name = p.file_name().map(|n| n.to_string_lossy().into_owned());
     let Some(name) = name else {
@@ -161,29 +161,29 @@ fn extract_all(
     target: &Path,
     zip_path: &Path,
 ) -> RsResult<()> {
-    std::fs::create_dir_all(target).map_err(|source| Error::io(target, source))?;
+    std::fs::create_dir_all(target).map_err(|source| Error::Io { path: target.to_path_buf(), source })?;
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
-            .map_err(|source| Error::zip(zip_path, source))?;
-        // enclosed_name refuses absolute or parent-escaping entry paths
+            .map_err(|source| Error::Zip { path: zip_path.to_path_buf(), source })?;
+        
         let Some(rel) = entry.enclosed_name() else {
             let bad = std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "archive entry escapes the extraction directory",
             );
-            return Err(Error::io(zip_path, bad));
+            return Err(Error::Io { path: zip_path.to_path_buf(), source: bad });
         };
         let dst = target.join(rel);
         if entry.is_dir() {
-            std::fs::create_dir_all(&dst).map_err(|source| Error::io(&dst, source))?;
+            std::fs::create_dir_all(&dst).map_err(|source| Error::Io { path: dst.to_path_buf(), source })?;
             continue;
         }
         let Some(dir) = dst.parent() else { continue };
-        std::fs::create_dir_all(dir).map_err(|source| Error::io(dir, source))?;
-        let mut out = std::fs::File::create(&dst).map_err(|source| Error::io(&dst, source))?;
-        // CRC mismatches surface here as read errors
-        std::io::copy(&mut entry, &mut out).map_err(|source| Error::io(&dst, source))?;
+        std::fs::create_dir_all(dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+        let mut out = std::fs::File::create(&dst).map_err(|source| Error::Io { path: dst.to_path_buf(), source })?;
+        
+        std::io::copy(&mut entry, &mut out).map_err(|source| Error::Io { path: dst.to_path_buf(), source })?;
     }
     Ok(())
 }
@@ -202,15 +202,15 @@ mod tests {
 
     fn seeded_project(name: &str) -> Project {
         let p = Project::create(&fresh_dir(name)).unwrap();
-        let img = p.resolve("entities/doe/portrait.png");
+        let img = p.resolve("entities/doe/portrait.png").unwrap();
         std::fs::create_dir_all(img.parent().unwrap()).unwrap();
         std::fs::write(&img, b"fakepng").unwrap();
-        std::fs::create_dir_all(p.resolve("extra")).unwrap();
-        std::fs::write(p.resolve("extra/raw-big.mp4"), vec![0u8; 4096]).unwrap();
-        std::fs::write(p.root().join(".rsignore"), "extra/raw-*.mp4\n").unwrap();
+        std::fs::create_dir_all(p.resolve("extra").unwrap()).unwrap();
+        std::fs::write(p.resolve("extra/raw-big.mp4").unwrap(), vec![0u8; 4096]).unwrap();
+        std::fs::write(p.root.join(".rsignore"), "extra/raw-*.mp4\n").unwrap();
 
         let mut cf = CaseFile::default();
-        cf.meta = CaseMeta::stamped(name);
+        cf.meta = CaseMeta::stamped(name).unwrap();
         cf.data.entities.push(EntityRec {
             slug: "doe".into(),
             kind: EntityKind::Person,
@@ -227,18 +227,18 @@ mod tests {
     fn export_then_open_round_trip() {
         let p = seeded_project("trip");
         let (zip_path, n) = export(&p).unwrap();
-        assert!(zip_path.ends_with(format!("{}{BUNDLE_SUFFIX}", p.dir_name())));
-        // case + readme + rsignore + portrait + note + the scaffold's 7
-        // .gitkeep markers are in; the ignored mp4 is out
+        assert!(zip_path.ends_with(format!("{}{BUNDLE_SUFFIX}", p.dir_name().unwrap())));
+        
+        
         assert_eq!(n, 12);
 
-        // opening it where it sits — inside its own case dir — is refused
+        
         assert!(matches!(
             open_bundle(&zip_path),
             Err(Error::BundleInsideProject { .. })
         ));
 
-        // received-bundle scenario: the zip sits in some download dir
+        
         let inbox = fresh_dir("trip_inbox");
         std::fs::create_dir_all(&inbox).unwrap();
         let received = inbox.join(zip_path.file_name().unwrap());
@@ -247,25 +247,25 @@ mod tests {
         let opened = open_bundle(&received).unwrap();
         assert_eq!(io::read_case(&opened).unwrap().meta.name, "trip");
         assert_eq!(io::read_note(&opened, "doe").unwrap(), "the guy\n");
-        assert!(opened.resolve("entities/doe/portrait.png").exists());
-        assert!(!opened.resolve("extra/raw-big.mp4").exists()); // ignored stayed home
+        assert!(opened.resolve("entities/doe/portrait.png").unwrap().exists());
+        assert!(!opened.resolve("extra/raw-big.mp4").unwrap().exists()); 
 
-        // a second open refuses to clobber the extracted dir
+        
         assert!(matches!(
             open_bundle(&received),
             Err(Error::TargetExists { .. })
         ));
 
-        std::fs::remove_dir_all(p.root()).unwrap();
+        std::fs::remove_dir_all(p.root).unwrap();
         std::fs::remove_dir_all(&inbox).unwrap();
     }
 
     #[test]
     fn integrity_catches_missing_citations() {
         let p = seeded_project("integrity");
-        // cite a file, then remove it from disk before export — the case
-        // lies, the bundle must not pretend otherwise on open
-        std::fs::remove_file(p.resolve("entities/doe/portrait.png")).unwrap();
+        
+        
+        std::fs::remove_file(p.resolve("entities/doe/portrait.png").unwrap()).unwrap();
         let (zip_path, _) = export(&p).unwrap();
 
         let inbox = fresh_dir("integrity_inbox");
@@ -278,7 +278,7 @@ mod tests {
             Err(Error::BundleMissingRef { .. })
         ));
 
-        std::fs::remove_dir_all(p.root()).unwrap();
+        std::fs::remove_dir_all(p.root).unwrap();
         std::fs::remove_dir_all(&inbox).unwrap();
     }
 }

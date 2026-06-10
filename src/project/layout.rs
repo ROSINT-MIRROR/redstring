@@ -1,24 +1,9 @@
-//! A case is a directory. `case.redstring` at its root is the marker and the
-//! single source of truth — the only file redstring parses. Everything the
-//! graph references lives inside the directory at canonical places, cited by
-//! project-relative path. That single rule makes a case relocatable,
-//! git-friendly, bundleable, and servable as a static site.
-//!
-//! Canonical layout: entities/<slug>/ holds each entity's note.md, portrait
-//! and anything else about it. The evidence/ tree splits into docs, media,
-//! archives and transcripts and holds the proof; notes/ holds case-level
-//! analysis; extra/ is the user's dumping ground that redstring never
-//! parses. The whole tree is scaffolded at creation; .gitkeep markers keep
-//! the still-empty directories alive under git.
-
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, RsResult};
 
-/// Marker + main file name at the project root.
 pub const CASE_FILE: &str = "case.redstring";
 
-/// The canonical directories every fresh case starts with.
 const CANONICAL_DIRS: [&str; 7] = [
     "entities",
     "evidence/docs",
@@ -31,111 +16,113 @@ const CANONICAL_DIRS: [&str; 7] = [
 
 #[derive(Clone, Debug)]
 pub struct Project {
-    root: PathBuf,
+    pub root: PathBuf,
 }
 
 impl Project {
-    /// Open an existing case: accepts the case directory or the case file
-    /// itself.
     pub fn open(path: &Path) -> RsResult<Self> {
         let dir = if path.is_dir() {
             path.to_path_buf()
         } else {
             case_file_parent(path)?
         };
-        let root = std::fs::canonicalize(&dir).map_err(|source| Error::io(&dir, source))?;
+        let root = std::fs::canonicalize(&dir).map_err(|source| Error::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
         if !root.join(CASE_FILE).is_file() {
             return Err(Error::NotAProject { path: root });
         }
         Ok(Self { root })
     }
 
-    /// Create a fresh case directory: the canonical tree plus a README
-    /// scaffold. The case file itself lands on the first save.
     pub fn create(path: &Path) -> RsResult<Self> {
-        std::fs::create_dir_all(path).map_err(|source| Error::io(path, source))?;
-        let root = std::fs::canonicalize(path).map_err(|source| Error::io(path, source))?;
+        std::fs::create_dir_all(path).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let root = std::fs::canonicalize(path).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
         let project = Self { root };
         project.scaffold_tree()?;
         let readme = project.root.join("README.md");
         if !readme.exists() {
-            std::fs::write(&readme, scaffold_readme(&project.dir_name()))
-                .map_err(|source| Error::io(&readme, source))?;
+            std::fs::write(&readme, scaffold_readme(&project.dir_name()?)).map_err(|source| {
+                Error::Io {
+                    path: readme.to_path_buf(),
+                    source,
+                }
+            })?;
         }
         Ok(project)
     }
 
-    /// Materialize the canonical tree up front so a fresh case reads as a
-    /// case from its first commit. A directory that ends up empty gets a
-    /// .gitkeep marker — git refuses to track empty directories and the
-    /// README names them all.
     fn scaffold_tree(&self) -> RsResult<()> {
         for dir in CANONICAL_DIRS {
             let d = self.root.join(dir);
-            std::fs::create_dir_all(&d).map_err(|source| Error::io(&d, source))?;
+            std::fs::create_dir_all(&d).map_err(|source| Error::Io {
+                path: d.to_path_buf(),
+                source,
+            })?;
             let occupied = std::fs::read_dir(&d)
-                .map_err(|source| Error::io(&d, source))?
+                .map_err(|source| Error::Io {
+                    path: d.to_path_buf(),
+                    source,
+                })?
                 .next()
                 .is_some();
             if occupied {
                 continue;
             }
             let keep = d.join(".gitkeep");
-            std::fs::write(&keep, "").map_err(|source| Error::io(&keep, source))?;
+            std::fs::write(&keep, "").map_err(|source| Error::Io {
+                path: keep.to_path_buf(),
+                source,
+            })?;
         }
         Ok(())
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
+    pub fn case_path(&self) -> RsResult<PathBuf> {
+        Ok(self.root.join(CASE_FILE))
     }
 
-    pub fn case_path(&self) -> PathBuf {
-        self.root.join(CASE_FILE)
-    }
-
-    /// The directory name — doubles as the default bundle stem.
-    pub fn dir_name(&self) -> String {
+    pub fn dir_name(&self) -> RsResult<String> {
         let Some(name) = self.root.file_name() else {
-            return "case".to_owned();
+            return Ok("case".to_owned());
         };
-        name.to_string_lossy().into_owned()
+        Ok(name.to_string_lossy().into_owned())
     }
 
-    pub fn entity_dir(&self, slug: &str) -> PathBuf {
-        self.root.join("entities").join(slug)
+    pub fn entity_dir(&self, slug: &str) -> RsResult<PathBuf> {
+        Ok(self.root.join("entities").join(slug))
     }
 
-    pub fn note_path(&self, slug: &str) -> PathBuf {
-        self.entity_dir(slug).join("note.md")
+    pub fn note_path(&self, slug: &str) -> RsResult<PathBuf> {
+        Ok(self.entity_dir(slug)?.join("note.md"))
     }
 
-    /// Resolve a project-relative path to an absolute one. Joining an
-    /// already-absolute path yields it unchanged, which is exactly the
-    /// degraded behaviour we want for legacy absolute references.
-    pub fn resolve(&self, rel: &str) -> PathBuf {
-        self.root.join(rel)
+    pub fn resolve(&self, rel: &str) -> RsResult<PathBuf> {
+        Ok(self.root.join(rel))
     }
 
-    /// Make an absolute path project-relative when it lives under the root.
-    pub fn relativize(&self, path: &Path) -> Option<String> {
-        let Ok(rel) = path.strip_prefix(&self.root) else {
-            return None;
+    pub fn rel_or_self(&self, path: &str) -> RsResult<String> {
+        let Some(rel) = relativize(&self.root, Path::new(path)) else {
+            return Ok(path.to_owned());
         };
-        Some(rel.to_string_lossy().into_owned())
-    }
-
-    /// Project-relative form when possible, the input untouched otherwise —
-    /// the validator flags whatever stays absolute.
-    pub fn rel_or_self(&self, path: &str) -> String {
-        let Some(rel) = self.relativize(Path::new(path)) else {
-            return path.to_owned();
-        };
-        rel
+        Ok(rel)
     }
 }
 
-/// The directory a case file sits in — only `case.redstring` counts.
+fn relativize(root: &Path, path: &Path) -> Option<String> {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return None;
+    };
+    Some(rel.to_string_lossy().into_owned())
+}
+
 fn case_file_parent(path: &Path) -> RsResult<PathBuf> {
     let named_case = path.file_name().is_some_and(|n| n == CASE_FILE);
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
@@ -147,8 +134,6 @@ fn case_file_parent(path: &Path) -> RsResult<PathBuf> {
     Ok(dir.to_path_buf())
 }
 
-/// Written once at case creation, then user-owned forever — GitHub renders
-/// it as the repo front page.
 fn scaffold_readme(name: &str) -> String {
     format!(
         "# {name}\n\n\
@@ -175,7 +160,7 @@ mod tests {
     #[test]
     fn create_scaffolds_once_and_open_needs_marker() {
         let dir = tmp("create");
-        // a dir without the marker is not a case
+
         std::fs::create_dir_all(&dir).unwrap();
         assert!(matches!(
             Project::open(&dir),
@@ -183,25 +168,22 @@ mod tests {
         ));
 
         let p = Project::create(&dir).unwrap();
-        let readme = p.root().join("README.md");
+        let readme = p.root.join("README.md");
         let scaffold = std::fs::read_to_string(&readme).unwrap();
         assert!(scaffold.contains("case.redstring"));
 
-        // the canonical tree materializes at creation, kept alive for git
         for d in CANONICAL_DIRS {
-            assert!(p.root().join(d).is_dir(), "{d} scaffolded");
-            assert!(p.root().join(d).join(".gitkeep").is_file(), "{d}/.gitkeep");
+            assert!(p.root.join(d).is_dir(), "{d} scaffolded");
+            assert!(p.root.join(d).join(".gitkeep").is_file(), "{d}/.gitkeep");
         }
 
-        // user owns the README after creation — recreate must not clobber
         std::fs::write(&readme, "mine now").unwrap();
         let p = Project::create(&dir).unwrap();
         assert_eq!(std::fs::read_to_string(&readme).unwrap(), "mine now");
 
-        // with the marker present, both dir and file forms open
-        std::fs::write(p.case_path(), "(data: ())").unwrap();
+        std::fs::write(p.case_path().unwrap(), "(data: ())").unwrap();
         assert!(Project::open(&dir).is_ok());
-        assert!(Project::open(&p.case_path()).is_ok());
+        assert!(Project::open(&p.case_path().unwrap()).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -209,10 +191,13 @@ mod tests {
     fn relativize_and_resolve() {
         let dir = tmp("rel");
         let p = Project::create(&dir).unwrap();
-        let abs = p.resolve("entities/doe/portrait.png");
-        assert_eq!(p.relativize(&abs).unwrap(), "entities/doe/portrait.png");
-        assert_eq!(p.rel_or_self("/elsewhere/x.png"), "/elsewhere/x.png");
-        assert!(p.relativize(Path::new("/elsewhere/x.png")).is_none());
+        let abs = p.resolve("entities/doe/portrait.png").unwrap();
+        assert_eq!(
+            relativize(&p.root, &abs).unwrap(),
+            "entities/doe/portrait.png"
+        );
+        assert_eq!(p.rel_or_self("/elsewhere/x.png").unwrap(), "/elsewhere/x.png");
+        assert!(relativize(&p.root, Path::new("/elsewhere/x.png")).is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

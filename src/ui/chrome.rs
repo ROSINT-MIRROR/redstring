@@ -1,16 +1,13 @@
-//! Top toolbar — file ops, layout stubs, the preferences toggle — and the
-//! preferences window itself.
-
 use egui::RichText;
 
+use crate::error::RsResult;
 use crate::prefs::Theme;
 
 use super::app::RedstringApp;
 
 impl RedstringApp {
-    /// Full-width top bar: file ops plus stub layout buttons, Maltego-style.
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+    pub fn toolbar(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+        ui.horizontal(|ui| -> RsResult<()> {
             if ui
                 .button("🏠")
                 .on_hover_text("Welcome — new case, open, recents")
@@ -19,30 +16,33 @@ impl RedstringApp {
                 self.show_welcome = true;
             }
             if ui.button("💾").on_hover_text("Save (Ctrl+S)").clicked() {
-                self.save(ui);
+                self.save(ui)?;
             }
             if ui
                 .button("💾…")
                 .on_hover_text("Save as new case directory… (Ctrl+Shift+S)")
                 .clicked()
             {
-                self.save_as_dialog(ui);
+                self.save_as_dialog(ui)?;
             }
-            if ui.button("📂").on_hover_text("Open case or bundle… (Ctrl+O)").clicked() {
-                self.open_dialog(ui);
+            if ui
+                .button("📂")
+                .on_hover_text("Open case or bundle… (Ctrl+O)")
+                .clicked()
+            {
+                self.open_dialog(ui)?;
             }
             if ui
                 .button("📦")
                 .on_hover_text("Export bundle — the case directory, zipped")
                 .clicked()
             {
-                self.export_bundle(ui);
+                self.export_bundle(ui)?;
             }
             ui.separator();
             ui.label(RichText::new(&self.case_name).strong());
-            ui.label(RichText::new(self.project_label()).weak().small());
+            ui.label(RichText::new(self.project_label()?).weak().small());
 
-            // layout engines land later — stubs so the bar has its final shape
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⛭").on_hover_text("Preferences").clicked() {
                     self.prefs_open = !self.prefs_open;
@@ -54,11 +54,12 @@ impl RedstringApp {
                 }
                 ui.label(RichText::new("layout:").weak().small());
             });
-        });
+            Ok(())
+        })
+        .inner
     }
 
-    /// Preferences window: machine-local chrome — scale, theme — never case data.
-    pub(super) fn prefs_window(&mut self, ui: &egui::Ui) {
+    pub fn prefs_window(&mut self, ui: &egui::Ui) -> RsResult<()> {
         let mut open = self.prefs_open;
         let mut changed = false;
         egui::Window::new("preferences")
@@ -73,8 +74,6 @@ impl RedstringApp {
                             .step_by(0.05)
                             .suffix("×"),
                     );
-                    // apply on release — live zoom would rescale the slider
-                    // under the cursor mid-drag
                     if slider.drag_stopped() || slider.lost_focus() {
                         changed = true;
                     }
@@ -91,8 +90,9 @@ impl RedstringApp {
             });
         self.prefs_open = open;
         if changed {
-            self.apply_prefs(ui.ctx());
-            self.persist_prefs();
+            self.apply_prefs(ui.ctx())?;
+            self.prefs.save()?;
         }
+        Ok(())
     }
 }

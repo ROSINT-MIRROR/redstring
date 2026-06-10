@@ -1,29 +1,29 @@
-//! Derived artifacts, regenerated on every save and never read back:
-//! case.json mirrors the case for a JS viewer (GitHub Pages serves it
-//! statically, no RON parser needed in the browser), graph.md renders the
-//! board as a mermaid diagram right on the repo page.
+
+
+
+
 
 use crate::error::{Error, RsResult};
-use crate::model::CaseFile;
+use crate::model::{CaseFile, KIND_META, RELATION_META};
 
 use super::layout::Project;
 
 pub fn write_json(project: &Project, cf: &CaseFile) -> RsResult<()> {
-    let path = project.root().join("case.json");
+    let path = project.root.join("case.json");
     let text = serde_json::to_string_pretty(cf).map_err(|source| Error::JsonSer { source })?;
-    std::fs::write(&path, text).map_err(|source| Error::io(&path, source))?;
+    std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
 }
 
 pub fn write_graph_md(project: &Project, cf: &CaseFile) -> RsResult<()> {
-    let path = project.root().join("graph.md");
-    std::fs::write(&path, graph_md(cf)).map_err(|source| Error::io(&path, source))?;
+    let path = project.root.join("graph.md");
+    std::fs::write(&path, graph_md(cf)).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
 }
 
-/// Slugs are lowercase alnum + underscores, so they are valid mermaid ids
-/// as-is. Sourced edges draw solid, unsourced dotted with a warning marker —
-/// the corkboard semantics survive into the repo view.
+
+
+
 fn graph_md(cf: &CaseFile) -> String {
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n```mermaid\ngraph LR\n", label_safe(&cf.meta.name)));
@@ -31,7 +31,7 @@ fn graph_md(cf: &CaseFile) -> String {
         out.push_str(&format!(
             "    {}[\"{} {}\"]\n",
             e.slug,
-            e.kind.icon(),
+            KIND_META[e.kind as usize].icon,
             label_safe(&e.label)
         ));
     }
@@ -41,7 +41,7 @@ fn graph_md(cf: &CaseFile) -> String {
         out.push_str(&format!(
             "    {} {arrow}|{}{warn}| {}\n",
             r.from,
-            r.kind.label(),
+            RELATION_META[r.kind as usize].label,
             r.to
         ));
     }
@@ -49,7 +49,7 @@ fn graph_md(cf: &CaseFile) -> String {
     out
 }
 
-/// Mermaid label text: quotes, brackets and pipes are syntax — flatten them.
+
 fn label_safe(s: &str) -> String {
     s.replace(['"', '`', '|', '[', ']', '{', '}', '(', ')'], "'")
 }
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn mermaid_shape_and_escaping() {
         let mut cf = CaseFile::default();
-        cf.meta = CaseMeta::stamped("asfalt");
+        cf.meta = CaseMeta::stamped("asfalt").unwrap();
         cf.data.entities.push(EntityRec {
             slug: "radu".into(),
             kind: EntityKind::Person,
@@ -96,9 +96,9 @@ mod tests {
 
         let md = graph_md(&cf);
         assert!(md.contains("graph LR"), "{md}");
-        // escaped label — no raw double quote inside the bracket text
+        
         assert!(md.contains("Radu 'the Brick' P."), "{md}");
-        // sourced solid, unsourced dotted + warning
+        
         assert!(md.contains("radu -->|owns| strada_sigur"), "{md}");
         assert!(md.contains("strada_sigur -.->|paid ⚠| radu"), "{md}");
     }

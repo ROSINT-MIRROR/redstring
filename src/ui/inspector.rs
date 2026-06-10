@@ -1,16 +1,16 @@
-//! Right panel: the inspector for whatever is selected — entity form with
-//! attributes/image/note, or relation form with the source list. This is
-//! where evidence gets attached.
-
 use egui::RichText;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::model::{Category, EntityKind, MAX_CASE_NAME, RelationKind, Source, SourceKind};
+use crate::error::RsResult;
+use crate::model::{
+    CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, RELATION_META, RelationKind, SOURCE_META,
+    Source,
+};
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
 
 impl RedstringApp {
-    pub(super) fn inspector(&mut self, ui: &mut egui::Ui) {
+    pub fn inspector(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
         ui.heading("inspector");
         ui.separator();
 
@@ -32,25 +32,29 @@ impl RedstringApp {
                 ui.label("• right-drag entity → entity to link");
                 ui.label("• red dashed link = unsourced");
                 ui.label("• green link = has ≥1 source");
-                return;
+                return Ok(());
             };
-            self.edge_inspector(ui, eidx);
-            return;
+            return self.edge_inspector(ui, eidx);
         };
-        self.node_inspector(ui, nidx);
+        self.node_inspector(ui, nidx)
     }
 
-    fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) {
-        // slug + image edits collect into locals and apply after the borrow
-        // ends — dedupe and copy-on-attach both need more than this node
+    fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> RsResult<()> {
         let mut slug_edit: Option<String> = None;
         let mut picked_image: Option<String> = None;
         let mut delete = false;
 
-        let Some(node) = self.g.node_mut(nidx) else { return };
+        let Some(node) = self.g.node_mut(nidx) else {
+            return Ok(());
+        };
         let e = node.payload_mut();
-        ui.label(RichText::new(format!("{} {}", e.kind.icon(), e.kind.label())).strong());
-        ui.label(RichText::new(e.kind.category().label()).weak().small());
+        let meta = &KIND_META[e.kind as usize];
+        ui.label(RichText::new(format!("{} {}", meta.icon, meta.label)).strong());
+        ui.label(
+            RichText::new(CATEGORY_META[meta.category as usize].label)
+                .weak()
+                .small(),
+        );
 
         kind_combo(ui, "insp_kind", &mut e.kind);
 
@@ -80,8 +84,6 @@ impl RedstringApp {
             {
                 picked_image = Some(p);
             }
-            // unlink drops the reference only — the canonical copy stays in
-            // the case directory, never deleted by redstring
             if e.image.is_some() && ui.button("✕").clicked() {
                 e.image = None;
             }
@@ -114,76 +116,90 @@ impl RedstringApp {
             delete = true;
         }
 
-        self.apply_picked_image(ui.ctx(), nidx, picked_image);
-        self.apply_slug_edit(nidx, slug_edit);
+        self.apply_picked_image(ui.ctx(), nidx, picked_image)?;
+        self.apply_slug_edit(nidx, slug_edit)?;
         if delete {
             self.g.remove_node(nidx);
         }
+        Ok(())
     }
 
-    /// Copy a picked image to entities/<slug>/ — the iron rule — then point
-    /// the node at the canonical copy.
-    fn apply_picked_image(&mut self, ctx: &egui::Context, nidx: NodeIndex, picked: Option<String>) {
-        let Some(src) = picked else { return };
-        let resolved = self.canonical_image(nidx, &src);
-        // re-picking a path must reflect the file as it is now
-        crate::shapes::invalidate_texture(ctx, &resolved);
-        let Some(node) = self.g.node_mut(nidx) else { return };
+    fn apply_picked_image(
+        &mut self,
+        ctx: &egui::Context,
+        nidx: NodeIndex,
+        picked: Option<String>,
+    ) -> RsResult<()> {
+        let Some(src) = picked else {
+            return Ok(());
+        };
+        let resolved = self.canonical_image(nidx, &src)?;
+        crate::shapes::invalidate_texture(ctx, &resolved)?;
+        let Some(node) = self.g.node_mut(nidx) else {
+            return Ok(());
+        };
         node.payload_mut().image = Some(resolved);
+        Ok(())
     }
 
-    fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> String {
-        let slug = self.node_slug(nidx);
+    fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> RsResult<String> {
+        let slug = self.node_slug(nidx)?;
         let Some(project) = &self.project else {
             self.status = "image linked in place — save the case first to copy it in".into();
-            return src.to_owned();
+            return Ok(src.to_owned());
         };
         match crate::project::import_entity_image(project, &slug, std::path::Path::new(src)) {
             Ok(abs) => {
                 let abs = abs.display().to_string();
-                self.status = format!("image copied → {}", project.rel_or_self(&abs));
-                abs
+                self.status = format!("image copied → {}", project.rel_or_self(&abs)?);
+                Ok(abs)
             }
             Err(err) => {
                 self.status = format!("image import failed — linked in place: {err}");
-                src.to_owned()
+                Ok(src.to_owned())
             }
         }
     }
 
-    /// Apply an edited slug when it is non-empty and unique in the graph.
-    fn apply_slug_edit(&mut self, nidx: NodeIndex, edit: Option<String>) {
-        let Some(new_slug) = edit else { return };
+    fn apply_slug_edit(&mut self, nidx: NodeIndex, edit: Option<String>) -> RsResult<()> {
+        let Some(new_slug) = edit else {
+            return Ok(());
+        };
         let clean: String = new_slug
             .to_lowercase()
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '_' })
             .collect();
-        if clean.is_empty() || self.slug_taken_by_other(&clean, nidx) {
-            return;
+        if clean.is_empty() || self.slug_taken_by_other(&clean, nidx)? {
+            return Ok(());
         }
-        let Some(node) = self.g.node_mut(nidx) else { return };
+        let Some(node) = self.g.node_mut(nidx) else {
+            return Ok(());
+        };
         node.payload_mut().slug = clean;
+        Ok(())
     }
 
-    fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) {
-        let (from_l, to_l) = self.edge_endpoints_labels(eidx);
+    fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) -> RsResult<()> {
+        let (from_l, to_l) = self.edge_endpoints_labels(eidx)?;
         self.edge_form(ui, eidx, &from_l, &to_l);
 
-        // add-source form, kept out of the edge borrow above
         ui.separator();
         ui.label(RichText::new("attach source").strong());
         egui::ComboBox::from_id_salt("ns_kind")
-            .selected_text(self.ns_kind.label())
+            .selected_text(SOURCE_META[self.ns_kind as usize].label)
             .show_ui(ui, |ui| {
-                for k in SourceKind::ALL {
-                    ui.selectable_value(&mut self.ns_kind, k, k.label());
+                for m in &SOURCE_META {
+                    ui.selectable_value(&mut self.ns_kind, m.kind, m.label);
                 }
             });
         let mut pick_source = false;
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.ns_ref).hint_text(self.ns_kind.hint()));
-            if self.ns_kind.is_file_backed()
+            ui.add(
+                egui::TextEdit::singleline(&mut self.ns_ref)
+                    .hint_text(SOURCE_META[self.ns_kind as usize].hint),
+            );
+            if SOURCE_META[self.ns_kind as usize].file_backed
                 && ui
                     .button("📎")
                     .on_hover_text("copy a file into the case and cite it")
@@ -193,7 +209,7 @@ impl RedstringApp {
             }
         });
         if pick_source {
-            self.pick_source_file();
+            self.pick_source_file()?;
         }
         ui.add(
             egui::TextEdit::multiline(&mut self.ns_excerpt)
@@ -208,20 +224,26 @@ impl RedstringApp {
         if ui.button("🗑 delete relation").clicked() {
             self.g.remove_edge(eidx);
         }
+        Ok(())
     }
 
-    /// The kind selector, sourced/unsourced banner and editable source list.
     fn edge_form(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex, from_l: &str, to_l: &str) {
         let Some(edge) = self.g.edge_mut(eidx) else { return };
         let r = edge.payload_mut();
-        ui.label(RichText::new(format!("{from_l}  —{}→  {to_l}", r.kind.label())).strong());
+        ui.label(
+            RichText::new(format!(
+                "{from_l}  —{}→  {to_l}",
+                RELATION_META[r.kind as usize].label
+            ))
+            .strong(),
+        );
 
         relation_kind_combo(ui, "insp_rel_kind", &mut r.kind);
 
-        if r.is_sourced() {
-            ui.colored_label(OK_GREEN, format!("✓ {} source(s)", r.sources.len()));
-        } else {
+        if r.sources.is_empty() {
             ui.colored_label(ALARM_RED, "⚠ UNSOURCED — unproven claim");
+        } else {
+            ui.colored_label(OK_GREEN, format!("✓ {} source(s)", r.sources.len()));
         }
 
         ui.separator();
@@ -230,13 +252,16 @@ impl RedstringApp {
         for (i, src) in r.sources.iter_mut().enumerate() {
             ui.group(|ui| {
                 egui::ComboBox::from_id_salt(("src_kind", i))
-                    .selected_text(src.kind.label())
+                    .selected_text(SOURCE_META[src.kind as usize].label)
                     .show_ui(ui, |ui| {
-                        for k in SourceKind::ALL {
-                            ui.selectable_value(&mut src.kind, k, k.label());
+                        for m in &SOURCE_META {
+                            ui.selectable_value(&mut src.kind, m.kind, m.label);
                         }
                     });
-                ui.add(egui::TextEdit::singleline(&mut src.reference).hint_text(src.kind.hint()));
+                ui.add(
+                    egui::TextEdit::singleline(&mut src.reference)
+                        .hint_text(SOURCE_META[src.kind as usize].hint),
+                );
                 ui.add(
                     egui::TextEdit::multiline(&mut src.excerpt)
                         .hint_text("excerpt / quote (optional)")
@@ -250,13 +275,13 @@ impl RedstringApp {
         remove_marked(&mut r.sources, remove);
     }
 
-    /// Copy a picked evidence file to its canonical home and cite it in the
-    /// reference field — the iron rule again.
-    fn pick_source_file(&mut self) {
-        let Some(p) = rfd::FileDialog::new().pick_file() else { return };
+    fn pick_source_file(&mut self) -> RsResult<()> {
+        let Some(p) = rfd::FileDialog::new().pick_file() else {
+            return Ok(());
+        };
         let Some(project) = &self.project else {
             self.status = "save the case first — evidence is copied into the case dir".into();
-            return;
+            return Ok(());
         };
         match crate::project::import_source_file(project, self.ns_kind, &p) {
             Ok(rel) => {
@@ -265,9 +290,9 @@ impl RedstringApp {
             }
             Err(err) => self.status = format!("evidence import failed: {err}"),
         }
+        Ok(())
     }
 
-    /// Push the add-source form contents onto the relation and reset the form.
     fn attach_source(&mut self, eidx: EdgeIndex) {
         let src = Source {
             kind: self.ns_kind,
@@ -287,13 +312,11 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
     ui.label(RichText::new(p.as_str()).weak().small());
 }
 
-/// Drop the row a ✕ button marked this frame, when there is one.
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
 }
 
-/// Modal image picker; formats match the decoder features in Cargo.toml.
 fn pick_image() -> Option<String> {
     let p = rfd::FileDialog::new()
         .add_filter("image", &["png", "jpg", "jpeg", "webp", "gif"])
@@ -301,35 +324,31 @@ fn pick_image() -> Option<String> {
     Some(p.to_string_lossy().into_owned())
 }
 
-/// Verb dropdown sectioned by category — `ALL` is contiguous per family, so
-/// a weak header drops in whenever the category changes and 78 verbs stay
-/// scannable.
 fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
     egui::ComboBox::from_id_salt(id)
-        .selected_text(kind.label())
+        .selected_text(RELATION_META[*kind as usize].label)
         .show_ui(ui, |ui| {
             let mut last_cat = "";
-            for k in RelationKind::ALL {
-                if k.category() != last_cat {
-                    last_cat = k.category();
+            for m in &RELATION_META {
+                if m.category != last_cat {
+                    last_cat = m.category;
                     ui.label(RichText::new(last_cat).weak().small());
                 }
-                ui.selectable_value(kind, k, k.label());
+                ui.selectable_value(kind, m.kind, m.label);
             }
         });
 }
 
-/// Kind dropdown sectioned by ontology category — used by the inspector; the
-/// add-entity flow uses the palette instead.
 fn kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut EntityKind) {
+    let cur = &KIND_META[*kind as usize];
     egui::ComboBox::from_id_salt(id)
-        .selected_text(format!("{} {}", kind.icon(), kind.label()))
+        .selected_text(format!("{} {}", cur.icon, cur.label))
         .show_ui(ui, |ui| {
-            for cat in Category::ALL {
+            for cat in &CATEGORY_META {
                 ui.add_space(2.0);
-                ui.label(RichText::new(cat.label()).weak().small());
-                for k in EntityKind::ALL.into_iter().filter(|k| k.category() == cat) {
-                    ui.selectable_value(kind, k, format!("{} {}", k.icon(), k.label()));
+                ui.label(RichText::new(cat.label).weak().small());
+                for m in KIND_META.iter().filter(|m| m.category == cat.category) {
+                    ui.selectable_value(kind, m.kind, format!("{} {}", m.icon, m.label));
                 }
             }
         });

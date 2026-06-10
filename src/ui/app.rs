@@ -1,7 +1,3 @@
-//! `RedstringApp`: the eframe shell. Owns the graph plus all chrome state and
-//! lays out the panels; behaviour lives in the sibling modules — palette,
-//! board, links, inspector, persist, chrome.
-
 use std::path::Path;
 use std::time::{Instant, SystemTime};
 
@@ -12,7 +8,7 @@ use petgraph::Directed;
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
-use crate::error::Error;
+use crate::error::{Error, RsResult};
 use crate::model::{Camera, Entity, EntityKind, Relation, SourceKind};
 use crate::prefs::{Prefs, Theme};
 use crate::project::Project;
@@ -22,73 +18,59 @@ use super::board;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
-pub(super) const OK_GREEN: Color32 = Color32::from_rgb(120, 200, 140);
-pub(super) const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
+pub const OK_GREEN: Color32 = Color32::from_rgb(120, 200, 140);
+pub const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
 
-/// Stable id for the board's egui_graphs metadata — camera zoom/pan live there.
-pub(super) const BOARD_META_ID: &str = "redstring_board";
+pub const BOARD_META_ID: &str = "redstring_board";
 
 pub struct RedstringApp {
-    pub(super) g: RsGraph,
-    /// The open case directory. None until the first save creates one.
-    pub(super) project: Option<Project>,
-    /// Case display name — persisted in the file's meta block on save.
-    pub(super) case_name: String,
-    pub(super) status: String,
-    pub(super) prefs: Prefs,
+    pub g: RsGraph,
 
-    /// Path + mtime of the case file as last written/read — the hot-reload watch.
-    pub(super) watched: Option<(String, SystemTime)>,
-    pub(super) last_watch_poll: Instant,
-    /// Load the project on the first frame — camera restore needs a live `ui`.
-    pub(super) pending_load: bool,
-    /// Camera from the last load, re-asserted once AFTER the GraphView ran —
-    /// the widget force-fits on its very first frame and would stomp it.
-    pub(super) pending_camera: Option<Camera>,
+    pub project: Option<Project>,
 
-    /// Armed kind in the entity palette — also what a board drop spawns.
-    pub(super) ne_kind: EntityKind,
-    /// Palette search filter.
-    pub(super) kind_search: String,
+    pub case_name: String,
+    pub status: String,
+    pub prefs: Prefs,
 
-    /// Right-drag edge creation: press on A, rubber-band, release on B, then
-    /// the verb picker. `pending_edge` is the picker state: from, to, screen
-    /// position of the popup.
-    pub(super) edge_drag: Option<NodeIndex>,
-    pub(super) pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
-    pub(super) verb_filter: String,
-    pub(super) verb_filter_focus: bool,
-    /// Inline name editor for an entity just dropped from the palette —
-    /// node plus popup screen position; buf holds the in-progress text.
-    pub(super) label_edit: Option<(NodeIndex, Pos2)>,
-    pub(super) label_edit_buf: String,
-    pub(super) label_edit_focus: bool,
-    /// Node being resized via its corner handle — drag in progress.
-    pub(super) resize: Option<NodeIndex>,
-    /// Preferences window visibility — the prefs themselves live in `prefs`.
-    pub(super) prefs_open: bool,
-    /// Welcome window visibility — up at startup unless cwd is a case; any
-    /// successful open or create drops it.
-    pub(super) show_welcome: bool,
-    /// Case display name typed on the welcome screen — free text, decoupled
-    /// from the directory name the create picker asks for next.
-    pub(super) welcome_name: String,
-    /// Board rect size from the last frame — the zoom bar zooms about its
-    /// center.
-    pub(super) board_size: Vec2,
-    /// Left-drag node move: node plus canvas-space grab offset. Replaces the
-    /// lib's built-in dragging, whose compensation step snaps the node center
-    /// onto the cursor.
-    pub(super) node_drag: Option<(NodeIndex, Vec2)>,
+    pub watched: Option<(String, SystemTime)>,
+    pub last_watch_poll: Instant,
 
-    /// Add-source form state — targets the selected relation.
-    pub(super) ns_kind: SourceKind,
-    pub(super) ns_ref: String,
-    pub(super) ns_excerpt: String,
+    pub pending_load: bool,
+
+    pub pending_camera: Option<Camera>,
+
+    pub ne_kind: EntityKind,
+
+    pub kind_search: String,
+
+    pub edge_drag: Option<NodeIndex>,
+    pub pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
+    pub verb_filter: String,
+    pub verb_filter_focus: bool,
+
+    pub label_edit: Option<(NodeIndex, Pos2)>,
+    pub label_edit_buf: String,
+    pub label_edit_focus: bool,
+
+    pub resize: Option<NodeIndex>,
+
+    pub prefs_open: bool,
+
+    pub show_welcome: bool,
+
+    pub welcome_name: String,
+
+    pub board_size: Vec2,
+
+    pub node_drag: Option<(NodeIndex, Vec2)>,
+
+    pub ns_kind: SourceKind,
+    pub ns_ref: String,
+    pub ns_excerpt: String,
 }
 
 impl RedstringApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> RsResult<Self> {
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             project: None,
@@ -118,18 +100,17 @@ impl RedstringApp {
             ns_ref: String::new(),
             ns_excerpt: String::new(),
         };
-        // prefs first — opening a case below pushes it onto the recents list
+
         match Prefs::load() {
             Ok(p) => app.prefs = p,
             Err(err) => app.status = format!("prefs unreadable — using defaults: {err}"),
         }
-        // a case directory in cwd opens straight onto the board; anything
-        // else lands on the welcome window over an empty board
+
         match Project::open(Path::new(".")) {
             Ok(project) => {
                 app.project = Some(project);
                 app.pending_load = true;
-                app.remember_project();
+                app.remember_project()?;
             }
             Err(Error::NotAProject { .. }) => app.start_blank(),
             Err(err) => {
@@ -137,74 +118,65 @@ impl RedstringApp {
                 app.status = format!("case in cwd unreadable: {err}");
             }
         }
-        app.apply_prefs(&cc.egui_ctx);
-        app
+        app.apply_prefs(&cc.egui_ctx)?;
+        Ok(app)
     }
 
-    /// Blank start — welcome window over an empty board. The widget still
-    /// force-fits its very first frame, and with zero nodes that fit lands
-    /// on a garbage fallback zoom in the hundreds; the queued default camera
-    /// stomps it right after frame one, exactly like a case-load re-assert.
     fn start_blank(&mut self) {
         self.show_welcome = true;
         self.pending_camera = Some(Camera::default());
     }
 
-    /// Push scale + theme prefs onto the egui context — startup and on change.
-    pub(super) fn apply_prefs(&self, ctx: &egui::Context) {
+    pub fn apply_prefs(&self, ctx: &egui::Context) -> RsResult<()> {
         ctx.set_zoom_factor(self.prefs.ui_scale);
         ctx.set_theme(match self.prefs.theme {
-            Theme::Dark => egui::Theme::Dark,
+        Theme::Dark => egui::Theme::Dark,
             Theme::Light => egui::Theme::Light,
         });
+        Ok(())
     }
 
-    /// Write prefs to disk; a failure lands in the status bar, not stderr.
-    pub(super) fn persist_prefs(&mut self) {
-        if let Err(err) = self.prefs.save() {
-            self.status = format!("prefs save failed: {err}");
-        }
+    fn flag(&mut self, outcome: RsResult<()>) {
+        let Err(err) = outcome else { return };
+        self.status = format!("⚠ {err}");
     }
-}
 
-impl App for RedstringApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn frame(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
         if self.pending_load {
             self.pending_load = false;
-            self.load(ui);
+            self.load(ui)?;
         }
-        self.sync_visuals();
-        self.poll_external_edit(ui);
-        self.handle_drop(ui);
+        self.sync_visuals()?;
+        self.poll_external_edit(ui)?;
+        self.handle_drop(ui)?;
 
-        // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open — also on the toolbar.
-        // Shift variant FIRST: consume_key matches logically, extra held
-        // modifiers pass, so the plain Ctrl+S check would eat Ctrl+Shift+S.
         if ui.input_mut(|i| {
-            i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S)
+            i.consume_key(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::S,
+            )
         }) {
-            self.save_as_dialog(ui);
+            self.save_as_dialog(ui)?;
         }
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
-            self.save(ui);
+            self.save(ui)?;
         }
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
-            self.open_dialog(ui);
+            self.open_dialog(ui)?;
         }
 
         egui::Panel::top("toolbar")
             .resizable(false)
-            .show_inside(ui, |ui| self.toolbar(ui));
-        self.prefs_window(ui);
-        self.welcome_window(ui);
+            .show_inside(ui, |ui| self.toolbar(ui))
+            .inner?;
+        self.prefs_window(ui)?;
+        self.welcome_window(ui)?;
 
-        // left sidebar collapses to a thin strip holding only the expand toggle
         let strip = egui::Panel::left("left_strip")
             .resizable(false)
             .exact_size(26.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
-        // size_range caps auto-sizing — the kind list reports its widest row
-        // as desired width and would otherwise balloon the panel
+
         let expanded = egui::Panel::left("left")
             .resizable(true)
             .default_size(270.0)
@@ -216,41 +188,49 @@ impl App for RedstringApp {
             expanded,
             |ui, how_expanded| {
                 if how_expanded == 0.0 {
-                    self.sidebar_strip(ui);
+                    self.sidebar_strip(ui)
                 } else {
-                    self.left_panel(ui);
+                    self.left_panel(ui)
                 }
             },
-        );
+        )
+        .inner?;
         egui::Panel::right("right")
             .resizable(true)
             .default_size(310.0)
             .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui));
-            });
-        egui::Panel::bottom("status").show_inside(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(&self.status);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    self.zoom_bar(ui);
-                });
-            });
-        });
-        egui::CentralPanel::default().show_inside(ui, |ui| self.board(ui));
+                egui::ScrollArea::vertical()
+                    .show(ui, |ui| self.inspector(ui))
+                    .inner
+            })
+            .inner?;
+        egui::Panel::bottom("status")
+            .show_inside(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(&self.status);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.zoom_bar(ui)
+                    })
+                    .inner
+                })
+                .inner
+            })
+            .inner?;
+        egui::CentralPanel::default()
+            .show_inside(ui, |ui| self.board(ui))
+            .inner?;
 
-        // Camera-restore ordering, verified against egui_graphs 0.30 sources:
-        // the widget loads our metadata at the start of its pass and persists
-        // it at the end, so a camera write BEFORE the add is what it draws
-        // with — EXCEPT the widget's very first frame, which force-fits even
-        // with fit-to-screen disabled, stomping the injected pan/zoom. The
-        // first-frame flag flips after frame one and nothing else mutates the
-        // camera without user input, so ONE re-assert here — after the widget
-        // ran — makes frame two onward render the case's camera. Costs a
-        // single fitted frame at startup; later loads are covered by the
-        // pre-write in load and this becomes a no-op.
         let Some(cam) = self.pending_camera.take() else {
-            return;
+            return Ok(());
         };
-        board::camera_write(ui, cam);
+        board::camera_write(ui, cam)?;
+        Ok(())
+    }
+}
+
+impl App for RedstringApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let outcome = self.frame(ui);
+        self.flag(outcome);
     }
 }

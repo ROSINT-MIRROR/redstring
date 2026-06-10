@@ -26,12 +26,10 @@ fn run_gui() -> eframe::Result {
     eframe::run_native(
         "redstring",
         options,
-        Box::new(|cc| Ok(Box::new(RedstringApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(RedstringApp::new(cc)?))),
     )
 }
 
-/// Line-oriented validator for CI and the kit's AI siblings: exit 0 when the
-/// case is consistent, 1 on findings or an unreadable case, 2 on usage.
 fn run_check(path: Option<String>) -> ! {
     let Some(target) = path else {
         check_case(".");
@@ -40,8 +38,7 @@ fn run_check(path: Option<String>) -> ! {
 }
 
 fn check_case(target: &str) -> ! {
-    let result =
-        project::Project::open(Path::new(target)).and_then(|p| project::validate(&p));
+    let result = project::Project::open(Path::new(target)).and_then(|p| project::validate(&p));
     let findings = match result {
         Ok(f) => f,
         Err(err) => {

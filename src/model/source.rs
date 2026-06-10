@@ -1,7 +1,3 @@
-//! Where a claim comes from. Sources point into the rest of the kit's corpus
-//! — markdown notes, archived snapshots, transcripts, documents, URLs — and
-//! attach to relations. This is the evidentiary seam of the whole tool.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -14,54 +10,48 @@ pub enum SourceKind {
     Note,
 }
 
-impl SourceKind {
-    pub const ALL: [SourceKind; 6] = [
-        Self::Markdown,
-        Self::Url,
-        Self::Archive,
-        Self::Transcript,
-        Self::Document,
-        Self::Note,
-    ];
+pub struct SourceMeta {
+    pub kind: SourceKind,
+    pub label: &'static str,
+    pub hint: &'static str,
+    pub file_backed: bool,
+}
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Markdown => "Markdown ref",
-            Self::Url => "URL",
-            Self::Archive => "Archive",
-            Self::Transcript => "Transcript",
-            Self::Document => "Document",
-            Self::Note => "Note",
-        }
-    }
-
-    /// Whether the reference names a file in the case directory — these
-    /// kinds participate in copy-on-attach, validation and bundle integrity.
-    pub fn is_file_backed(self) -> bool {
-        match self {
-            Self::Markdown | Self::Archive | Self::Transcript | Self::Document => true,
-            Self::Url | Self::Note => false,
-        }
-    }
-
-    /// Placeholder shown in the reference field.
-    pub fn hint(self) -> &'static str {
-        match self {
-            Self::Markdown => "notes.md#section",
-            Self::Url => "https://…",
-            Self::Archive => "snapshot id / path",
-            Self::Transcript => "mm:ss",
-            Self::Document => "file · page",
-            Self::Note => "free text",
-        }
+const fn s(kind: SourceKind, label: &'static str, hint: &'static str, file_backed: bool) -> SourceMeta {
+    SourceMeta {
+        kind,
+        label,
+        hint,
+        file_backed,
     }
 }
 
-/// One piece of evidence backing a relation.
+#[rustfmt::skip]
+pub const SOURCE_META: [SourceMeta; 6] = [
+    s(SourceKind::Markdown, "Markdown ref", "notes.md#section", true),
+    s(SourceKind::Url, "URL", "https://…", false),
+    s(SourceKind::Archive, "Archive", "snapshot id / path", true),
+    s(SourceKind::Transcript, "Transcript", "mm:ss", true),
+    s(SourceKind::Document, "Document", "file · page", true),
+    s(SourceKind::Note, "Note", "free text", false),
+];
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Source {
     pub kind: SourceKind,
     pub reference: String,
     #[serde(default)]
     pub excerpt: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_mirrors_declaration_order() {
+        for (i, m) in SOURCE_META.iter().enumerate() {
+            assert_eq!(m.kind as usize, i, "SOURCE_META[{i}] is {:?}", m.kind);
+        }
+    }
 }

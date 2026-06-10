@@ -1,9 +1,9 @@
-//! Custom edge renderer. The point of redstring: an unsourced link is drawn
-//! red + dashed (an accusation you can't back up), a sourced link solid green.
-//! Self-contained straight-line + arrowhead drawing; parallel edges between the
-//! same pair are fanned out by `order` so they don't overlap. Segment ends are
-//! trimmed to each node's drawn boundary so the arrowhead stays visible on
-//! circles and photo tiles alike.
+
+
+
+
+
+
 
 use egui::{Color32, Pos2, Shape, Stroke, Vec2};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
@@ -29,7 +29,7 @@ pub struct SourcedEdgeShape {
 impl From<EdgeProps<Relation>> for SourcedEdgeShape {
     fn from(props: EdgeProps<Relation>) -> Self {
         Self {
-            sourced: props.payload.is_sourced(),
+            sourced: !props.payload.sources.is_empty(),
             order: props.order,
         }
     }
@@ -68,7 +68,7 @@ where
             ));
         }
 
-        // arrowhead, built in canvas space then projected so it scales with zoom
+        
         let dir = (e - s).normalized();
         let t1 = e - rotate(dir, TIP_ANGLE) * TIP_SIZE;
         let t2 = e - rotate(dir, -TIP_ANGLE) * TIP_SIZE;
@@ -83,7 +83,7 @@ where
     }
 
     fn update(&mut self, state: &EdgeProps<Relation>) {
-        self.sourced = state.payload.is_sourced();
+        self.sourced = !state.payload.sources.is_empty();
         self.order = state.order;
     }
 
@@ -99,10 +99,10 @@ where
     }
 }
 
-/// Pull both segment ends back from the node centers to the nodes' drawn
-/// boundaries, whatever shape each display impl is currently using — default
-/// circle or photo rect. Edge hit-testing uses the same trim, so it stays
-/// aligned with what's drawn.
+
+
+
+
 fn trim_to_boundaries<N, Ty, Ix, D>(
     start: &Node<N, Relation, Ty, Ix, D>,
     end: &Node<N, Relation, Ty, Ix, D>,
@@ -120,7 +120,7 @@ where
     )
 }
 
-/// Fan parallel edges apart perpendicular to their direction.
+
 fn offset_ends(s: Pos2, e: Pos2, order: usize) -> (Pos2, Pos2) {
     if order == 0 {
         return (s, e);

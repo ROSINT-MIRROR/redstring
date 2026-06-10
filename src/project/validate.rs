@@ -1,13 +1,13 @@
-//! The case validator: the contract an external editor — human or AI — can
-//! check its work against mechanically. Hard failures (unreadable, unparsable,
-//! future format) come back as errors; consistency problems come back as
-//! findings, one line each, so an edit/check/fix loop needs no parsing smarts.
+
+
+
+
 
 use std::collections::HashSet;
 use std::path::Path;
 
 use crate::error::RsResult;
-use crate::model::CaseFile;
+use crate::model::{CaseFile, SOURCE_META};
 
 use super::ignore::RsIgnore;
 use super::io;
@@ -15,7 +15,7 @@ use super::layout::Project;
 
 pub fn validate(project: &Project) -> RsResult<Vec<String>> {
     let cf = io::read_case(project)?;
-    let ignore = RsIgnore::load(project.root())?;
+    let ignore = RsIgnore::load(&project.root)?;
     let mut findings: Vec<String> = Vec::new();
 
     let mut slugs: HashSet<&str> = HashSet::new();
@@ -35,18 +35,18 @@ pub fn validate(project: &Project) -> RsResult<Vec<String>> {
         }
     }
 
-    for (what, rel) in cited_paths(&cf) {
-        check_path(project, &ignore, &mut findings, &what, &rel);
+    for (what, rel) in cited_paths(&cf)? {
+        check_path(project, &ignore, &mut findings, &what, &rel)?;
     }
 
     Ok(findings)
 }
 
-/// Every file the case cites, as (description, project-relative path).
-/// Heuristic for sources: only file-backed kinds whose reference's path part
-/// — before any `#fragment` — contains a `/`; bare timestamps and page refs
-/// are not paths. Shared with bundle integrity so both agree on what counts.
-pub fn cited_paths(cf: &CaseFile) -> Vec<(String, String)> {
+
+
+
+
+pub fn cited_paths(cf: &CaseFile) -> RsResult<Vec<(String, String)>> {
     let mut v: Vec<(String, String)> = Vec::new();
     for e in &cf.data.entities {
         let Some(img) = &e.image else { continue };
@@ -54,7 +54,7 @@ pub fn cited_paths(cf: &CaseFile) -> Vec<(String, String)> {
     }
     for r in &cf.data.relations {
         for s in &r.sources {
-            if !s.kind.is_file_backed() {
+            if !SOURCE_META[s.kind as usize].file_backed {
                 continue;
             }
             let Some(path_part) = s.reference.split('#').next() else {
@@ -69,7 +69,7 @@ pub fn cited_paths(cf: &CaseFile) -> Vec<(String, String)> {
             ));
         }
     }
-    v
+    Ok(v)
 }
 
 fn check_path(
@@ -78,26 +78,27 @@ fn check_path(
     findings: &mut Vec<String>,
     what: &str,
     rel: &str,
-) {
+) -> RsResult<()> {
     if Path::new(rel).is_absolute() {
         findings.push(format!(
             "{what}: absolute path '{rel}' — case files must cite project-relative paths"
         ));
-        return;
+        return Ok(());
     }
     if rel.split('/').any(|seg| seg == "..") {
         findings.push(format!("{what}: '{rel}' escapes the case directory"));
-        return;
+        return Ok(());
     }
-    if !project.resolve(rel).exists() {
+    if !project.resolve(rel)?.exists() {
         findings.push(format!("{what}: missing file '{rel}'"));
-        return;
+        return Ok(());
     }
-    if ignore.matches(rel) {
+    if ignore.matches(rel)? {
         findings.push(format!(
             "{what}: '{rel}' is matched by .rsignore — it would vanish from bundles"
         ));
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -125,30 +126,30 @@ mod tests {
     fn findings_cover_the_contract() {
         let p = project("contract");
         let mut cf = CaseFile::default();
-        cf.meta = CaseMeta::stamped("validate me");
+        cf.meta = CaseMeta::stamped("validate me").unwrap();
         cf.data.entities.push(rec("doe"));
-        cf.data.entities.push(rec("doe")); // duplicate
+        cf.data.entities.push(rec("doe")); 
         let mut shady = rec("shady");
-        shady.image = Some("entities/shady/missing.png".into()); // missing file
+        shady.image = Some("entities/shady/missing.png".into()); 
         cf.data.entities.push(shady);
         cf.data.relations.push(RelationRec {
             from: "doe".into(),
-            to: "ghost".into(), // unknown slug
+            to: "ghost".into(), 
             kind: RelationKind::Paid,
             sources: vec![
                 Source {
                     kind: SourceKind::Document,
-                    reference: "evidence/docs/contract.pdf".into(), // missing file
+                    reference: "evidence/docs/contract.pdf".into(), 
                     excerpt: String::new(),
                 },
                 Source {
                     kind: SourceKind::Transcript,
-                    reference: "12:34".into(), // not a path — never flagged
+                    reference: "12:34".into(), 
                     excerpt: String::new(),
                 },
                 Source {
                     kind: SourceKind::Url,
-                    reference: "https://example.org/x".into(), // not file-backed
+                    reference: "https://example.com/article".into(),
                     excerpt: String::new(),
                 },
             ],
@@ -162,22 +163,22 @@ mod tests {
         assert!(joined.contains("missing.png"), "{joined}");
         assert!(joined.contains("contract.pdf"), "{joined}");
         assert_eq!(findings.len(), 4, "{joined}");
-        std::fs::remove_dir_all(p.root()).unwrap();
+        std::fs::remove_dir_all(p.root).unwrap();
     }
 
     #[test]
     fn clean_case_validates_clean() {
         let p = project("clean");
-        let img = p.resolve("entities/doe/portrait.png");
+        let img = p.resolve("entities/doe/portrait.png").unwrap();
         std::fs::create_dir_all(img.parent().unwrap()).unwrap();
         std::fs::write(&img, b"png").unwrap();
         let mut cf = CaseFile::default();
-        cf.meta = CaseMeta::stamped("clean");
+        cf.meta = CaseMeta::stamped("clean").unwrap();
         let mut doe = rec("doe");
         doe.image = Some("entities/doe/portrait.png".into());
         cf.data.entities.push(doe);
         io::write_case(&p, &cf).unwrap();
         assert!(validate(&p).unwrap().is_empty());
-        std::fs::remove_dir_all(p.root()).unwrap();
+        std::fs::remove_dir_all(p.root).unwrap();
     }
 }
