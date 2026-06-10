@@ -198,17 +198,29 @@ impl RedstringApp {
         let mut commit = false;
         let mut close = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
+        let edit_font = egui::FontId::new(font_px.max(MIN_EDIT_PX), egui::FontFamily::Monospace);
+        let text_w = ui
+            .ctx()
+            .fonts_mut(|f| {
+                f.layout_no_wrap(
+                    self.label_edit_buf.clone(),
+                    edit_font.clone(),
+                    egui::Color32::WHITE,
+                )
+            })
+            .size()
+            .x;
+        let width = (text_w + 12.0).max(MIN_EDIT_W);
+        let pos = egui::Pos2::new(zone.center().x - width / 2.0, zone.top());
+
         let area = egui::Area::new(egui::Id::new("rs_label_edit"))
             .order(egui::Order::Foreground)
-            .fixed_pos(zone.left_top())
+            .fixed_pos(pos)
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 let out = egui::TextEdit::singleline(&mut self.label_edit_buf)
-                    .font(egui::FontId::new(
-                        font_px.max(MIN_EDIT_PX),
-                        egui::FontFamily::Monospace,
-                    ))
-                    .desired_width(zone.width().max(MIN_EDIT_W))
+                    .font(edit_font.clone())
+                    .desired_width(width)
                     .margin(egui::Margin::symmetric(4, 2))
                     .show(ui);
                 if std::mem::take(&mut self.label_edit_focus) {
