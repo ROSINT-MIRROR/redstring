@@ -5,6 +5,8 @@ use std::path::Path;
 
 use egui::{Align2, RichText};
 
+use crate::model::MAX_CASE_NAME;
+
 use super::app::RedstringApp;
 
 impl RedstringApp {
@@ -36,11 +38,22 @@ impl RedstringApp {
             ui.add_space(8.0);
         });
         ui.horizontal(|ui| {
+            ui.label(RichText::new("case name").weak());
+            ui.add(
+                egui::TextEdit::singleline(&mut self.welcome_name)
+                    .hint_text("free text, spaces fine — the directory name comes next")
+                    .char_limit(MAX_CASE_NAME)
+                    .desired_width(f32::INFINITY),
+            );
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
             if ui
                 .button("new case…")
-                .on_hover_text("Pick a spot — redstring scaffolds the canonical case directory")
+                .on_hover_text("Pick where the case directory goes — it scaffolds the canonical tree")
                 .clicked()
             {
+                self.apply_welcome_name();
                 self.save_as_dialog(ui);
             }
             if ui
@@ -88,6 +101,16 @@ impl RedstringApp {
                 self.show_welcome = false;
             }
         });
+    }
+
+    /// The typed display name wins over the directory-derived default that
+    /// save_as_dialog would otherwise fill in.
+    fn apply_welcome_name(&mut self) {
+        let name = self.welcome_name.trim();
+        if name.is_empty() {
+            return;
+        }
+        self.case_name = name.to_owned();
     }
 
     fn forget_recent_request(&mut self, req: Option<String>) {

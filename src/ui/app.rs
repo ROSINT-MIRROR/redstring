@@ -70,6 +70,12 @@ pub struct RedstringApp {
     /// Welcome window visibility — up at startup unless cwd is a case; any
     /// successful open or create drops it.
     pub(super) show_welcome: bool,
+    /// Case display name typed on the welcome screen — free text, decoupled
+    /// from the directory name the create picker asks for next.
+    pub(super) welcome_name: String,
+    /// Board rect size from the last frame — the zoom bar zooms about its
+    /// center.
+    pub(super) board_size: Vec2,
     /// Left-drag node move: node plus canvas-space grab offset. Replaces the
     /// lib's built-in dragging, whose compensation step snaps the node center
     /// onto the cursor.
@@ -106,6 +112,8 @@ impl RedstringApp {
             node_drag: None,
             prefs_open: false,
             show_welcome: false,
+            welcome_name: String::new(),
+            board_size: Vec2::ZERO,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -221,7 +229,12 @@ impl App for RedstringApp {
                 egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui));
             });
         egui::Panel::bottom("status").show_inside(ui, |ui| {
-            ui.label(&self.status);
+            ui.horizontal(|ui| {
+                ui.label(&self.status);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.zoom_bar(ui);
+                });
+            });
         });
         egui::CentralPanel::default().show_inside(ui, |ui| self.board(ui));
 

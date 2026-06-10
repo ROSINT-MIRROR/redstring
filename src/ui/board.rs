@@ -89,10 +89,34 @@ fn scroll_zoom(ui: &mut egui::Ui) {
 }
 
 impl RedstringApp {
+    /// Status-bar zoom control: a logarithmic slider plus a percent readout,
+    /// zooming about the board center through the same clamped range as the
+    /// wheel. Runs before the GraphView in panel order, so a drag draws this
+    /// same frame.
+    pub(super) fn zoom_bar(&mut self, ui: &mut egui::Ui) {
+        let mut mf = meta(ui);
+        let mut z = mf.zoom;
+        ui.spacing_mut().slider_width = 110.0;
+        let resp = ui.add(
+            egui::Slider::new(&mut z, MIN_ZOOM..=MAX_ZOOM)
+                .logarithmic(true)
+                .show_value(false),
+        );
+        ui.weak(format!("{:.0}%", z * 100.0));
+        if !resp.changed() {
+            return;
+        }
+        let local = self.board_size / 2.0;
+        mf.pan = local - (local - mf.pan) * (z / mf.zoom);
+        mf.zoom = z;
+        mf.save(ui);
+    }
+
     /// The corkboard: the GraphView plus every overlay gesture around it.
     pub(super) fn board(&mut self, ui: &mut egui::Ui) {
         // the rect the GraphView is about to allocate — it takes all available space
         let rect = ui.available_rect_before_wrap();
+        self.board_size = rect.size();
 
         // Edge-drag input runs BEFORE the GraphView so that on the press
         // frame the view is already built with node-dragging gated off; an

@@ -174,7 +174,8 @@ impl RedstringApp {
     /// Pick where the new case directory goes — the typed name becomes the
     /// directory — then save into it.
     pub(super) fn save_as_dialog(&mut self, ui: &egui::Ui) {
-        let Some(p) = create_picker(self.project.as_ref()).save_file() else {
+        let suggest = dir_suggestion(&self.case_name);
+        let Some(p) = create_picker(self.project.as_ref(), &suggest).save_file() else {
             return;
         };
         match Project::create(&p) {
@@ -400,11 +401,29 @@ fn folder_picker(current: Option<&Project>) -> rfd::FileDialog {
 }
 
 /// Create picker: the typed name becomes the new case directory.
-fn create_picker(current: Option<&Project>) -> rfd::FileDialog {
+fn create_picker(current: Option<&Project>, suggest: &str) -> rfd::FileDialog {
+    let name = if suggest.is_empty() { "mycase" } else { suggest };
     let d = rfd::FileDialog::new()
         .set_title("create case directory")
-        .set_file_name("mycase");
+        .set_file_name(name);
     seed_dir(d, current)
+}
+
+/// Directory suggestion for the create picker: the case display name slugged
+/// to lowercase alnum runs joined by underscores. The untouched default name
+/// suggests nothing, leaving the picker's own placeholder.
+fn dir_suggestion(name: &str) -> String {
+    if name == "untitled case" {
+        return String::new();
+    }
+    name.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 fn seed_dir(d: rfd::FileDialog, current: Option<&Project>) -> rfd::FileDialog {
