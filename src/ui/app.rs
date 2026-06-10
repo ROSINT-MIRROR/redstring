@@ -59,6 +59,12 @@ pub struct RedstringApp {
     pub prefs_open: bool,
     pub settings_tab: super::chrome::SettingsTab,
 
+    pub registry: crate::modules::Registry,
+    pub module_tx: std::sync::mpsc::Sender<crate::modules::ModuleRun>,
+    pub module_rx: std::sync::mpsc::Receiver<crate::modules::ModuleRun>,
+    pub module_runs: Vec<crate::modules::ModuleRun>,
+    pub module_busy: usize,
+
     pub quit_confirm: bool,
     pub allow_close: bool,
 
@@ -90,6 +96,14 @@ impl RedstringApp {
         let mut fonts = egui::FontDefinitions::default();
         egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
         cc.egui_ctx.set_fonts(fonts);
+        let (module_tx, module_rx) = std::sync::mpsc::channel();
+        let (registry, registry_err) = match crate::modules::Registry::load() {
+            Ok(r) => (r, String::new()),
+            Err(err) => (
+                crate::modules::Registry { entries: Vec::new() },
+                format!("modules unavailable: {err}"),
+            ),
+        };
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             project: None,
@@ -117,6 +131,11 @@ impl RedstringApp {
             layout_anim: None,
             prefs_open: false,
             settings_tab: super::chrome::SettingsTab::General,
+            registry,
+            module_tx,
+            module_rx,
+            module_runs: Vec::new(),
+            module_busy: 0,
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
@@ -128,6 +147,10 @@ impl RedstringApp {
             ns_ref: String::new(),
             ns_excerpt: String::new(),
         };
+
+        if !registry_err.is_empty() {
+            app.status = registry_err;
+        }
 
         match Prefs::load() {
             Ok(p) => app.prefs = p,
@@ -210,6 +233,7 @@ impl RedstringApp {
             .inner?;
         self.settings_window(ui)?;
         self.quit_window(ui)?;
+        self.module_results_window(ui)?;
         self.welcome_window(ui)?;
 
         let strip = egui::Panel::left("left_strip")

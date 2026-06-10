@@ -1,5 +1,6 @@
 mod error;
 mod model;
+mod modules;
 mod prefs;
 mod project;
 mod shapes;

@@ -4,7 +4,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 use crate::model::{
     CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, RELATION_META, RelationKind, SOURCE_META,
-    Source,
+    Source, pretty_key, slugify,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
@@ -113,7 +113,7 @@ impl RedstringApp {
             ui.horizontal(|ui| -> Result<(), Error> {
                 ui.add_sized(
                     egui::Vec2::new(110.0, ui.spacing().interact_size.y),
-                    egui::Label::new(pretty_key(k)).truncate(),
+                    egui::Label::new(pretty_key(k)?).truncate(),
                 );
                 ui.add(egui::TextEdit::singleline(v).hint_text("value"));
                 if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
@@ -133,7 +133,7 @@ impl RedstringApp {
             if style::action_btn(ui, egui_phosphor::regular::PLUS, "add attribute")?
                 && !self.new_attr_key.trim().is_empty()
             {
-                let key = slugify(&self.new_attr_key);
+                let key = slugify(&self.new_attr_key)?;
                 if !e.attrs.iter().any(|(k, _)| *k == key) {
                     e.attrs.push((key, String::new()));
                 }
@@ -145,6 +145,10 @@ impl RedstringApp {
 
         style::section(ui, egui_phosphor::regular::NOTE_PENCIL, "note")?;
         ui.text_edit_multiline(&mut e.note);
+        let kind_now = e.kind;
+
+        style::section(ui, egui_phosphor::regular::PLUGS, "lookups")?;
+        let run_module = self.lookup_buttons(ui, kind_now)?;
 
         ui.add_space(style::GAP);
         ui.separator();
@@ -158,6 +162,7 @@ impl RedstringApp {
         }
 
         self.apply_picked_image(ui.ctx(), nidx, picked_image)?;
+        self.start_module_request(ui, nidx, run_module)?;
         if delete {
             self.g.remove_node(nidx);
         }
@@ -358,48 +363,6 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
-}
-
-
-
-fn pretty_key(slug: &str) -> String {
-    slug.split('_')
-        .filter(|s| !s.is_empty())
-        .map(|w| {
-            let mut cs = w.chars();
-            let Some(c) = cs.next() else {
-                return String::new();
-            };
-            c.to_uppercase().collect::<String>() + cs.as_str()
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-
-fn slugify(s: &str) -> String {
-    s.to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect::<String>()
-        .split('_')
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("_")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keys_round_trip_pretty_and_slug() {
-        assert_eq!(pretty_key("first_name"), "First Name");
-        assert_eq!(pretty_key("swift_bic"), "Swift Bic");
-        assert_eq!(slugify("Shoe Size"), "shoe_size");
-        assert_eq!(slugify("  Weird--Key!! "), "weird_key");
-        assert_eq!(slugify(&pretty_key("date_of_birth")), "date_of_birth");
-    }
 }
 
 fn pick_image() -> Option<String> {

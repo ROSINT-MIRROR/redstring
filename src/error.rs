@@ -61,6 +61,10 @@ pub enum Error {
     DuplicateSlug {
         slug: String,
     },
+
+    Clock {
+        source: std::time::SystemTimeError,
+    },
 }
 
 impl std::error::Error for Error {}
@@ -118,6 +122,9 @@ impl std::fmt::Display for Error {
             ),
             Self::DuplicateSlug { slug } => {
                 write!(f, "duplicate slug '{slug}' — slugs must be case-unique")
+            }
+            Self::Clock { source } => {
+                write!(f, "system clock is before the unix epoch: {source}")
             }
         }
     }

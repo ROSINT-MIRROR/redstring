@@ -10,6 +10,7 @@ use super::layout::LayoutKind;
 pub enum SettingsTab {
     General,
     ApiKeys,
+    Modules,
 }
 
 const TB_ICON: f32 = 22.0;
@@ -160,6 +161,11 @@ impl RedstringApp {
                             SettingsTab::ApiKeys,
                             format!("{} API keys", egui_phosphor::regular::KEY),
                         );
+                        ui.selectable_value(
+                            &mut self.settings_tab,
+                            SettingsTab::Modules,
+                            format!("{} Modules", egui_phosphor::regular::PLUGS),
+                        );
                     });
                     ui.separator();
                     ui.vertical(|ui| {
@@ -167,6 +173,7 @@ impl RedstringApp {
                         match self.settings_tab {
                             SettingsTab::General => changed |= general_tab(ui, &mut self.prefs),
                             SettingsTab::ApiKeys => changed |= api_keys_tab(ui, &mut self.prefs),
+                            SettingsTab::Modules => modules_tab(ui, &self.registry),
                         }
                     });
                 });
@@ -264,6 +271,41 @@ fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     changed
 }
 
+
+
+fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
+    ui.label(
+        RichText::new("lookup modules — run from an entity's inspector; specs load from ~/.config/redstring/modules/")
+            .weak(),
+    );
+    ui.add_space(super::style::GAP_SM);
+    for entry in &registry.entries {
+        ui.horizontal(|ui| {
+            match &entry.status {
+                crate::modules::ModuleStatus::Active(path) => {
+                    ui.colored_label(super::app::OK_GREEN, egui_phosphor::regular::CHECK);
+                    ui.label(RichText::new(&entry.spec.label).strong());
+                    ui.label(RichText::new(path.display().to_string()).weak().small());
+                }
+                crate::modules::ModuleStatus::Missing => {
+                    ui.colored_label(super::app::ALARM_RED, egui_phosphor::regular::X);
+                    ui.label(RichText::new(&entry.spec.label).strong());
+                    ui.label(
+                        RichText::new(format!("'{}' not on PATH — hidden", entry.spec.bin))
+                            .weak()
+                            .small(),
+                    );
+                }
+                crate::modules::ModuleStatus::Broken(reason) => {
+                    ui.colored_label(super::app::ALARM_RED, egui_phosphor::regular::X);
+                    ui.label(RichText::new(&entry.spec.label).strong());
+                    ui.label(RichText::new(format!("broken spec: {reason}")).weak().small());
+                }
+            }
+        });
+        ui.label(RichText::new(format!("    {}", entry.origin)).weak().small());
+    }
+}
 
 
 const API_SERVICES: [(&str, &str, &str); 1] = [(

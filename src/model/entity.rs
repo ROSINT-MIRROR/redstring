@@ -213,6 +213,33 @@ fn default_boost() -> f32 {
     1.0
 }
 
+pub fn slugify(s: &str) -> Result<String, Error> {
+    Ok(s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("_"))
+}
+
+
+pub fn pretty_key(slug: &str) -> Result<String, Error> {
+    Ok(slug
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .map(|w| {
+            let mut cs = w.chars();
+            let Some(c) = cs.next() else {
+                return String::new();
+            };
+            c.to_uppercase().collect::<String>() + cs.as_str()
+        })
+        .collect::<Vec<_>>()
+        .join(" "))
+}
+
 impl Entity {
 
 
@@ -261,6 +288,16 @@ mod tests {
         assert_eq!(e.attrs[0], ("dob".to_string(), "1953-01-20".to_string()));
         assert!(e.attrs.iter().any(|(k, v)| k == "custom" && v == "x"));
         assert_eq!(e.merge_template_attrs().unwrap(), 0);
+    }
+
+    #[test]
+    fn keys_round_trip_pretty_and_slug() {
+        assert_eq!(pretty_key("first_name").unwrap(), "First Name");
+        assert_eq!(pretty_key("swift_bic").unwrap(), "Swift Bic");
+        assert_eq!(slugify("Shoe Size").unwrap(), "shoe_size");
+        assert_eq!(slugify("  Weird--Key!! ").unwrap(), "weird_key");
+        assert_eq!(slugify("IP address").unwrap(), "ip_address");
+        assert_eq!(slugify(&pretty_key("date_of_birth").unwrap()).unwrap(), "date_of_birth");
     }
 
     #[test]

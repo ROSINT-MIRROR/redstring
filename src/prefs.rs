@@ -86,7 +86,7 @@ fn push_recent(list: &mut Vec<String>, path: String) {
     list.truncate(MAX_RECENT);
 }
 
-fn config_base() -> Result<PathBuf, Error> {
+pub fn config_base() -> Result<PathBuf, Error> {
     let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) else {
         let Some(home) = std::env::var_os("HOME").filter(|v| !v.is_empty()) else {
             return Err(Error::NoConfigDir);

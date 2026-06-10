@@ -4,6 +4,7 @@ mod chrome;
 mod inspector;
 mod layout;
 mod links;
+mod lookups;
 mod ops;
 mod palette;
 mod persist;
