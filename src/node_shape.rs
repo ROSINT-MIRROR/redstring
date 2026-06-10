@@ -1,7 +1,8 @@
 //! Custom node renderer. An entity with a loadable `image` (mugshot, logo, …)
 //! is drawn as a rounded-rect photo tile — the pinned picture on the corkboard.
-//! Everything else delegates to `DefaultNodeShape`, so an imageless entity
-//! looks exactly like stock egui_graphs: kind-coloured circle + label.
+//! An imageless entity is a big kind-coloured icon glyph on a tinted disc with
+//! the entity name underneath; `DefaultNodeShape` survives only as shared
+//! state + circle hit-geometry.
 //!
 //! Geometry contract: `is_inside` / `closest_boundary_point` always describe
 //! whichever shape is actually drawn. The photo tile only becomes the active
@@ -14,7 +15,7 @@
 //! RECONCILE(camera): all geometry lives in canvas space; screen projection
 //! goes through ctx.meta only, so zoom/pan changes need nothing here.
 
-use egui::epaint::{RectShape, TextShape};
+use egui::epaint::{CircleShape, RectShape, TextShape};
 use egui::{
     Color32, ColorImage, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, StrokeKind,
     TextureHandle, TextureOptions, Vec2,
@@ -32,9 +33,13 @@ const IMG_CORNER: f32 = 3.0;
 /// Border width around the tile, canvas units (thicker when interacted).
 const BORDER: f32 = 1.0;
 const BORDER_ACTIVE: f32 = 2.0;
-/// Label font size, canvas units — matches the default circle's label
-/// (DefaultNodeShape uses its radius, 5.0, as the font size).
-const LABEL_SIZE: f32 = 5.0;
+/// Hit/boundary radius of an imageless node, canvas units — sized to roughly
+/// cover the big icon glyph (stock DefaultNodeShape is 5.0).
+const NODE_RADIUS: f32 = 8.0;
+/// Icon glyph font size, canvas units — 3× the stock label size (5.0).
+const ICON_SIZE: f32 = 15.0;
+/// Label font size, canvas units — 2× the stock label size (5.0).
+const LABEL_SIZE: f32 = 10.0;
 const LABEL_GAP: f32 = 2.0;
 /// Decoded images are downscaled to fit this square before GPU upload — a
 /// node is ~20 canvas units, so 512px survives any sane zoom.
@@ -51,13 +56,21 @@ pub struct EntityNodeShape {
     /// reset when the path changes. Gates the photo-rect geometry so
     /// hit-testing/anchoring never claim a picture that isn't drawn.
     tex_ok: bool,
+    /// Kind icon glyph and entity name, drawn separately (the combined
+    /// `label_text` only survives on the photo-tile caption).
+    icon: String,
+    name: String,
 }
 
 impl From<NodeProps<Entity>> for EntityNodeShape {
     fn from(props: NodeProps<Entity>) -> Self {
+        let mut circle = DefaultNodeShape::from(props.clone());
+        circle.radius = NODE_RADIUS;
         Self {
             image: props.payload.image.clone(),
-            circle: DefaultNodeShape::from(props),
+            icon: props.payload.kind.icon().to_owned(),
+            name: props.payload.label.clone(),
+            circle,
             tex_ok: false,
         }
     }
@@ -82,9 +95,9 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
             self.tex_ok = true;
             return self.image_shapes(ctx, &tex);
         }
-        // no image set, or the file is missing/unreadable → stock circle
+        // no image set, or the file is missing/unreadable → big icon node
         self.tex_ok = false;
-        <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::shapes(&mut self.circle, ctx)
+        self.icon_shapes(ctx)
     }
 
     fn update(&mut self, state: &NodeProps<Entity>) {
@@ -92,6 +105,8 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
             self.image = state.payload.image.clone();
             self.tex_ok = false; // re-resolve on the next draw
         }
+        self.icon = state.payload.kind.icon().to_owned();
+        self.name = state.payload.label.clone();
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
     }
 
@@ -132,6 +147,50 @@ impl EntityNodeShape {
             };
             style.fg_stroke.color
         })
+    }
+
+    /// Imageless node: tinted kind-coloured disc (the hit geometry), the kind
+    /// icon glyph 3× centered on it, the entity name 2× underneath.
+    fn icon_shapes(&self, ctx: &DrawContext) -> Vec<Shape> {
+        let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
+        let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
+        let color = self.frame_color(ctx);
+        let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
+
+        let mut res: Vec<Shape> = Vec::with_capacity(3);
+        res.push(
+            CircleShape {
+                center,
+                radius: r,
+                fill: color.gamma_multiply(0.25),
+                stroke: Stroke::new(ctx.meta.canvas_to_screen_size(border), color),
+            }
+            .into(),
+        );
+
+        let icon = ctx.ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                self.icon.clone(),
+                FontId::new(ctx.meta.canvas_to_screen_size(ICON_SIZE), FontFamily::Proportional),
+                color,
+            )
+        });
+        let icon_pos = center - icon.size() / 2.0;
+        res.push(TextShape::new(icon_pos, icon, color).into());
+
+        let label = ctx.ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                self.name.clone(),
+                FontId::new(ctx.meta.canvas_to_screen_size(LABEL_SIZE), FontFamily::Monospace),
+                color,
+            )
+        });
+        let label_pos = Pos2::new(
+            center.x - label.size().x / 2.0,
+            center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP),
+        );
+        res.push(TextShape::new(label_pos, label, color).into());
+        res
     }
 
     fn image_shapes(&self, ctx: &DrawContext, tex: &TextureHandle) -> Vec<Shape> {
