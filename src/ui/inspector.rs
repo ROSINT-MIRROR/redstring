@@ -10,8 +10,33 @@ use crate::model::{
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
 
 impl RedstringApp {
+    pub fn inspector_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        ui.vertical_centered(|ui| -> Result<(), Error> {
+            if ui.button("⏴").on_hover_text("expand inspector").clicked() {
+                self.prefs.inspector_collapsed = false;
+                self.prefs.save()?;
+            }
+            Ok(())
+        })
+        .inner
+    }
+
     pub fn inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
-        ui.heading("inspector");
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.heading("inspector");
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| -> Result<(), Error> {
+                    if ui.button("⏵").on_hover_text("collapse inspector").clicked() {
+                        self.prefs.inspector_collapsed = true;
+                        self.prefs.save()?;
+                    }
+                    Ok(())
+                },
+            )
+            .inner
+        })
+        .inner?;
         ui.separator();
 
         let sel_node = self.g.selected_nodes().first().copied();
@@ -40,7 +65,6 @@ impl RedstringApp {
     }
 
     fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> Result<(), Error> {
-        let mut slug_edit: Option<String> = None;
         let mut picked_image: Option<String> = None;
         let mut delete = false;
 
@@ -48,33 +72,17 @@ impl RedstringApp {
             return Ok(());
         };
         let e = node.payload_mut();
-        let meta = &KIND_META[e.kind as usize];
-        ui.label(RichText::new(format!("{} {}", meta.icon, meta.label)).strong());
-        ui.label(
-            RichText::new(CATEGORY_META[meta.category as usize].label)
-                .weak()
-                .small(),
-        );
 
+        let prev_kind = e.kind;
         kind_combo(ui, "insp_kind", &mut e.kind);
+        if e.kind != prev_kind {
+            merge_template_attrs(e);
+        }
 
         ui.horizontal(|ui| {
             ui.label("label");
             ui.text_edit_singleline(&mut e.label);
         });
-
-        let mut slug = e.slug.clone();
-        ui.horizontal(|ui| {
-            ui.label("slug");
-            if ui.text_edit_singleline(&mut slug).changed() {
-                slug_edit = Some(slug.clone());
-            }
-        });
-        ui.label(
-            RichText::new("the handle relations & external edits reference")
-                .weak()
-                .small(),
-        );
 
         ui.add_space(6.0);
         ui.label(RichText::new("image").strong());
@@ -84,7 +92,12 @@ impl RedstringApp {
             {
                 picked_image = Some(p);
             }
-            if e.image.is_some() && ui.button("✕").clicked() {
+            if e.image.is_some()
+                && ui
+                    .button(egui_phosphor::regular::TRASH)
+                    .on_hover_text("remove image")
+                    .clicked()
+            {
                 e.image = None;
             }
         });
@@ -97,7 +110,11 @@ impl RedstringApp {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(k).desired_width(80.0).hint_text("key"));
                 ui.add(egui::TextEdit::singleline(v).hint_text("value"));
-                if ui.button("✕").clicked() {
+                if ui
+                    .button(egui_phosphor::regular::TRASH)
+                    .on_hover_text("remove attribute")
+                    .clicked()
+                {
                     remove = Some(i);
                 }
             });
@@ -112,12 +129,14 @@ impl RedstringApp {
         ui.text_edit_multiline(&mut e.note);
 
         ui.separator();
-        if ui.button("🗑 delete entity").clicked() {
+        if ui
+            .button(format!("{} delete entity", egui_phosphor::regular::TRASH))
+            .clicked()
+        {
             delete = true;
         }
 
         self.apply_picked_image(ui.ctx(), nidx, picked_image)?;
-        self.apply_slug_edit(nidx, slug_edit)?;
         if delete {
             self.g.remove_node(nidx);
         }
@@ -161,25 +180,6 @@ impl RedstringApp {
         }
     }
 
-    fn apply_slug_edit(&mut self, nidx: NodeIndex, edit: Option<String>) -> Result<(), Error> {
-        let Some(new_slug) = edit else {
-            return Ok(());
-        };
-        let clean: String = new_slug
-            .to_lowercase()
-            .chars()
-            .map(|c| if c.is_alphanumeric() { c } else { '_' })
-            .collect();
-        if clean.is_empty() || self.slug_taken_by_other(&clean, nidx)? {
-            return Ok(());
-        }
-        let Some(node) = self.g.node_mut(nidx) else {
-            return Ok(());
-        };
-        node.payload_mut().slug = clean;
-        Ok(())
-    }
-
     fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) -> Result<(), Error> {
         let (from_l, to_l) = self.edge_endpoints_labels(eidx)?;
         self.edge_form(ui, eidx, &from_l, &to_l);
@@ -221,7 +221,10 @@ impl RedstringApp {
         }
 
         ui.separator();
-        if ui.button("🗑 delete relation").clicked() {
+        if ui
+            .button(format!("{} delete relation", egui_phosphor::regular::TRASH))
+            .clicked()
+        {
             self.g.remove_edge(eidx);
         }
         Ok(())
@@ -267,7 +270,10 @@ impl RedstringApp {
                         .hint_text("excerpt / quote (optional)")
                         .desired_rows(2),
                 );
-                if ui.button("✕ remove source").clicked() {
+                if ui
+                    .button(format!("{} remove source", egui_phosphor::regular::TRASH))
+                    .clicked()
+                {
                     remove = Some(i);
                 }
             });
@@ -315,6 +321,15 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
+}
+
+
+fn merge_template_attrs(e: &mut crate::model::Entity) {
+    for key in KIND_META[e.kind as usize].attrs {
+        if !e.attrs.iter().any(|(k, _)| k == key) {
+            e.attrs.push(((*key).to_owned(), String::new()));
+        }
+    }
 }
 
 fn pick_image() -> Option<String> {

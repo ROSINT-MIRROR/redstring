@@ -71,6 +71,43 @@ impl RedstringApp {
         self.save_to_project(ui)
     }
 
+
+
+    pub fn fingerprint(&self) -> Result<String, Error> {
+        let g = self.g.g();
+        let mut parts: Vec<String> = Vec::new();
+        for n in g.node_weights() {
+            let e = n.payload();
+            let loc = n.location();
+            parts.push(format!(
+                "n|{}|{:?}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}",
+                e.slug, e.kind, e.label, e.attrs, e.image, e.note, loc.x, loc.y, e.size
+            ));
+        }
+        for idx in g.edge_indices() {
+            let Some((a, b)) = g.edge_endpoints(idx) else { continue };
+            let Some(r) = g.edge_weight(idx) else { continue };
+            let Some(from) = g.node_weight(a) else { continue };
+            let Some(to) = g.node_weight(b) else { continue };
+            let srcs = ron::to_string(&r.payload().sources)
+                .map_err(|source| Error::RonSer { source })?;
+            parts.push(format!(
+                "e|{}|{}|{:?}|{}",
+                from.payload().slug,
+                to.payload().slug,
+                r.payload().kind,
+                srcs
+            ));
+        }
+        parts.sort();
+        parts.insert(0, self.case_name.clone());
+        Ok(parts.join("\n"))
+    }
+
+    pub fn dirty(&self) -> Result<bool, Error> {
+        Ok(self.fingerprint()? != self.saved_fp)
+    }
+
     fn save_to_project(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let Some(project) = self.project.clone() else {
             return Ok(());
@@ -78,6 +115,7 @@ impl RedstringApp {
         let cf = self.to_case_file(ui)?;
         self.write_all(&project, &cf)?;
         self.watch_current()?;
+        self.saved_fp = self.fingerprint()?;
         self.status = format!(
             "saved {} entities / {} links → {}{}",
             cf.data.entities.len(),
@@ -251,6 +289,7 @@ impl RedstringApp {
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;
+        self.saved_fp = self.fingerprint()?;
 
         self.status = format!(
             "loaded {} entities / {} links from {}",

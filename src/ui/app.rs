@@ -55,6 +55,12 @@ pub struct RedstringApp {
     pub resize: Option<NodeIndex>,
 
     pub prefs_open: bool,
+    pub settings_tab: super::chrome::SettingsTab,
+
+    pub quit_confirm: bool,
+    pub allow_close: bool,
+
+    pub saved_fp: String,
 
     pub show_welcome: bool,
 
@@ -104,6 +110,10 @@ impl RedstringApp {
             panning: false,
             layout_anim: None,
             prefs_open: false,
+            settings_tab: super::chrome::SettingsTab::General,
+            quit_confirm: false,
+            allow_close: false,
+            saved_fp: String::new(),
             show_welcome: false,
             welcome_name: String::new(),
             board_size: Vec2::ZERO,
@@ -144,6 +154,11 @@ impl RedstringApp {
         Theme::Dark => egui::Theme::Dark,
             Theme::Light => egui::Theme::Light,
         });
+
+        ctx.all_styles_mut(|s| {
+            s.text_styles
+                .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+        });
         Ok(())
     }
 
@@ -157,6 +172,7 @@ impl RedstringApp {
             self.pending_load = false;
             self.load(ui)?;
         }
+        self.guard_close(ui)?;
         self.sync_visuals()?;
         self.poll_external_edit(ui)?;
         self.handle_drop(ui)?;
@@ -180,7 +196,8 @@ impl RedstringApp {
             .resizable(false)
             .show_inside(ui, |ui| self.toolbar(ui))
             .inner?;
-        self.prefs_window(ui)?;
+        self.settings_window(ui)?;
+        self.quit_window(ui)?;
         self.welcome_window(ui)?;
 
         let strip = egui::Panel::left("left_strip")
@@ -206,15 +223,30 @@ impl RedstringApp {
             },
         )
         .inner?;
-        egui::Panel::right("right")
+        let insp_strip = egui::Panel::right("right_strip")
+            .resizable(false)
+            .exact_size(26.0)
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
+        let insp_expanded = egui::Panel::right("right")
             .resizable(true)
             .default_size(310.0)
-            .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .show(ui, |ui| self.inspector(ui))
-                    .inner
-            })
-            .inner?;
+            .size_range(200.0..=520.0);
+        egui::Panel::show_animated_between_inside(
+            ui,
+            !self.prefs.inspector_collapsed,
+            insp_strip,
+            insp_expanded,
+            |ui, how_expanded| {
+                if how_expanded == 0.0 {
+                    self.inspector_strip(ui)
+                } else {
+                    egui::ScrollArea::vertical()
+                        .show(ui, |ui| self.inspector(ui))
+                        .inner
+                }
+            },
+        )
+        .inner?;
         egui::Panel::bottom("status")
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {

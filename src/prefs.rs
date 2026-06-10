@@ -17,20 +17,25 @@ const MAX_RECENT: usize = 8;
 #[serde(default)]
 pub struct Prefs {
     pub sidebar_collapsed: bool,
+    pub inspector_collapsed: bool,
 
     pub ui_scale: f32,
     pub theme: Theme,
 
     pub recent: Vec<String>,
+
+    pub api_keys: Vec<(String, String)>,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             sidebar_collapsed: false,
+            inspector_collapsed: false,
             ui_scale: 1.0,
             theme: Theme::Dark,
             recent: Vec::new(),
+            api_keys: Vec::new(),
         }
     }
 }
@@ -110,9 +115,11 @@ mod tests {
     fn round_trip() {
         let p = Prefs {
             sidebar_collapsed: true,
+            inspector_collapsed: true,
             ui_scale: 1.75,
             theme: Theme::Light,
             recent: vec!["/tmp/case_a".into(), "/tmp/case_b".into()],
+            api_keys: vec![("opensanctions".into(), "key123".into())],
         };
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();

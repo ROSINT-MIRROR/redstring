@@ -85,21 +85,6 @@ impl RedstringApp {
         self.g.g().node_weights().any(|n| n.payload().slug == slug)
     }
 
-    pub fn slug_taken_by_other(&self, slug: &str, except: NodeIndex) -> Result<bool, Error> {
-        Ok(self
-            .g
-            .g()
-            .node_indices()
-            .any(|i| i != except && self.node_slug_is(i, slug)))
-    }
-
-    fn node_slug_is(&self, idx: NodeIndex, slug: &str) -> bool {
-        let Some(n) = self.g.g().node_weight(idx) else {
-            return false;
-        };
-        n.payload().slug == slug
-    }
-
     pub fn node_slug(&self, idx: NodeIndex) -> Result<String, Error> {
         let Some(n) = self.g.g().node_weight(idx) else {
             return Ok(String::new());

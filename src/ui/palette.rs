@@ -1,7 +1,7 @@
 use egui::{RichText, Vec2};
 
 use crate::error::Error;
-use crate::model::{CATEGORY_META, KIND_META};
+use crate::model::{CATEGORY_META, KIND_META, KindMeta};
 
 use super::app::RedstringApp;
 
@@ -74,10 +74,7 @@ impl RedstringApp {
             .show(ui, |ui| {
                 for m in &KIND_META {
                     let cat = &CATEGORY_META[m.category as usize];
-                    if !needle.is_empty()
-                        && !m.label.to_lowercase().contains(&needle)
-                        && !cat.label.to_lowercase().contains(&needle)
-                    {
+                    if !kind_matches(m, cat.label, &needle) {
                         continue;
                     }
                     let resp = ui.add(
@@ -99,5 +96,60 @@ impl RedstringApp {
                     resp.dnd_set_drag_payload(m.kind);
                 }
             });
+    }
+}
+
+
+fn kind_matches(m: &KindMeta, cat_label: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    fuzzy(needle, m.label)
+        || fuzzy(needle, cat_label)
+        || m.aliases.iter().any(|a| fuzzy(needle, a))
+}
+
+
+
+fn fuzzy(needle: &str, hay: &str) -> bool {
+    let hay: Vec<char> = hay.to_lowercase().chars().collect();
+    let mut i = 0usize;
+    for n in needle.chars() {
+        let mut found = false;
+        while i < hay.len() {
+            let h = hay[i];
+            i += 1;
+            if h == n {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::EntityKind;
+
+    #[test]
+    fn fuzzy_is_subsequence_match() {
+        assert!(fuzzy("prsn", "Person"));
+        assert!(fuzzy("govbod", "Government body"));
+        assert!(!fuzzy("xyz", "Person"));
+        assert!(fuzzy("", "anything"));
+    }
+
+    #[test]
+    fn aliases_surface_kinds() {
+        let weapon = &KIND_META[EntityKind::Weapon as usize];
+        assert!(kind_matches(weapon, "Physical", "gun"));
+        let ip = &KIND_META[EntityKind::IpAddress as usize];
+        assert!(kind_matches(ip, "Digital", "ipv4"));
+        assert!(!kind_matches(weapon, "Physical", "newspaper"));
     }
 }
