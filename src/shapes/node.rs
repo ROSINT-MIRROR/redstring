@@ -47,6 +47,20 @@ const MAX_TEX_SIDE: u32 = 512;
 
 const MAX_FONT_PX: f32 = 256.0;
 
+
+const HALO_FRAC: f32 = 0.18;
+const HALO_MIN_PX: f32 = 1.0;
+const HALO_DIRS: [Vec2; 8] = [
+    Vec2::new(1.0, 0.0),
+    Vec2::new(-1.0, 0.0),
+    Vec2::new(0.0, 1.0),
+    Vec2::new(0.0, -1.0),
+    Vec2::new(0.7, 0.7),
+    Vec2::new(-0.7, 0.7),
+    Vec2::new(0.7, -0.7),
+    Vec2::new(-0.7, -0.7),
+];
+
 #[derive(Clone)]
 pub struct EntityNodeShape {
     
@@ -168,7 +182,7 @@ impl EntityNodeShape {
             return None;
         }
         Some(Stroke::new(
-            3.0,
+            3.0_f32,
             ctx.ctx.global_style().visuals.selection.stroke.color,
         ))
     }
@@ -177,6 +191,7 @@ impl EntityNodeShape {
         let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
         let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
         let color = self.frame_color(ctx);
+        let bg = ctx.ctx.global_style().visuals.panel_fill;
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
 
         let mut res: Vec<Shape> = Vec::with_capacity(4);
@@ -184,7 +199,7 @@ impl EntityNodeShape {
             Shape::from(CircleShape {
                 center,
                 radius: r + 3.0,
-                fill: ring.color.gamma_multiply(0.15),
+                fill: bg.lerp_to_gamma(ring.color, 0.15),
                 stroke: ring,
             })
         }));
@@ -192,7 +207,7 @@ impl EntityNodeShape {
             CircleShape {
                 center,
                 radius: r,
-                fill: color.gamma_multiply(0.25),
+                fill: bg.lerp_to_gamma(color, 0.25),
                 stroke: Stroke::new(ctx.meta.canvas_to_screen_size(border), color),
             }
             .into(),
@@ -220,6 +235,7 @@ impl EntityNodeShape {
             center.x,
             center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size),
         );
+        halo_text(&mut res, label_pos, &label, bg, halo_px(ctx, self.size));
         res.push(TextShape::new(label_pos, label, color).into());
         res
     }
@@ -282,7 +298,11 @@ impl EntityNodeShape {
         let icon_pos = Pos2::new(left, top + (row_h - icon.size().y) / 2.0);
         let name_pos =
             Pos2::new(left + icon.size().x + gap, top + (row_h - name.size().y) / 2.0);
+        let bg = ctx.ctx.global_style().visuals.panel_fill;
+        let halo = halo_px(ctx, self.size);
+        halo_text(&mut res, icon_pos, &icon, bg, halo);
         res.push(TextShape::new(icon_pos, icon, color).into());
+        halo_text(&mut res, name_pos, &name, bg, halo);
         res.push(TextShape::new(name_pos, name, color).into());
         res
     }
@@ -291,6 +311,28 @@ impl EntityNodeShape {
 
 fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
     ctx.meta.canvas_to_screen_size(canvas_size).min(MAX_FONT_PX)
+}
+
+
+fn halo_px(ctx: &DrawContext, size: f32) -> f32 {
+    (font_px(ctx, LABEL_SIZE * size) * HALO_FRAC).max(HALO_MIN_PX)
+}
+
+
+fn halo_text(
+    res: &mut Vec<Shape>,
+    pos: Pos2,
+    galley: &std::sync::Arc<egui::Galley>,
+    bg: Color32,
+    w: f32,
+) {
+    for d in HALO_DIRS {
+        res.push(
+            TextShape::new(pos + d * w, galley.clone(), bg)
+                .with_override_text_color(bg)
+                .into(),
+        );
+    }
 }
 
 
