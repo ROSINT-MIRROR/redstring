@@ -70,6 +70,10 @@ pub struct RedstringApp {
     label_edit_focus: bool,
     // node being resized via its corner handle (drag in progress)
     resize: Option<NodeIndex>,
+    // left-drag node move: (node, canvas-space grab offset pointer−center).
+    // Replaces egui_graphs' built-in dragging, whose "compensation" step
+    // snaps the node center onto the cursor (graph_view.rs handle_node_drag).
+    node_drag: Option<(NodeIndex, Vec2)>,
 
     // add-source form (targets the selected relation)
     ns_kind: SourceKind,
@@ -97,6 +101,7 @@ impl RedstringApp {
             label_edit_buf: String::new(),
             label_edit_focus: false,
             resize: None,
+            node_drag: None,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
@@ -364,6 +369,55 @@ impl RedstringApp {
         };
     }
 
+    /// Pick a case file and load it.
+    fn open_dialog(&mut self, ui: &mut egui::Ui) {
+        if let Some(p) = case_dialog(&self.case_path).pick_file() {
+            self.case_path = p.display().to_string();
+            self.load(ui);
+        }
+    }
+
+    /// Pick a destination and save the case there (becomes the opened file).
+    fn save_as_dialog(&mut self, ui: &egui::Ui) {
+        if let Some(mut p) = case_dialog(&self.case_path).save_file() {
+            if p.extension().is_none() {
+                p.set_extension("ron");
+            }
+            self.case_path = p.display().to_string();
+            self.save(ui);
+        }
+    }
+
+    /// Full-width top bar: file ops + (stub) layout buttons, Maltego-style.
+    fn toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("💾").on_hover_text("Save (Ctrl+S)").clicked() {
+                self.save(ui);
+            }
+            if ui
+                .button("💾…")
+                .on_hover_text("Save as… (Ctrl+Shift+S)")
+                .clicked()
+            {
+                self.save_as_dialog(ui);
+            }
+            if ui.button("📂").on_hover_text("Open… (Ctrl+O)").clicked() {
+                self.open_dialog(ui);
+            }
+            ui.separator();
+            ui.label(RichText::new(&self.case_path).weak().small());
+
+            // layout engines land later — stubs so the bar has its final shape
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                for name in ["Grid", "Circle", "Tree", "Force"] {
+                    ui.add_enabled(false, egui::Button::new(name))
+                        .on_disabled_hover_text("layout — coming soon");
+                }
+                ui.label(RichText::new("layout:").weak().small());
+            });
+        });
+    }
+
     fn load(&mut self, ui: &mut egui::Ui) {
         let s = match std::fs::read_to_string(&self.case_path) {
             Ok(s) => s,
@@ -437,9 +491,11 @@ impl RedstringApp {
         }
 
         self.g = g;
-        // node indices just got reassigned — abort any in-flight edge gesture
+        // node indices just got reassigned — abort any in-flight gesture
         self.edge_drag = None;
         self.pending_edge = None;
+        self.node_drag = None;
+        self.resize = None;
         // Pre-write: the GraphView (added later this same frame) loads the
         // MetadataFrame at its start, so this is the camera it draws with —
         // flash-free for button loads and hot reloads. The widget's very
@@ -804,6 +860,7 @@ impl RedstringApp {
         // dragged()), so an ungated right-press over a node would start a node
         // drag and snap the node to the cursor.
         self.edge_drag_input(ui, rect);
+        self.node_drag_input(ui, rect);
         // plain-wheel zoom (no ctrl needed) — RECONCILE(camera): scroll-only,
         // coexists with the right-drag gesture above
         Self::scroll_zoom(ui);
@@ -813,16 +870,18 @@ impl RedstringApp {
                 .with_id(Some(BOARD_META_ID.to_owned()))
                 .with_interactions(
                     &SettingsInteraction::default()
-                        // left-drag node moving, except while a right-drag edge
-                        // gesture or a corner-handle resize is in flight
-                        .with_dragging_enabled(self.edge_drag.is_none() && self.resize.is_none())
+                        // node moving is ours (node_drag_input): the lib's drag
+                        // snap-centers the node on the cursor
+                        .with_dragging_enabled(false)
                         .with_node_selection_enabled(true)
                         .with_edge_selection_enabled(true),
                 )
                 .with_navigations(
                     &SettingsNavigation::default()
                         .with_fit_to_screen_enabled(false)
-                        .with_zoom_and_pan_enabled(true),
+                        // gate panning off while a node is being moved — with
+                        // lib dragging disabled the view would otherwise pan
+                        .with_zoom_and_pan_enabled(self.node_drag.is_none()),
                 )
                 .with_styles(&SettingsStyle::default().with_labels_always(true)),
         );
@@ -834,38 +893,93 @@ impl RedstringApp {
         self.label_editor(ui);
     }
 
+    /// Where the resize handle of the resize-target node sits on screen:
+    /// `self.resize` while dragging, else the single selected node. Shared by
+    /// `resize_handle` and `node_drag_input` (which must not steal its press).
+    fn resize_handle_rect(&self, ui: &egui::Ui, rect: Rect) -> Option<(NodeIndex, Rect)> {
+        let idx = self.resize.or_else(|| {
+            let sel = self.g.selected_nodes();
+            (sel.len() == 1).then(|| sel[0])
+        })?;
+        let node = self.g.node(idx)?;
+        let e = node.payload();
+        let base = if e.image.is_some() { IMG_RADIUS } else { NODE_RADIUS };
+        let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+        let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
+        let corner = center + Vec2::splat(base * e.size * mf.zoom);
+        Some((idx, Rect::from_center_size(corner, Vec2::splat(14.0))))
+    }
+
+    /// Left-press on an entity starts a move; the node follows the pointer
+    /// keeping the grab offset (no snap-to-center). Runs before the GraphView
+    /// is built so panning is gated off on the press frame.
+    fn node_drag_input(&mut self, ui: &egui::Ui, rect: Rect) {
+        let (pressed, down, pointer) = ui.input(|i| {
+            (
+                i.pointer.primary_pressed(),
+                i.pointer.primary_down(),
+                i.pointer.interact_pos(),
+            )
+        });
+
+        if pressed
+            && self.node_drag.is_none()
+            && self.edge_drag.is_none()
+            && self.resize.is_none()
+            && let Some(p) = pointer.filter(|p| rect.contains(*p))
+            && !self
+                .resize_handle_rect(ui, rect)
+                .is_some_and(|(_, h)| h.contains(p))
+            && let Some(idx) = self.node_at_screen(ui, rect, p)
+        {
+            let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+            let canvas_p = mf.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
+            if let Some(n) = self.g.node_mut(idx) {
+                let off = canvas_p - n.location();
+                n.set_dragged(true);
+                self.node_drag = Some((idx, off));
+            }
+        }
+
+        let Some((idx, off)) = self.node_drag else {
+            return;
+        };
+        if down {
+            if let Some(p) = pointer {
+                let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
+                let canvas_p = mf.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
+                match self.g.node_mut(idx) {
+                    Some(n) => n.set_location(canvas_p - off),
+                    None => self.node_drag = None, // vanished (delete / hot-reload)
+                }
+            }
+        } else {
+            if let Some(n) = self.g.node_mut(idx) {
+                n.set_dragged(false);
+            }
+            self.node_drag = None;
+        }
+    }
+
     /// Click-select a single entity → a drag handle appears at its
     /// bottom-right corner. Dragging it scales the node about its center
     /// (geometry, icon and text all ride `Entity::size`).
     fn resize_handle(&mut self, ui: &mut egui::Ui, rect: Rect) {
-        // an in-flight drag owns the handle even if the selection shifts
-        let idx = match self.resize {
-            Some(i) => i,
-            None => {
-                let sel = self.g.selected_nodes();
-                if sel.len() != 1 {
-                    return;
-                }
-                sel[0]
-            }
+        let Some((idx, hrect)) = self.resize_handle_rect(ui, rect) else {
+            self.resize = None; // no target (selection gone / node vanished)
+            return;
         };
         let Some(node) = self.g.node(idx) else {
-            self.resize = None; // vanished (delete / hot-reload)
+            self.resize = None;
             return;
         };
         let e = node.payload();
-        let (base, size) = (
-            if e.image.is_some() { IMG_RADIUS } else { NODE_RADIUS },
-            e.size,
-        );
+        let base = if e.image.is_some() { IMG_RADIUS } else { NODE_RADIUS };
         let loc = node.location();
 
         let mf = MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui);
         let center = mf.canvas_to_screen_pos(loc) + rect.left_top().to_vec2();
-        let half = base * size * mf.zoom;
-        let corner = center + Vec2::splat(half);
-
-        let hrect = Rect::from_center_size(corner, Vec2::splat(14.0));
+        let corner = hrect.center();
         let resp = ui.interact(
             hrect,
             egui::Id::new("rs_resize_handle"),
@@ -1014,7 +1128,7 @@ impl RedstringApp {
             )
         });
 
-        if pressed && self.pending_edge.is_none() && self.g.dragged_node().is_none() {
+        if pressed && self.pending_edge.is_none() && self.node_drag.is_none() {
             if let Some(p) = pointer.filter(|p| rect.contains(*p)) {
                 self.edge_drag = self.node_at_screen(ui, rect, p);
                 if self.edge_drag.is_some() {
@@ -1155,27 +1269,22 @@ impl App for RedstringApp {
         self.sync_visuals();
         self.poll_external_edit(ui);
 
-        // file ops live on shortcuts until the toolbar exists: Ctrl+S save,
-        // Ctrl+Shift+S save-as, Ctrl+O open
+        // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open (also on the toolbar)
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.save(ui);
         }
         if ui.input_mut(|i| {
             i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S)
-        }) && let Some(mut p) = case_dialog(&self.case_path).save_file()
-        {
-            if p.extension().is_none() {
-                p.set_extension("ron");
-            }
-            self.case_path = p.display().to_string();
-            self.save(ui);
+        }) {
+            self.save_as_dialog(ui);
         }
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O))
-            && let Some(p) = case_dialog(&self.case_path).pick_file()
-        {
-            self.case_path = p.display().to_string();
-            self.load(ui);
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
+            self.open_dialog(ui);
         }
+
+        egui::Panel::top("toolbar")
+            .resizable(false)
+            .show_inside(ui, |ui| self.toolbar(ui));
 
         // left sidebar collapses to a thin strip holding only the expand toggle
         let strip = egui::Panel::left("left_strip")
