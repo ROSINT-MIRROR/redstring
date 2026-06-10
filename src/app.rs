@@ -56,6 +56,8 @@ pub struct RedstringApp {
 
     // selected kind in the entity palette (click) — also what a drop spawns
     ne_kind: EntityKind,
+    // palette search filter
+    kind_search: String,
 
     // right-drag edge creation: press on A → rubber-band → release on B →
     // verb-picker popup. `pending_edge` is (from, to, popup screen pos).
@@ -93,6 +95,7 @@ impl RedstringApp {
             pending_load: false,
             pending_camera: None,
             ne_kind: EntityKind::Person,
+            kind_search: String::new(),
             edge_drag: None,
             pending_edge: None,
             verb_filter: String::new(),
@@ -564,67 +567,63 @@ impl RedstringApp {
     }
 
     fn left_panel(&mut self, ui: &mut egui::Ui) {
+        // search bar header (no title), collapse toggle on the right
         ui.horizontal(|ui| {
-            ui.heading("redstring");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⏴").on_hover_text("collapse sidebar").clicked() {
                     self.prefs.sidebar_collapsed = true;
                     self.prefs.save();
                 }
+                ui.add_sized(
+                    Vec2::new(ui.available_width(), ui.spacing().interact_size.y),
+                    egui::TextEdit::singleline(&mut self.kind_search).hint_text("🔍 search"),
+                );
             });
         });
         ui.separator();
-
-        // the sidebar is the entity palette, nothing else — file ops moved to
-        // keyboard shortcuts (Ctrl+S/O) until the toolbar exists
         self.kind_picker(ui);
     }
 
-    /// The entity palette: a responsive wrapped flow of every kind (ALL is
-    /// category-grouped, so the ontology reads left-to-right), each cell
-    /// outlined in its category's anchor colour with the kind's own colour on
-    /// the text. Cells are drag sources — drop one on the board to spawn an
-    /// entity there.
+    /// The entity palette: one kind per row (big icon + name), filtered by the
+    /// search bar, each row outlined in its category's anchor colour with the
+    /// kind's own colour on the text. Rows are drag sources — drop one on the
+    /// board to spawn an entity there.
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
+        let needle = self.kind_search.trim().to_lowercase();
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for k in EntityKind::ALL {
-                        let cat_color = EntityKind::category_color(k.category());
-                        let text = format!("{} {}", k.icon(), k.label());
-                        // state-invariant cell size: Button::selectable
-                        // allocates +2px in the selected state vs hovered, so
-                        // without a covering min_size hovering the selected
-                        // cell reflows every cell after it (verified headless)
-                        let text_w = ui.fonts_mut(|f| {
-                            f.layout_no_wrap(
-                                text.clone(),
-                                egui::FontId::proportional(16.0f32),
-                                egui::Color32::WHITE,
-                            )
-                            .size()
-                            .x
-                        });
-                        // added straight to the wrapped ui — wrapping only works
-                        // for direct children (dnd_drag_source's inner scope
-                        // breaks it: everything lands on one endless row)
-                        let resp = ui.add(
-                            egui::Button::selectable(
-                                self.ne_kind == k,
-                                RichText::new(text).color(k.color()).size(16.0f32),
-                            )
-                            .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
-                            .sense(egui::Sense::click_and_drag())
-                            .min_size(Vec2::new(text_w + 14.0, 26.0)),
-                        );
-                        if resp.clicked() {
-                            self.ne_kind = k;
-                        }
-                        resp.dnd_set_drag_payload(k);
+                for k in EntityKind::ALL {
+                    if !needle.is_empty()
+                        && !k.label().to_lowercase().contains(&needle)
+                        && !k.category().to_lowercase().contains(&needle)
+                    {
+                        continue;
                     }
-                });
+                    let cat_color = EntityKind::category_color(k.category());
+                    // icon and name as separate atoms so the icon renders 2×
+                    // the text; trailing grow() left-aligns the pair.
+                    // min_size full-width & fixed height: state-invariant
+                    // (selected allocates +2px vs hovered — headless-verified)
+                    let resp = ui.add(
+                        egui::Button::selectable(
+                            self.ne_kind == k,
+                            (
+                                RichText::new(k.icon()).color(k.color()).size(32.0f32),
+                                RichText::new(k.label()).color(k.color()).size(16.0f32),
+                                egui::Atom::grow(),
+                            ),
+                        )
+                        .stroke(egui::Stroke::new(1.0f32, cat_color.gamma_multiply(0.5f32)))
+                        .sense(egui::Sense::click_and_drag())
+                        .min_size(Vec2::new(ui.available_width(), 44.0)),
+                    );
+                    if resp.clicked() {
+                        self.ne_kind = k;
+                    }
+                    resp.dnd_set_drag_payload(k);
+                }
             });
     }
 
