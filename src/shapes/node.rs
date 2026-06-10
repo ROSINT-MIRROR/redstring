@@ -48,18 +48,9 @@ const MAX_TEX_SIDE: u32 = 512;
 const MAX_FONT_PX: f32 = 256.0;
 
 
-const HALO_FRAC: f32 = 0.18;
-const HALO_MIN_PX: f32 = 1.0;
-const HALO_DIRS: [Vec2; 8] = [
-    Vec2::new(1.0, 0.0),
-    Vec2::new(-1.0, 0.0),
-    Vec2::new(0.0, 1.0),
-    Vec2::new(0.0, -1.0),
-    Vec2::new(0.7, 0.7),
-    Vec2::new(-0.7, 0.7),
-    Vec2::new(0.7, -0.7),
-    Vec2::new(-0.7, -0.7),
-];
+const BACKDROP_ALPHA: f32 = 0.8;
+const BACKDROP_PAD_FRAC: f32 = 0.25;
+const BACKDROP_PAD_MIN_PX: f32 = 2.0;
 
 #[derive(Clone)]
 pub struct EntityNodeShape {
@@ -235,7 +226,7 @@ impl EntityNodeShape {
             center.x,
             center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size),
         );
-        halo_text(&mut res, label_pos, &label, bg, halo_px(ctx, self.size));
+        backdrop(&mut res, galley_rect(label_pos, &label).expand(pad_px(ctx, self.size)), bg);
         res.push(TextShape::new(label_pos, label, color).into());
         res
     }
@@ -299,10 +290,11 @@ impl EntityNodeShape {
         let name_pos =
             Pos2::new(left + icon.size().x + gap, top + (row_h - name.size().y) / 2.0);
         let bg = ctx.ctx.global_style().visuals.panel_fill;
-        let halo = halo_px(ctx, self.size);
-        halo_text(&mut res, icon_pos, &icon, bg, halo);
+        let row = galley_rect(icon_pos, &icon)
+            .union(galley_rect(name_pos, &name))
+            .expand(pad_px(ctx, self.size));
+        backdrop(&mut res, row, bg);
         res.push(TextShape::new(icon_pos, icon, color).into());
-        halo_text(&mut res, name_pos, &name, bg, halo);
         res.push(TextShape::new(name_pos, name, color).into());
         res
     }
@@ -314,25 +306,20 @@ fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
 }
 
 
-fn halo_px(ctx: &DrawContext, size: f32) -> f32 {
-    (font_px(ctx, LABEL_SIZE * size) * HALO_FRAC).max(HALO_MIN_PX)
+fn pad_px(ctx: &DrawContext, size: f32) -> f32 {
+    (font_px(ctx, LABEL_SIZE * size) * BACKDROP_PAD_FRAC).max(BACKDROP_PAD_MIN_PX)
 }
 
 
-fn halo_text(
-    res: &mut Vec<Shape>,
-    pos: Pos2,
-    galley: &std::sync::Arc<egui::Galley>,
-    bg: Color32,
-    w: f32,
-) {
-    for d in HALO_DIRS {
-        res.push(
-            TextShape::new(pos + d * w, galley.clone(), bg)
-                .with_override_text_color(bg)
-                .into(),
-        );
-    }
+fn galley_rect(pos: Pos2, galley: &std::sync::Arc<egui::Galley>) -> Rect {
+    galley.rect.translate(pos.to_vec2())
+}
+
+
+fn backdrop(res: &mut Vec<Shape>, rect: Rect, bg: Color32) {
+    res.push(
+        RectShape::filled(rect, CornerRadius::same(2), bg.gamma_multiply(BACKDROP_ALPHA)).into(),
+    );
 }
 
 
