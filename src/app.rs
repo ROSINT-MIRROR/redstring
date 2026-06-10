@@ -1269,14 +1269,16 @@ impl App for RedstringApp {
         self.sync_visuals();
         self.poll_external_edit(ui);
 
-        // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open (also on the toolbar)
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
-            self.save(ui);
-        }
+        // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open (also on the toolbar).
+        // Shift variant FIRST: consume_key matches logically (extra held
+        // modifiers pass), so the plain Ctrl+S check would eat Ctrl+Shift+S.
         if ui.input_mut(|i| {
             i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S)
         }) {
             self.save_as_dialog(ui);
+        }
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.save(ui);
         }
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
             self.open_dialog(ui);
