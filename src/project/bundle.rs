@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use zip::write::SimpleFileOptions;
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{CaseFile, FORMAT_VERSION};
 
 use super::ignore::RsIgnore;
@@ -21,7 +21,7 @@ pub const BUNDLE_SUFFIX: &str = ".redstring.zip";
 
 
 
-pub fn export(project: &Project) -> RsResult<(PathBuf, usize)> {
+pub fn export(project: &Project) -> Result<(PathBuf, usize), Error> {
     let ignore = RsIgnore::load(&project.root)?;
     let out = project
         .root
@@ -49,7 +49,7 @@ pub fn export(project: &Project) -> RsResult<(PathBuf, usize)> {
 
 
 
-fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<String>) -> RsResult<()> {
+fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<String>) -> Result<(), Error> {
     let abs = root.join(rel_dir);
     let entries = std::fs::read_dir(&abs).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
     for entry in entries {
@@ -84,7 +84,7 @@ fn collect_files(root: &Path, rel_dir: &str, ignore: &RsIgnore, out: &mut Vec<St
 
 
 
-pub fn open_bundle(zip_path: &Path) -> RsResult<Project> {
+pub fn open_bundle(zip_path: &Path) -> Result<Project, Error> {
     let Some(parent) = zip_path.parent().filter(|p| !p.as_os_str().is_empty()) else {
         return Err(Error::NotAProject {
             path: zip_path.to_path_buf(),
@@ -129,7 +129,7 @@ pub fn open_bundle(zip_path: &Path) -> RsResult<Project> {
 fn read_case_entry(
     archive: &mut zip::ZipArchive<std::fs::File>,
     zip_path: &Path,
-) -> RsResult<String> {
+) -> Result<String, Error> {
     let Ok(mut entry) = archive.by_name(CASE_FILE) else {
         return Err(Error::BundleMissingCase {
             path: zip_path.to_path_buf(),
@@ -160,7 +160,7 @@ fn extract_all(
     archive: &mut zip::ZipArchive<std::fs::File>,
     target: &Path,
     zip_path: &Path,
-) -> RsResult<()> {
+) -> Result<(), Error> {
     std::fs::create_dir_all(target).map_err(|source| Error::Io { path: target.to_path_buf(), source })?;
     for i in 0..archive.len() {
         let mut entry = archive

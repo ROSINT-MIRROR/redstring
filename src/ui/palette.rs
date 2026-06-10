@@ -1,13 +1,13 @@
 use egui::{RichText, Vec2};
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{CATEGORY_META, KIND_META};
 
 use super::app::RedstringApp;
 
 impl RedstringApp {
-    pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
-        ui.vertical_centered(|ui| -> RsResult<()> {
+    pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        ui.vertical_centered(|ui| -> Result<(), Error> {
             if ui.button("⏵").on_hover_text("expand sidebar").clicked() {
                 self.prefs.sidebar_collapsed = false;
                 self.prefs.save()?;
@@ -17,11 +17,11 @@ impl RedstringApp {
         .inner
     }
 
-    pub fn left_panel(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
-        ui.horizontal(|ui| -> RsResult<()> {
+    pub fn left_panel(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        ui.horizontal(|ui| -> Result<(), Error> {
             ui.with_layout(
                 egui::Layout::right_to_left(egui::Align::Center),
-                |ui| -> RsResult<()> {
+                |ui| -> Result<(), Error> {
                     if ui.button("⏴").on_hover_text("collapse sidebar").clicked() {
                         self.prefs.sidebar_collapsed = true;
                         self.prefs.save()?;

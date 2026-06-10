@@ -2,13 +2,13 @@ use std::path::Path;
 
 use egui::{Align2, RichText};
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::MAX_CASE_NAME;
 
 use super::app::RedstringApp;
 
 impl RedstringApp {
-    pub fn welcome_window(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn welcome_window(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if !self.show_welcome {
             return Ok(());
         }
@@ -27,7 +27,7 @@ impl RedstringApp {
         inner
     }
 
-    fn welcome_body(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    fn welcome_body(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.vertical_centered(|ui| {
             ui.add_space(2.0);
             ui.heading("redstring");
@@ -44,7 +44,7 @@ impl RedstringApp {
             );
         });
         ui.add_space(4.0);
-        ui.horizontal(|ui| -> RsResult<()> {
+        ui.horizontal(|ui| -> Result<(), Error> {
             if ui
                 .button("new case…")
                 .on_hover_text("Pick where the case directory goes — it scaffolds the canonical tree")
@@ -93,7 +93,7 @@ impl RedstringApp {
 
         ui.add_space(8.0);
         ui.separator();
-        ui.horizontal(|ui| -> RsResult<()> {
+        ui.horizontal(|ui| -> Result<(), Error> {
             ui.weak("just looking?");
             if ui.small_button("load the demo board").clicked() {
                 self.seed_demo()?;
@@ -112,14 +112,14 @@ impl RedstringApp {
         self.case_name = name.to_owned();
     }
 
-    fn forget_recent_request(&mut self, req: Option<String>) -> RsResult<()> {
+    fn forget_recent_request(&mut self, req: Option<String>) -> Result<(), Error> {
         let Some(path) = req else {
             return Ok(());
         };
         self.prefs.forget_recent(&path)
     }
 
-    fn open_recent_request(&mut self, ui: &mut egui::Ui, req: Option<String>) -> RsResult<()> {
+    fn open_recent_request(&mut self, ui: &mut egui::Ui, req: Option<String>) -> Result<(), Error> {
         let Some(path) = req else {
             return Ok(());
         };

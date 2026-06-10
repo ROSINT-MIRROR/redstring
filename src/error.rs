@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-pub type RsResult<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {

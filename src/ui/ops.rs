@@ -1,7 +1,7 @@
 use egui::Pos2;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{
     DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, RELATION_META, Relation, RelationKind,
     Source, SourceKind,
@@ -10,7 +10,7 @@ use crate::model::{
 use super::app::RedstringApp;
 
 impl RedstringApp {
-    pub fn seed_demo(&mut self) -> RsResult<()> {
+    pub fn seed_demo(&mut self) -> Result<(), Error> {
         let doe = self.add_entity(EntityKind::Person, "J. Doe".into(), spiral(0)?)?;
         let shell = self.add_entity(EntityKind::ShellCompany, "Shell Co Ltd".into(), spiral(1)?)?;
         let domain = self.add_entity(EntityKind::Domain, "evil.example".into(), spiral(2)?)?;
@@ -85,7 +85,7 @@ impl RedstringApp {
         self.g.g().node_weights().any(|n| n.payload().slug == slug)
     }
 
-    pub fn slug_taken_by_other(&self, slug: &str, except: NodeIndex) -> RsResult<bool> {
+    pub fn slug_taken_by_other(&self, slug: &str, except: NodeIndex) -> Result<bool, Error> {
         Ok(self
             .g
             .g()
@@ -100,7 +100,7 @@ impl RedstringApp {
         n.payload().slug == slug
     }
 
-    pub fn node_slug(&self, idx: NodeIndex) -> RsResult<String> {
+    pub fn node_slug(&self, idx: NodeIndex) -> Result<String, Error> {
         let Some(n) = self.g.g().node_weight(idx) else {
             return Ok(String::new());
         };
@@ -112,7 +112,7 @@ impl RedstringApp {
         kind: EntityKind,
         label: String,
         pos: Pos2,
-    ) -> RsResult<NodeIndex> {
+    ) -> Result<NodeIndex, Error> {
         let meta = &KIND_META[kind as usize];
         let ent = Entity {
             slug: self.unique_slug(&label),
@@ -132,7 +132,7 @@ impl RedstringApp {
             .add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos))
     }
 
-    pub fn apply_label(&mut self, idx: NodeIndex, label: &str) -> RsResult<()> {
+    pub fn apply_label(&mut self, idx: NodeIndex, label: &str) -> Result<(), Error> {
         let slug = self.unique_slug(label);
         let Some(n) = self.g.node_mut(idx) else {
             return Ok(());
@@ -143,7 +143,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn set_node_size(&mut self, idx: NodeIndex, size: f32) -> RsResult<()> {
+    pub fn set_node_size(&mut self, idx: NodeIndex, size: f32) -> Result<(), Error> {
         let Some(n) = self.g.node_mut(idx) else {
             return Ok(());
         };
@@ -151,7 +151,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn sync_visuals(&mut self) -> RsResult<()> {
+    pub fn sync_visuals(&mut self) -> Result<(), Error> {
         let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
         for idx in nodes {
             let Some(n) = self.g.node(idx) else { continue };
@@ -180,7 +180,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn node_label(&self, idx: NodeIndex) -> RsResult<String> {
+    pub fn node_label(&self, idx: NodeIndex) -> Result<String, Error> {
         let Some(n) = self.g.g().node_weight(idx) else {
             return Ok("?".to_owned());
         };
@@ -188,7 +188,7 @@ impl RedstringApp {
         Ok(format!("{} {}", KIND_META[e.kind as usize].icon, e.label))
     }
 
-    pub fn edge_endpoints_labels(&self, idx: EdgeIndex) -> RsResult<(String, String)> {
+    pub fn edge_endpoints_labels(&self, idx: EdgeIndex) -> Result<(String, String), Error> {
         let Some((a, b)) = self.g.g().edge_endpoints(idx) else {
             return Ok(("?".to_owned(), "?".to_owned()));
         };
@@ -196,7 +196,7 @@ impl RedstringApp {
     }
 }
 
-pub fn spiral(n: usize) -> RsResult<Pos2> {
+pub fn spiral(n: usize) -> Result<Pos2, Error> {
     let a = n as f32 * 2.399_963_2;
     let r = 40.0 + 16.0 * n as f32;
     Ok(Pos2::new(r * a.cos(), r * a.sin()))

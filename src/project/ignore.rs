@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 
 pub const IGNORE_FILE: &str = ".rsignore";
 
@@ -17,7 +17,7 @@ pub struct RsIgnore {
 
 impl RsIgnore {
     
-    pub fn load(root: &Path) -> RsResult<Self> {
+    pub fn load(root: &Path) -> Result<Self, Error> {
         let path = root.join(IGNORE_FILE);
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
@@ -37,7 +37,7 @@ impl RsIgnore {
     }
 
     
-    pub fn matches(&self, rel: &str) -> RsResult<bool> {
+    pub fn matches(&self, rel: &str) -> Result<bool, Error> {
         Ok(self.patterns.iter().any(|p| pattern_matches(p, rel)))
     }
 }

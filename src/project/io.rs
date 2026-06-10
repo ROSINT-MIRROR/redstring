@@ -2,12 +2,12 @@
 
 
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{CaseFile, FORMAT_VERSION};
 
 use super::layout::Project;
 
-pub fn read_case(project: &Project) -> RsResult<CaseFile> {
+pub fn read_case(project: &Project) -> Result<CaseFile, Error> {
     let path = project.case_path()?;
     let text = std::fs::read_to_string(&path).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     let cf: CaseFile = ron::from_str(&text).map_err(|source| Error::RonParse { path: path.to_path_buf(), source })?;
@@ -20,7 +20,7 @@ pub fn read_case(project: &Project) -> RsResult<CaseFile> {
     Ok(cf)
 }
 
-pub fn write_case(project: &Project, cf: &CaseFile) -> RsResult<()> {
+pub fn write_case(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.case_path()?;
     let text = ron::ser::to_string_pretty(cf, ron::ser::PrettyConfig::default())
         .map_err(|source| Error::RonSer { source })?;
@@ -29,7 +29,7 @@ pub fn write_case(project: &Project, cf: &CaseFile) -> RsResult<()> {
 }
 
 
-pub fn read_note(project: &Project, slug: &str) -> RsResult<String> {
+pub fn read_note(project: &Project, slug: &str) -> Result<String, Error> {
     let path = project.note_path(slug)?;
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(s),
@@ -43,7 +43,7 @@ pub fn read_note(project: &Project, slug: &str) -> RsResult<String> {
 
 
 
-pub fn write_note(project: &Project, slug: &str, note: &str) -> RsResult<()> {
+pub fn write_note(project: &Project, slug: &str, note: &str) -> Result<(), Error> {
     let path = project.note_path(slug)?;
     if note.trim().is_empty() {
         if !path.exists() {

@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::RsResult;
+use crate::error::Error;
 
 use super::entity::{EntityKind, KIND_META};
 use super::relation::{RELATION_META, RelationKind};
@@ -60,7 +60,7 @@ impl Default for CaseMeta {
 impl CaseMeta {
     
     
-    pub fn stamped(name: &str) -> RsResult<Self> {
+    pub fn stamped(name: &str) -> Result<Self, Error> {
         let clipped: String = name.trim().chars().take(MAX_CASE_NAME).collect();
         Ok(Self {
             name: if clipped.is_empty() {

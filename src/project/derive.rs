@@ -3,19 +3,19 @@
 
 
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{CaseFile, KIND_META, RELATION_META};
 
 use super::layout::Project;
 
-pub fn write_json(project: &Project, cf: &CaseFile) -> RsResult<()> {
+pub fn write_json(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("case.json");
     let text = serde_json::to_string_pretty(cf).map_err(|source| Error::JsonSer { source })?;
     std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
 }
 
-pub fn write_graph_md(project: &Project, cf: &CaseFile) -> RsResult<()> {
+pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("graph.md");
     std::fs::write(&path, graph_md(cf)).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())

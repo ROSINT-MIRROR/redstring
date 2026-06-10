@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Theme {
@@ -36,11 +36,11 @@ impl Default for Prefs {
 }
 
 impl Prefs {
-    fn path() -> RsResult<PathBuf> {
+    fn path() -> Result<PathBuf, Error> {
         Ok(config_base()?.join("redstring").join("prefs.ron"))
     }
 
-    pub fn load() -> RsResult<Self> {
+    pub fn load() -> Result<Self, Error> {
         let path = Self::path()?;
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
@@ -52,7 +52,7 @@ impl Prefs {
         ron::from_str(&text).map_err(|source| Error::RonParse { path: path.to_path_buf(), source })
     }
 
-    pub fn save(&self) -> RsResult<()> {
+    pub fn save(&self) -> Result<(), Error> {
         let path = Self::path()?;
         let Some(dir) = path.parent() else {
             return Err(Error::NoConfigDir);
@@ -64,12 +64,12 @@ impl Prefs {
         Ok(())
     }
 
-    pub fn remember_recent(&mut self, path: String) -> RsResult<()> {
+    pub fn remember_recent(&mut self, path: String) -> Result<(), Error> {
         push_recent(&mut self.recent, path);
         self.save()
     }
 
-    pub fn forget_recent(&mut self, path: &str) -> RsResult<()> {
+    pub fn forget_recent(&mut self, path: &str) -> Result<(), Error> {
         self.recent.retain(|r| r != path);
         self.save()
     }
@@ -81,7 +81,7 @@ fn push_recent(list: &mut Vec<String>, path: String) {
     list.truncate(MAX_RECENT);
 }
 
-fn config_base() -> RsResult<PathBuf> {
+fn config_base() -> Result<PathBuf, Error> {
     let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) else {
         let Some(home) = std::env::var_os("HOME").filter(|v| !v.is_empty()) else {
             return Err(Error::NoConfigDir);

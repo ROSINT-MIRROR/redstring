@@ -8,7 +8,7 @@ use petgraph::Directed;
 use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{Camera, Entity, EntityKind, Relation, SourceKind};
 use crate::prefs::{Prefs, Theme};
 use crate::project::Project;
@@ -70,7 +70,7 @@ pub struct RedstringApp {
 }
 
 impl RedstringApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> RsResult<Self> {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Result<Self, Error> {
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             project: None,
@@ -127,7 +127,7 @@ impl RedstringApp {
         self.pending_camera = Some(Camera::default());
     }
 
-    pub fn apply_prefs(&self, ctx: &egui::Context) -> RsResult<()> {
+    pub fn apply_prefs(&self, ctx: &egui::Context) -> Result<(), Error> {
         ctx.set_zoom_factor(self.prefs.ui_scale);
         ctx.set_theme(match self.prefs.theme {
         Theme::Dark => egui::Theme::Dark,
@@ -136,12 +136,12 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn flag(&mut self, outcome: RsResult<()>) {
+    fn flag(&mut self, outcome: Result<(), Error>) {
         let Err(err) = outcome else { return };
         self.status = format!("⚠ {err}");
     }
 
-    fn frame(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    fn frame(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if self.pending_load {
             self.pending_load = false;
             self.load(ui)?;

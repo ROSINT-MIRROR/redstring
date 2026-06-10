@@ -1,7 +1,7 @@
 use egui::RichText;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{
     CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, RELATION_META, RelationKind, SOURCE_META,
     Source,
@@ -10,7 +10,7 @@ use crate::model::{
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
 
 impl RedstringApp {
-    pub fn inspector(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.heading("inspector");
         ui.separator();
 
@@ -39,7 +39,7 @@ impl RedstringApp {
         self.node_inspector(ui, nidx)
     }
 
-    fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> RsResult<()> {
+    fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> Result<(), Error> {
         let mut slug_edit: Option<String> = None;
         let mut picked_image: Option<String> = None;
         let mut delete = false;
@@ -129,7 +129,7 @@ impl RedstringApp {
         ctx: &egui::Context,
         nidx: NodeIndex,
         picked: Option<String>,
-    ) -> RsResult<()> {
+    ) -> Result<(), Error> {
         let Some(src) = picked else {
             return Ok(());
         };
@@ -142,7 +142,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> RsResult<String> {
+    fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> Result<String, Error> {
         let slug = self.node_slug(nidx)?;
         let Some(project) = &self.project else {
             self.status = "image linked in place — save the case first to copy it in".into();
@@ -161,7 +161,7 @@ impl RedstringApp {
         }
     }
 
-    fn apply_slug_edit(&mut self, nidx: NodeIndex, edit: Option<String>) -> RsResult<()> {
+    fn apply_slug_edit(&mut self, nidx: NodeIndex, edit: Option<String>) -> Result<(), Error> {
         let Some(new_slug) = edit else {
             return Ok(());
         };
@@ -180,7 +180,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) -> RsResult<()> {
+    fn edge_inspector(&mut self, ui: &mut egui::Ui, eidx: EdgeIndex) -> Result<(), Error> {
         let (from_l, to_l) = self.edge_endpoints_labels(eidx)?;
         self.edge_form(ui, eidx, &from_l, &to_l);
 
@@ -275,7 +275,7 @@ impl RedstringApp {
         remove_marked(&mut r.sources, remove);
     }
 
-    fn pick_source_file(&mut self) -> RsResult<()> {
+    fn pick_source_file(&mut self) -> Result<(), Error> {
         let Some(p) = rfd::FileDialog::new().pick_file() else {
             return Ok(());
         };

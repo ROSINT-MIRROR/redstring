@@ -19,7 +19,7 @@ use egui::{
 use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{Entity, KIND_META};
 
 
@@ -328,12 +328,12 @@ fn load_and_cache(ctx: &egui::Context, path: &str, id: egui::Id) -> Option<Textu
 
 
 
-pub fn invalidate_texture(ctx: &egui::Context, path: &str) -> RsResult<()> {
+pub fn invalidate_texture(ctx: &egui::Context, path: &str) -> Result<(), Error> {
     ctx.data_mut(|d| d.remove::<Option<TextureHandle>>(cache_id(path)));
     Ok(())
 }
 
-fn decode(path: &str) -> RsResult<ColorImage> {
+fn decode(path: &str) -> Result<ColorImage, Error> {
     let bytes = std::fs::read(path).map_err(|source| Error::Io { path: path.into(), source })?;
     
     let img = image::load_from_memory(&bytes).map_err(|source| Error::Image { path: path.into(), source })?;

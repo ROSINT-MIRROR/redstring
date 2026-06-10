@@ -1,14 +1,14 @@
 use egui::{Rect, RichText, Shape, Stroke};
 use petgraph::graph::NodeIndex;
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind};
 
 use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
 
 impl RedstringApp {
-    pub fn edge_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> RsResult<()> {
+    pub fn edge_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
         let (pressed, released, down, pointer) = ui.input(|i| {
             (
                 i.pointer.secondary_pressed(),
@@ -66,14 +66,14 @@ impl RedstringApp {
         ui: &egui::Ui,
         rect: Rect,
         pointer: Option<egui::Pos2>,
-    ) -> RsResult<Option<NodeIndex>> {
+    ) -> Result<Option<NodeIndex>, Error> {
         let Some(p) = pointer.filter(|p| rect.contains(*p)) else {
             return Ok(None);
         };
         self.node_at_screen(ui, rect, p)
     }
 
-    pub fn edge_drag_overlay(&mut self, ui: &egui::Ui, rect: Rect) -> RsResult<()> {
+    pub fn edge_drag_overlay(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
         let Some(from) = self.edge_drag else {
             return Ok(());
         };
@@ -93,7 +93,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn verb_picker(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn verb_picker(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some((from, to, at)) = self.pending_edge else {
             return Ok(());
         };
@@ -179,7 +179,7 @@ impl RedstringApp {
         true
     }
 
-    pub fn label_editor(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn label_editor(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some((idx, at)) = self.label_edit else {
             return Ok(());
         };

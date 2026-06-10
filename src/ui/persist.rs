@@ -7,7 +7,7 @@ use egui_graphs::Graph;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::{
     CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, KIND_META,
     RELATION_META, Relation, RelationRec,
@@ -19,7 +19,7 @@ use super::board::{camera_read, camera_write};
 use super::ops::spiral;
 
 impl RedstringApp {
-    fn to_case_file(&self, ui: &egui::Ui) -> RsResult<CaseFile> {
+    fn to_case_file(&self, ui: &egui::Ui) -> Result<CaseFile, Error> {
         let g = self.g.g();
         let mut cf = CaseFile::default();
         cf.meta = CaseMeta::stamped(&self.case_name)?;
@@ -54,7 +54,7 @@ impl RedstringApp {
         Ok(cf)
     }
 
-    fn image_rec(&self, image: &Option<String>) -> RsResult<Option<String>> {
+    fn image_rec(&self, image: &Option<String>) -> Result<Option<String>, Error> {
         let Some(img) = image.as_ref() else {
             return Ok(None);
         };
@@ -64,14 +64,14 @@ impl RedstringApp {
         Ok(Some(project.rel_or_self(img)?))
     }
 
-    pub fn save(&mut self, ui: &egui::Ui) -> RsResult<()> {
+    pub fn save(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         if self.project.is_none() {
             return self.save_as_dialog(ui);
         }
         self.save_to_project(ui)
     }
 
-    fn save_to_project(&mut self, ui: &egui::Ui) -> RsResult<()> {
+    fn save_to_project(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let Some(project) = self.project.clone() else {
             return Ok(());
         };
@@ -88,7 +88,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn write_all(&self, project: &Project, cf: &CaseFile) -> RsResult<()> {
+    fn write_all(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
         project::write_case(project, cf)?;
         for n in self.g.g().node_weights() {
             let e = n.payload();
@@ -99,7 +99,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn export_bundle(&mut self, ui: &egui::Ui) -> RsResult<()> {
+    pub fn export_bundle(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         if self.project.is_none() {
             self.status = "save the case first — a bundle is the case directory, zipped".into();
             return Ok(());
@@ -113,21 +113,21 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn open_dialog(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn open_dialog(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some(p) = open_picker(self.project.as_ref()).pick_file() else {
             return Ok(());
         };
         self.open_path(ui, &p)
     }
 
-    pub fn open_folder_dialog(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn open_folder_dialog(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some(p) = folder_picker(self.project.as_ref()).pick_folder() else {
             return Ok(());
         };
         self.open_path(ui, &p)
     }
 
-    pub fn handle_drop(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn handle_drop(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let dropped = ui.input(|i| i.raw.dropped_files.clone());
         let Some(path) = dropped.into_iter().find_map(|f| f.path) else {
             return Ok(());
@@ -135,7 +135,7 @@ impl RedstringApp {
         self.open_path(ui, &path)
     }
 
-    pub fn open_path(&mut self, ui: &mut egui::Ui, path: &Path) -> RsResult<()> {
+    pub fn open_path(&mut self, ui: &mut egui::Ui, path: &Path) -> Result<(), Error> {
         let opened = if path.is_dir() {
             Project::open(path)
         } else if path.extension().is_some_and(|e| e == "zip") {
@@ -158,7 +158,7 @@ impl RedstringApp {
         }
     }
 
-    pub fn save_as_dialog(&mut self, ui: &egui::Ui) -> RsResult<()> {
+    pub fn save_as_dialog(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let suggest = dir_suggestion(&self.case_name);
         let Some(p) = create_picker(self.project.as_ref(), &suggest).save_file() else {
             return Ok(());
@@ -174,7 +174,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn remember_project(&mut self) -> RsResult<()> {
+    pub fn remember_project(&mut self) -> Result<(), Error> {
         let Some(project) = &self.project else {
             return Ok(());
         };
@@ -182,7 +182,7 @@ impl RedstringApp {
         self.prefs.remember_recent(path)
     }
 
-    pub fn load(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn load(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some(project) = self.project.clone() else {
             self.status = "no case open".into();
             return Ok(());
@@ -269,7 +269,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn watch_current(&mut self) -> RsResult<()> {
+    pub fn watch_current(&mut self) -> Result<(), Error> {
         let Some(project) = &self.project else {
             self.watched = None;
             return Ok(());
@@ -279,7 +279,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn poll_external_edit(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn poll_external_edit(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if self.last_watch_poll.elapsed().as_millis() < 1000 {
             return Ok(());
         }
@@ -310,7 +310,7 @@ impl RedstringApp {
         Some(path.display().to_string())
     }
 
-    pub fn project_label(&self) -> RsResult<String> {
+    pub fn project_label(&self) -> Result<String, Error> {
         let Some(project) = &self.project else {
             return Ok("unsaved — Ctrl+S creates the case directory".to_owned());
         };
@@ -318,7 +318,7 @@ impl RedstringApp {
     }
 }
 
-fn image_abs(project: &Project, image: &Option<String>) -> RsResult<Option<String>> {
+fn image_abs(project: &Project, image: &Option<String>) -> Result<Option<String>, Error> {
     let Some(rel) = image.as_ref() else {
         return Ok(None);
     };
@@ -343,7 +343,7 @@ fn warn_suffix(project: &Project) -> String {
     }
 }
 
-fn healed_pos(display: &CaseDisplay, slug: &str, i: usize, healed: &mut usize) -> RsResult<Pos2> {
+fn healed_pos(display: &CaseDisplay, slug: &str, i: usize, healed: &mut usize) -> Result<Pos2, Error> {
     let Some(&(x, y)) = display.positions.get(slug) else {
         *healed += 1;
         return spiral(i);

@@ -133,9 +133,13 @@ fn rule_help(rule: &str) -> &'static str {
         ),
         "TYPE:12" => concat!(
             "every pub fn — pub, pub(crate), pub(super), pub(in ...) — is an interface, and interfaces\n",
-            "    report failure: return RsResult/Result. no visibility qualifier, const, async or unsafe\n",
-            "    dodges. internal wiring goes private; data goes in pub fields and consts; trait impls\n",
-            "    implement someone else's contract and are the only exemption.",
+            "    report failure: return Result<T, YourError>, spelled out. no visibility qualifier,\n",
+            "    const, async or unsafe dodges. internal wiring goes private; data goes in pub fields\n",
+            "    and consts; trait impls implement someone else's contract and are the only exemption.",
+        ),
+        "TYPE:13" => concat!(
+            "aliasing Result hides the error type from every signature and from this scanner.\n",
+            "    the signature is the contract — write Result<T, YourError> at every fn, no shorthand.",
         ),
         _ => "",
     }
@@ -319,6 +323,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
         check_err_default_arms(rel, line_no, trimmed, hits);
         check_dead_code_suppression(rel, line_no, trimmed, hits);
         check_unfinished_markers(rel, line_no, trimmed, is_bin, hits);
+        check_result_alias(rel, line_no, trimmed, hits);
     }
 
     check_empty_err_arms(rel, &content, hits);
@@ -428,6 +433,16 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
                 break;
             }
         }
+    }
+}
+
+fn check_result_alias(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
+    let is_type_decl = trimmed.starts_with("type ")
+        || trimmed.starts_with("pub type ")
+        || trimmed.starts_with("pub(crate) type ")
+        || trimmed.starts_with("pub(super) type ");
+    if is_type_decl && trimmed.contains("Result<") {
+        hit(hits, "TYPE:13", rel, line_no + 1);
     }
 }
 
@@ -582,12 +597,7 @@ fn fn_visibility(trimmed: &str) -> Option<bool> {
     None
 }
 
-const RESULT_RETURNS: &[&str] = &[
-    "RsResult<",
-    "Result<",
-    "std::result::Result<",
-    "crate::error::RsResult<",
-];
+const RESULT_RETURNS: &[&str] = &["Result<", "std::result::Result<"];
 
 fn check_return_type(rel: &Path, line_no: usize, sig: &str, is_pub: bool, hits: &mut Vec<Hit>) {
     let normalized = sig.split_whitespace().collect::<Vec<_>>().join(" ");

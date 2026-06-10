@@ -4,7 +4,7 @@ use egui_graphs::{
 };
 use petgraph::graph::NodeIndex;
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META};
 use crate::shapes::{IMG_RADIUS, NODE_RADIUS, SourcedEdgeShape};
 
@@ -15,11 +15,11 @@ const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 const MIN_ZOOM: f32 = 0.01;
 const MAX_ZOOM: f32 = 30.0;
 
-pub fn meta(ui: &egui::Ui) -> RsResult<MetadataFrame> {
+pub fn meta(ui: &egui::Ui) -> Result<MetadataFrame, Error> {
     Ok(MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui))
 }
 
-pub fn camera_read(ui: &egui::Ui) -> RsResult<Camera> {
+pub fn camera_read(ui: &egui::Ui) -> Result<Camera, Error> {
     let mf = meta(ui)?;
     Ok(Camera {
         x: mf.pan.x,
@@ -35,7 +35,7 @@ fn sane_zoom(z: f32) -> f32 {
     z.clamp(MIN_ZOOM, MAX_ZOOM)
 }
 
-pub fn camera_write(ui: &mut egui::Ui, cam: Camera) -> RsResult<()> {
+pub fn camera_write(ui: &mut egui::Ui, cam: Camera) -> Result<(), Error> {
     let mut mf = meta(ui)?;
     mf.pan = Vec2::new(cam.x, cam.y);
     mf.zoom = sane_zoom(cam.zoom);
@@ -43,7 +43,7 @@ pub fn camera_write(ui: &mut egui::Ui, cam: Camera) -> RsResult<()> {
     Ok(())
 }
 
-fn scroll_zoom(ui: &mut egui::Ui) -> RsResult<()> {
+fn scroll_zoom(ui: &mut egui::Ui) -> Result<(), Error> {
     let board = ui.available_rect_before_wrap();
     let (dy, hover) = ui.input(|i| (i.smooth_scroll_delta.y, i.pointer.hover_pos()));
     if dy == 0.0 {
@@ -67,7 +67,7 @@ fn scroll_zoom(ui: &mut egui::Ui) -> RsResult<()> {
 }
 
 impl RedstringApp {
-    pub fn zoom_bar(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn zoom_bar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let mut mf = meta(ui)?;
         let mut z = mf.zoom;
         ui.spacing_mut().slider_width = 110.0;
@@ -87,7 +87,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn board(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
+    pub fn board(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let rect = ui.available_rect_before_wrap();
         self.board_size = rect.size();
 
@@ -125,7 +125,7 @@ impl RedstringApp {
         ui: &egui::Ui,
         rect: Rect,
         screen: Pos2,
-    ) -> RsResult<Option<NodeIndex>> {
+    ) -> Result<Option<NodeIndex>, Error> {
         let mf = meta(ui)?;
         Ok(self
             .g
@@ -140,7 +140,7 @@ impl RedstringApp {
         (sel.len() == 1).then(|| sel[0])
     }
 
-    fn resize_handle_rect(&self, ui: &egui::Ui, rect: Rect) -> RsResult<Option<(NodeIndex, Rect)>> {
+    fn resize_handle_rect(&self, ui: &egui::Ui, rect: Rect) -> Result<Option<(NodeIndex, Rect)>, Error> {
         let Some(idx) = self.resize_target() else {
             return Ok(None);
         };
@@ -159,7 +159,7 @@ impl RedstringApp {
         Ok(Some((idx, Rect::from_center_size(corner, Vec2::splat(14.0)))))
     }
 
-    fn node_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> RsResult<()> {
+    fn node_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
         let (pressed, down, pointer) = ui.input(|i| {
             (
                 i.pointer.primary_pressed(),
@@ -218,7 +218,7 @@ impl RedstringApp {
         n.set_dragged(false);
     }
 
-    fn resize_handle(&mut self, ui: &mut egui::Ui, rect: Rect) -> RsResult<()> {
+    fn resize_handle(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
         let Some((idx, hrect)) = self.resize_handle_rect(ui, rect)? else {
             self.resize = None;
             return Ok(());
@@ -276,7 +276,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn kind_drop(&mut self, ui: &mut egui::Ui, rect: Rect) -> RsResult<()> {
+    fn kind_drop(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
         if !egui::DragAndDrop::has_payload_of_type::<EntityKind>(ui.ctx()) {
             return Ok(());
         }

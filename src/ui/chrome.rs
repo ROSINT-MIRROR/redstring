@@ -1,13 +1,13 @@
 use egui::RichText;
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::prefs::Theme;
 
 use super::app::RedstringApp;
 
 impl RedstringApp {
-    pub fn toolbar(&mut self, ui: &mut egui::Ui) -> RsResult<()> {
-        ui.horizontal(|ui| -> RsResult<()> {
+    pub fn toolbar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        ui.horizontal(|ui| -> Result<(), Error> {
             if ui
                 .button("🏠")
                 .on_hover_text("Welcome — new case, open, recents")
@@ -59,7 +59,7 @@ impl RedstringApp {
         .inner
     }
 
-    pub fn prefs_window(&mut self, ui: &egui::Ui) -> RsResult<()> {
+    pub fn prefs_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let mut open = self.prefs_open;
         let mut changed = false;
         egui::Window::new("preferences")

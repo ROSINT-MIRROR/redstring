@@ -6,14 +6,14 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::error::RsResult;
+use crate::error::Error;
 use crate::model::{CaseFile, SOURCE_META};
 
 use super::ignore::RsIgnore;
 use super::io;
 use super::layout::Project;
 
-pub fn validate(project: &Project) -> RsResult<Vec<String>> {
+pub fn validate(project: &Project) -> Result<Vec<String>, Error> {
     let cf = io::read_case(project)?;
     let ignore = RsIgnore::load(&project.root)?;
     let mut findings: Vec<String> = Vec::new();
@@ -46,7 +46,7 @@ pub fn validate(project: &Project) -> RsResult<Vec<String>> {
 
 
 
-pub fn cited_paths(cf: &CaseFile) -> RsResult<Vec<(String, String)>> {
+pub fn cited_paths(cf: &CaseFile) -> Result<Vec<(String, String)>, Error> {
     let mut v: Vec<(String, String)> = Vec::new();
     for e in &cf.data.entities {
         let Some(img) = &e.image else { continue };
@@ -78,7 +78,7 @@ fn check_path(
     findings: &mut Vec<String>,
     what: &str,
     rel: &str,
-) -> RsResult<()> {
+) -> Result<(), Error> {
     if Path::new(rel).is_absolute() {
         findings.push(format!(
             "{what}: absolute path '{rel}' — case files must cite project-relative paths"

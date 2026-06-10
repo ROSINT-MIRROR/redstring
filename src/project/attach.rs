@@ -6,18 +6,18 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 use crate::model::SourceKind;
 
 use super::layout::Project;
 
 
 
-pub fn import_entity_image(project: &Project, slug: &str, src: &Path) -> RsResult<PathBuf> {
+pub fn import_entity_image(project: &Project, slug: &str, src: &Path) -> Result<PathBuf, Error> {
     copy_unique(&project.entity_dir(slug)?, src)
 }
 
-pub fn import_source_file(project: &Project, kind: SourceKind, src: &Path) -> RsResult<String> {
+pub fn import_source_file(project: &Project, kind: SourceKind, src: &Path) -> Result<String, Error> {
     let dir = project.resolve(dest_subdir(kind, src))?;
     let abs = copy_unique(&dir, src)?;
     project.rel_or_self(&abs.to_string_lossy())
@@ -50,7 +50,7 @@ fn doc_or_media(src: &Path) -> &'static str {
 
 
 
-fn copy_unique(dst_dir: &Path, src: &Path) -> RsResult<PathBuf> {
+fn copy_unique(dst_dir: &Path, src: &Path) -> Result<PathBuf, Error> {
     std::fs::create_dir_all(dst_dir).map_err(|source| Error::Io { path: dst_dir.to_path_buf(), source })?;
     let canon_src = std::fs::canonicalize(src).map_err(|source| Error::Io { path: src.to_path_buf(), source })?;
     let canon_dst = std::fs::canonicalize(dst_dir).map_err(|source| Error::Io { path: dst_dir.to_path_buf(), source })?;

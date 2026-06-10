@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, RsResult};
+use crate::error::Error;
 
 pub const CASE_FILE: &str = "case.redstring";
 
@@ -20,7 +20,7 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn open(path: &Path) -> RsResult<Self> {
+    pub fn open(path: &Path) -> Result<Self, Error> {
         let dir = if path.is_dir() {
             path.to_path_buf()
         } else {
@@ -36,7 +36,7 @@ impl Project {
         Ok(Self { root })
     }
 
-    pub fn create(path: &Path) -> RsResult<Self> {
+    pub fn create(path: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(path).map_err(|source| Error::Io {
             path: path.to_path_buf(),
             source,
@@ -59,7 +59,7 @@ impl Project {
         Ok(project)
     }
 
-    fn scaffold_tree(&self) -> RsResult<()> {
+    fn scaffold_tree(&self) -> Result<(), Error> {
         for dir in CANONICAL_DIRS {
             let d = self.root.join(dir);
             std::fs::create_dir_all(&d).map_err(|source| Error::Io {
@@ -85,30 +85,30 @@ impl Project {
         Ok(())
     }
 
-    pub fn case_path(&self) -> RsResult<PathBuf> {
+    pub fn case_path(&self) -> Result<PathBuf, Error> {
         Ok(self.root.join(CASE_FILE))
     }
 
-    pub fn dir_name(&self) -> RsResult<String> {
+    pub fn dir_name(&self) -> Result<String, Error> {
         let Some(name) = self.root.file_name() else {
             return Ok("case".to_owned());
         };
         Ok(name.to_string_lossy().into_owned())
     }
 
-    pub fn entity_dir(&self, slug: &str) -> RsResult<PathBuf> {
+    pub fn entity_dir(&self, slug: &str) -> Result<PathBuf, Error> {
         Ok(self.root.join("entities").join(slug))
     }
 
-    pub fn note_path(&self, slug: &str) -> RsResult<PathBuf> {
+    pub fn note_path(&self, slug: &str) -> Result<PathBuf, Error> {
         Ok(self.entity_dir(slug)?.join("note.md"))
     }
 
-    pub fn resolve(&self, rel: &str) -> RsResult<PathBuf> {
+    pub fn resolve(&self, rel: &str) -> Result<PathBuf, Error> {
         Ok(self.root.join(rel))
     }
 
-    pub fn rel_or_self(&self, path: &str) -> RsResult<String> {
+    pub fn rel_or_self(&self, path: &str) -> Result<String, Error> {
         let Some(rel) = relativize(&self.root, Path::new(path)) else {
             return Ok(path.to_owned());
         };
@@ -123,7 +123,7 @@ fn relativize(root: &Path, path: &Path) -> Option<String> {
     Some(rel.to_string_lossy().into_owned())
 }
 
-fn case_file_parent(path: &Path) -> RsResult<PathBuf> {
+fn case_file_parent(path: &Path) -> Result<PathBuf, Error> {
     let named_case = path.file_name().is_some_and(|n| n == CASE_FILE);
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
     let (true, Some(dir)) = (named_case, parent) else {
