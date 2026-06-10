@@ -198,7 +198,7 @@ impl RedstringApp {
         let just_opened = self.label_edit_focus;
 
         let edit_font = egui::FontId::monospace(font_px);
-        let text_w = ui
+        let text_size = ui
             .ctx()
             .fonts_mut(|f| {
                 f.layout_no_wrap(
@@ -207,41 +207,40 @@ impl RedstringApp {
                     egui::Color32::WHITE,
                 )
             })
-            .size()
-            .x;
-        let width = text_w + 2.0 * font_px;
+            .size();
+        let width = text_size.x + 2.0 * font_px;
         let pos = zone.shrink(4.0).left_top();
+        let edit_rect = Rect::from_min_size(pos, egui::Vec2::new(width, text_size.y));
 
         ui.painter()
             .with_clip_rect(rect)
             .rect_filled(zone, 2.0, ui.visuals().panel_fill);
 
-        let area = egui::Area::new(egui::Id::new("rs_label_edit"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(pos)
-            .constrain(true)
-            .show(ui.ctx(), |ui| {
-                let out = egui::TextEdit::singleline(&mut self.label_edit_buf)
-                    .font(edit_font.clone())
-                    .desired_width(width)
-                    .frame(egui::Frame::NONE)
-                    .margin(egui::Margin::ZERO)
-                    .show(ui);
-                if std::mem::take(&mut self.label_edit_focus) {
-                    out.response.request_focus();
-                    let mut state = out.state;
-                    state.cursor.set_char_range(Some(CCursorRange::two(
-                        CCursor::new(0),
-                        CCursor::new(self.label_edit_buf.chars().count()),
-                    )));
-                    state.store(ui.ctx(), out.response.id);
-                }
-                if out.response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    commit = true;
-                }
-            });
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(edit_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::TOP)),
+        );
+        let out = egui::TextEdit::singleline(&mut self.label_edit_buf)
+            .font(edit_font)
+            .desired_width(width)
+            .frame(egui::Frame::NONE)
+            .margin(egui::Margin::ZERO)
+            .show(&mut child);
+        if std::mem::take(&mut self.label_edit_focus) {
+            out.response.request_focus();
+            let mut state = out.state;
+            state.cursor.set_char_range(Some(CCursorRange::two(
+                CCursor::new(0),
+                CCursor::new(self.label_edit_buf.chars().count()),
+            )));
+            state.store(ui.ctx(), out.response.id);
+        }
+        if out.response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            commit = true;
+        }
 
-        if area.response.clicked_elsewhere() && !just_opened {
+        if out.response.clicked_elsewhere() && !just_opened {
             commit = true;
         }
         if commit {
@@ -334,5 +333,62 @@ impl RedstringApp {
             Rect::from_min_size(top_left, galley.size()).expand(4.0),
             font_px,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    fn editor_pass(ctx: &egui::Context, buf: &mut String) -> (f32, f32, usize) {
+        let mut got = (0.0, 0.0, 0usize);
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let font = egui::FontId::monospace(14.0);
+                let text_size = ctx
+                    .fonts_mut(|f| {
+                        f.layout_no_wrap(buf.clone(), font.clone(), egui::Color32::WHITE)
+                    })
+                    .size();
+                let width = text_size.x + 28.0;
+                let edit_rect = egui::Rect::from_min_size(
+                    egui::Pos2::new(40.0, 90.0),
+                    egui::Vec2::new(width, text_size.y),
+                );
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(edit_rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::TOP)),
+                );
+                let out = egui::TextEdit::singleline(buf)
+                    .font(font)
+                    .desired_width(width)
+                    .frame(egui::Frame::NONE)
+                    .margin(egui::Margin::ZERO)
+                    .show(&mut child);
+                got = (
+                    out.response.rect.width(),
+                    out.galley.size().x,
+                    out.galley.rows.len(),
+                );
+            });
+        });
+        got
+    }
+
+    #[test]
+    fn editor_child_rect_never_clips_or_wraps() {
+        let ctx = egui::Context::default();
+        let mut short = "x".to_owned();
+        for _ in 0..2 {
+            editor_pass(&ctx, &mut short);
+        }
+        let mut buf = "Government body".to_owned();
+        for _ in 0..3 {
+            let (rect_w, galley_w, rows) = editor_pass(&ctx, &mut buf);
+            assert_eq!(rows, 1);
+            assert!(
+                rect_w >= galley_w + 27.0,
+                "edit rect {rect_w} must fit galley {galley_w} plus cursor slack"
+            );
+        }
     }
 }
