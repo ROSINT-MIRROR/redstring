@@ -214,6 +214,7 @@ OrgName:        Google LLC
             label: "MarkMonitor Inc.".into(),
             rel: RelationKind::RegisteredAt,
             outbound: true,
+            attrs: Vec::new(),
         }));
         let servers = facts
             .iter()
@@ -223,7 +224,7 @@ OrgName:        Google LLC
     }
 
     #[test]
-    fn rpsl_shape_emits_org_and_abuse_contact() {
+    fn rpsl_shape_emits_org_abuse_contact_and_location() {
         let spec = whois_spec();
         let (shape, vars) = sniff(&spec.shapes, APNIC).unwrap().unwrap();
         let facts = emit(shape, &vars).unwrap();
@@ -232,14 +233,43 @@ OrgName:        Google LLC
             label: "APNIC Research and Development".into(),
             rel: RelationKind::RegisteredAt,
             outbound: true,
+            attrs: Vec::new(),
         }));
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Email,
             label: "helpdesk@apnic.net".into(),
             rel: RelationKind::RelatedTo,
             outbound: true,
+            attrs: Vec::new(),
         }));
-        assert!(facts.contains(&Fact::Attr { key: "country".into(), value: "AU".into() }));
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Location,
+            label: "AU".into(),
+            rel: RelationKind::LocatedAt,
+            outbound: true,
+            attrs: vec![("country_code".into(), "AU".into())],
+        }));
+    }
+
+    #[test]
+    fn arin_shape_coalesces_geo_into_location() {
+        let spec = whois_spec();
+        let arin_with_city = format!("{ARIN}City:           Mountain View\nStateProv:      CA\n");
+        let (shape, vars) = sniff(&spec.shapes, &arin_with_city).unwrap().unwrap();
+        assert_eq!(shape.id, "arin");
+        let facts = emit(shape, &vars).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Location,
+            label: "US".into(),
+            rel: RelationKind::LocatedAt,
+            outbound: true,
+            attrs: vec![
+                ("country_code".into(), "US".into()),
+                ("city".into(), "Mountain View".into()),
+                ("region".into(), "CA".into()),
+            ],
+        }));
+        assert!(facts.contains(&Fact::Attr { key: "cidr".into(), value: "8.8.8.0/24".into() }));
     }
 
     #[test]

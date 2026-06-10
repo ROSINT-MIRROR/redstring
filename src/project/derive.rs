@@ -67,6 +67,7 @@ mod tests {
             slug: "radu".into(),
             kind: EntityKind::Person,
             label: "Radu \"the Brick\" P.".into(),
+            value: String::new(),
             attrs: vec![],
             image: None,
         });
@@ -74,6 +75,7 @@ mod tests {
             slug: "strada_sigur".into(),
             kind: EntityKind::ShellCompany,
             label: "Strada Sigur SRL".into(),
+            value: String::new(),
             attrs: vec![],
             image: None,
         });

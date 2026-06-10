@@ -208,6 +208,51 @@ impl RedstringApp {
         Ok(())
     }
 
+    pub fn delete_confirm_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+        let Some(list) = self.delete_confirm.clone() else {
+            return Ok(());
+        };
+        let n = list.len();
+        let mut yes = false;
+        let mut cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Window::new("remove entities")
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ui.ctx().content_rect().center())
+            .show(ui.ctx(), |ui| {
+                let noun = if n == 1 { "entity" } else { "entities" };
+                ui.label(format!("Remove {n} {noun} and their relations?"));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let yes_btn = ui.button(
+                        RichText::new(format!("{} yes, remove", egui_phosphor::regular::TRASH))
+                            .color(super::style::DANGER)
+                            .strong(),
+                    );
+                    if ui.memory(|m| m.focused().is_none()) {
+                        yes_btn.request_focus();
+                    }
+                    yes = yes_btn.clicked();
+                    cancel |= ui.button("cancel").clicked();
+                });
+            });
+        if yes {
+            let mut removed = 0usize;
+            for idx in &list {
+                if self.g.remove_node(*idx).is_some() {
+                    removed += 1;
+                }
+            }
+            self.delete_confirm = None;
+            self.status = format!("removed {removed} entities and their relations");
+        }
+        if cancel {
+            self.delete_confirm = None;
+        }
+        Ok(())
+    }
+
     pub fn quit_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         if !self.quit_confirm {
             return Ok(());

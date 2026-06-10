@@ -4,7 +4,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 use crate::model::{
     CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, RELATION_META, RelationKind, SOURCE_META,
-    Source, pretty_key, slugify,
+    Source, ValueFormat, format_hint, pretty_key, slugify,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
@@ -35,8 +35,11 @@ impl RedstringApp {
         .inner?;
         ui.separator();
 
-        let sel_node = self.g.selected_nodes().first().copied();
-        let Some(nidx) = sel_node else {
+        let sel = self.g.selected_nodes().to_vec();
+        if sel.len() > 1 {
+            return self.multi_inspector(ui, sel);
+        }
+        let Some(nidx) = sel.first().copied() else {
             let sel_edge = self.g.selected_edges().first().copied();
             let Some(eidx) = sel_edge else {
                 return self.case_inspector(ui);
@@ -44,6 +47,26 @@ impl RedstringApp {
             return self.edge_inspector(ui, eidx);
         };
         self.node_inspector(ui, nidx)
+    }
+
+    fn multi_inspector(&mut self, ui: &mut egui::Ui, sel: Vec<NodeIndex>) -> Result<(), Error> {
+        style::section(ui, egui_phosphor::regular::USERS_THREE, "selection")?;
+        ui.label(RichText::new(format!("{} entities selected", sel.len())).strong());
+        ui.label(
+            RichText::new("Delete key asks to remove them — Enter confirms")
+                .weak()
+                .small(),
+        );
+        ui.add_space(style::GAP);
+        if style::danger_btn(
+            ui,
+            egui_phosphor::regular::TRASH,
+            &format!("delete {} entities", sel.len()),
+            "remove the selected entities and their relations",
+        )? {
+            self.delete_confirm = Some(sel);
+        }
+        Ok(())
     }
 
     fn case_inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
@@ -89,6 +112,30 @@ impl RedstringApp {
             ui.label("label");
             ui.text_edit_singleline(&mut e.label);
         });
+        ui.horizontal(|ui| {
+            ui.label("value")
+                .on_hover_text("the machine-readable thing lookups run against — label is free prose");
+            ui.add(egui::TextEdit::singleline(&mut e.value).hint_text(e.label.clone()));
+        });
+        let vf = KIND_META[e.kind as usize].value_format;
+        if vf != ValueFormat::Free {
+            let hint = format_hint(vf)?;
+            if e.module_value()?.is_some() {
+                ui.colored_label(
+                    OK_GREEN,
+                    RichText::new(format!("{} valid {hint}", egui_phosphor::regular::CHECK)).small(),
+                );
+            } else {
+                ui.colored_label(
+                    ALARM_RED,
+                    RichText::new(format!(
+                        "{} needs a valid {hint} — lookups disabled",
+                        egui_phosphor::regular::X
+                    ))
+                    .small(),
+                );
+            }
+        }
 
         style::section(ui, egui_phosphor::regular::IMAGE, "image")?;
         ui.horizontal(|ui| -> Result<(), Error> {
@@ -146,9 +193,10 @@ impl RedstringApp {
         style::section(ui, egui_phosphor::regular::NOTE_PENCIL, "note")?;
         ui.text_edit_multiline(&mut e.note);
         let kind_now = e.kind;
+        let module_ok = e.module_value()?.is_some();
 
         style::section(ui, egui_phosphor::regular::PLUGS, "lookups")?;
-        let run_module = self.lookup_buttons(ui, kind_now)?;
+        let run_module = self.lookup_buttons(ui, kind_now, module_ok)?;
 
         ui.add_space(style::GAP);
         ui.separator();

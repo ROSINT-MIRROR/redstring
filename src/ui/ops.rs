@@ -103,6 +103,7 @@ impl RedstringApp {
             slug: self.unique_slug(&label),
             kind,
             label: label.clone(),
+            value: String::new(),
             attrs: meta
                 .attrs
                 .iter()

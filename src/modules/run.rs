@@ -18,7 +18,7 @@ pub struct ModuleRun {
 
     pub shape_id: String,
 
-    pub facts: Vec<(Fact, bool)>,
+    pub facts: Vec<Fact>,
 
     pub raw: String,
     pub stderr_tail: String,
@@ -61,7 +61,7 @@ fn execute(input: &RunInput) -> ModuleRun {
 
 fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool) -> ModuleRun {
     let mut shape_id = String::new();
-    let mut facts: Vec<(Fact, bool)> = Vec::new();
+    let mut facts: Vec<Fact> = Vec::new();
     let mut stderr_tail = stderr_tail;
     let mut ok = ok;
     if ok && !raw.is_empty() {
@@ -89,12 +89,12 @@ fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool) -> Modul
     }
 }
 
-fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<(Fact, bool)>), Error> {
+fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<Fact>), Error> {
     let Some((shape, vars)) = super::extract::sniff(&input.shapes, raw)? else {
         return Ok((String::new(), Vec::new()));
     };
     let facts = super::emit::emit(shape, &vars)?;
-    Ok((shape.id.clone(), facts.into_iter().map(|f| (f, true)).collect()))
+    Ok((shape.id.clone(), facts))
 }
 
 

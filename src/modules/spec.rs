@@ -56,6 +56,9 @@ pub enum EmitRule {
         rel: String,
         #[serde(default = "default_outbound")]
         outbound: bool,
+
+        #[serde(default)]
+        attrs: Vec<(String, String)>,
     },
 }
 
@@ -127,20 +130,30 @@ impl ModuleSpec {
 
     pub fn render_args(
         &self,
+        value: &str,
         label: &str,
         slug: &str,
         attrs: &[(String, String)],
     ) -> Result<Vec<String>, Error> {
         let mut out = Vec::new();
         for a in &self.args {
-            out.push(render_arg(a, label, slug, attrs));
+            out.push(render_arg(a, value, label, slug, attrs));
         }
         Ok(out)
     }
 }
 
-fn render_arg(template: &str, label: &str, slug: &str, attrs: &[(String, String)]) -> String {
-    let mut s = template.replace("{label}", label).replace("{slug}", slug);
+fn render_arg(
+    template: &str,
+    value: &str,
+    label: &str,
+    slug: &str,
+    attrs: &[(String, String)],
+) -> String {
+    let mut s = template
+        .replace("{value}", value)
+        .replace("{label}", label)
+        .replace("{slug}", slug);
     for (k, v) in attrs {
         s = s.replace(&format!("{{attr:{k}}}"), v);
     }
@@ -176,8 +189,13 @@ mod tests {
             shapes: Vec::new(),
         };
         let args = spec
-            .render_args("evil.example", "evil_example", &[("registrar".into(), "MarkMonitor".into())])
+            .render_args("93.184.216.34", "evil.example", "evil_example", &[("registrar".into(), "MarkMonitor".into())])
             .unwrap();
         assert_eq!(args, vec!["evil.example", "--slug=evil_example", "MarkMonitor"]);
+        let spec2 = ModuleSpec { args: vec!["{value}".into()], ..spec };
+        let args = spec2
+            .render_args("93.184.216.34", "evil.example", "evil_example", &[])
+            .unwrap();
+        assert_eq!(args, vec!["93.184.216.34"]);
     }
 }

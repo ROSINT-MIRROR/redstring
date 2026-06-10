@@ -19,6 +19,8 @@ pub enum Fact {
         label: String,
         rel: RelationKind,
         outbound: bool,
+
+        attrs: Vec<(String, String)>,
     },
 }
 
@@ -40,20 +42,33 @@ pub fn emit(shape: &Shape, vars: &Vars) -> Result<Vec<Fact>, Error> {
                 kind,
                 rel,
                 outbound,
+                attrs,
             } => {
                 let Some(vals) = vars.get(from) else { continue };
                 let Some(k) = kind_by_slug(kind)? else { continue };
                 let Some(r) = rel_by_slug(rel)? else { continue };
+                let resolved = resolve_attrs(attrs, vars);
                 for v in vals {
                     facts.push(Fact::Entity {
                         kind: k,
                         label: v.clone(),
                         rel: r,
                         outbound: *outbound,
+                        attrs: resolved.clone(),
                     });
                 }
             }
         }
     }
     Ok(facts)
+}
+
+fn resolve_attrs(rules: &[(String, String)], vars: &Vars) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (var, key) in rules {
+        let Some(vals) = vars.get(var) else { continue };
+        let Some(first) = vals.first() else { continue };
+        out.push((key.clone(), first.clone()));
+    }
+    out
 }

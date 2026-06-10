@@ -215,6 +215,7 @@ mod tests {
             slug: "doe".into(),
             kind: EntityKind::Person,
             label: "J. Doe".into(),
+            value: String::new(),
             attrs: vec![],
             image: Some("entities/doe/portrait.png".into()),
         });

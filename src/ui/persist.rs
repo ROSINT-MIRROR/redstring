@@ -29,6 +29,7 @@ impl RedstringApp {
                 slug: e.slug.clone(),
                 kind: e.kind,
                 label: e.label.clone(),
+                value: e.value.clone(),
                 attrs: e.attrs.clone(),
                 image: self.image_rec(&e.image)?,
             });
@@ -81,8 +82,8 @@ impl RedstringApp {
             let e = n.payload();
             let loc = n.location();
             parts.push(format!(
-                "n|{}|{:?}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}",
-                e.slug, e.kind, e.label, e.attrs, e.image, e.note, loc.x, loc.y, e.size
+                "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}",
+                e.slug, e.kind, e.label, e.value, e.attrs, e.image, e.note, loc.x, loc.y, e.size
             ));
         }
         for idx in g.edge_indices() {
@@ -251,6 +252,7 @@ impl RedstringApp {
                 slug: er.slug.clone(),
                 kind: er.kind,
                 label: er.label.clone(),
+                value: er.value.clone(),
                 attrs: er.attrs.clone(),
                 note,
                 image: image_abs(&project, &er.image)?,

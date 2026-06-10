@@ -1,4 +1,5 @@
 // builtin module spec — whois lookup for domains and IPs.
+// Runs against the entity's typed value (falls back to label when it validates).
 // Shapes are tried in order; first one clearing min_hits wins.
 // No shape matching = raw output kept as evidence only, zero facts.
 (
@@ -6,7 +7,7 @@
     label: "whois lookup",
     applies_to: ["domain", "ip_address"],
     bin: "whois",
-    args: ["{label}"],
+    args: ["{value}"],
     timeout_secs: 20,
     shapes: [
         // ICANN / Verisign style — domain registrations
@@ -31,9 +32,11 @@
             emit: [
                 Attr(from: "netname", key: "netname"),
                 Attr(from: "inetnum", key: "range"),
-                Attr(from: "country", key: "country"),
                 Entity(from: "org-name", kind: "organization", rel: "registered_at"),
                 Entity(from: "abuse-mailbox", kind: "email", rel: "related_to"),
+                Entity(from: "country", kind: "location", rel: "located_at", attrs: [
+                    ("country", "country_code"),
+                ]),
             ],
         ),
         // ARIN style IP blocks
@@ -44,8 +47,12 @@
             emit: [
                 Attr(from: "netrange", key: "range"),
                 Attr(from: "cidr", key: "cidr"),
-                Attr(from: "country", key: "country"),
                 Entity(from: "orgname", kind: "organization", rel: "registered_at"),
+                Entity(from: "country", kind: "location", rel: "located_at", attrs: [
+                    ("country", "country_code"),
+                    ("city", "city"),
+                    ("stateprov", "region"),
+                ]),
             ],
         ),
     ],

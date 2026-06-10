@@ -117,6 +117,7 @@ mod tests {
             slug: slug.into(),
             kind: EntityKind::Person,
             label: slug.into(),
+            value: String::new(),
             attrs: vec![],
             image: None,
         }

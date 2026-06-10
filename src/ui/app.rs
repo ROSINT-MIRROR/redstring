@@ -62,8 +62,9 @@ pub struct RedstringApp {
     pub registry: crate::modules::Registry,
     pub module_tx: std::sync::mpsc::Sender<crate::modules::ModuleRun>,
     pub module_rx: std::sync::mpsc::Receiver<crate::modules::ModuleRun>,
-    pub module_runs: Vec<crate::modules::ModuleRun>,
     pub module_busy: usize,
+
+    pub delete_confirm: Option<Vec<NodeIndex>>,
 
     pub quit_confirm: bool,
     pub allow_close: bool,
@@ -134,8 +135,8 @@ impl RedstringApp {
             registry,
             module_tx,
             module_rx,
-            module_runs: Vec::new(),
             module_busy: 0,
+            delete_confirm: None,
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
@@ -226,6 +227,15 @@ impl RedstringApp {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
             self.open_dialog(ui)?;
         }
+        if !ui.ctx().egui_wants_keyboard_input()
+            && ui.input(|i| i.key_pressed(egui::Key::Delete))
+            && self.delete_confirm.is_none()
+        {
+            let sel = self.g.selected_nodes().to_vec();
+            if !sel.is_empty() {
+                self.delete_confirm = Some(sel);
+            }
+        }
 
         egui::Panel::top("toolbar")
             .resizable(false)
@@ -233,7 +243,8 @@ impl RedstringApp {
             .inner?;
         self.settings_window(ui)?;
         self.quit_window(ui)?;
-        self.module_results_window(ui)?;
+        self.poll_module_runs(ui)?;
+        self.delete_confirm_window(ui)?;
         self.welcome_window(ui)?;
 
         let strip = egui::Panel::left("left_strip")

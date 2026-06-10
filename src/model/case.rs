@@ -102,9 +102,12 @@ pub struct EntityRec {
     pub slug: String,
     pub kind: EntityKind,
     pub label: String,
+
+    #[serde(default)]
+    pub value: String,
     #[serde(default)]
     pub attrs: Vec<(String, String)>,
-    
+
     #[serde(default)]
     pub image: Option<String>,
 }
@@ -206,6 +209,7 @@ mod tests {
             slug: "doe".into(),
             kind: EntityKind::Person,
             label: "J. Doe".into(),
+            value: "John Doe".into(),
             attrs: vec![("dob".into(), "1971-03-04".into())],
             image: Some("entities/doe/portrait.png".into()),
         });
