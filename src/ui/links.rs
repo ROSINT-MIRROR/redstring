@@ -209,8 +209,8 @@ impl RedstringApp {
             })
             .size()
             .x;
-        let width = text_w + font_px;
-        let pos = egui::Pos2::new(zone.center().x - width / 2.0, zone.shrink(4.0).top());
+        let width = text_w + 2.0 * font_px;
+        let pos = zone.shrink(4.0).left_top();
 
         ui.painter()
             .with_clip_rect(rect)
