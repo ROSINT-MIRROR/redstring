@@ -62,7 +62,8 @@ pub struct RedstringApp {
     pub registry: crate::modules::Registry,
     pub module_tx: std::sync::mpsc::Sender<crate::modules::ModuleRun>,
     pub module_rx: std::sync::mpsc::Receiver<crate::modules::ModuleRun>,
-    pub module_busy: usize,
+    pub jobs: Vec<super::lookups::Job>,
+    pub next_run_id: u64,
 
     pub delete_confirm: Option<Vec<NodeIndex>>,
 
@@ -135,7 +136,8 @@ impl RedstringApp {
             registry,
             module_tx,
             module_rx,
-            module_busy: 0,
+            jobs: Vec::new(),
+            next_run_id: 1,
             delete_confirm: None,
             quit_confirm: false,
             allow_close: false,
@@ -298,9 +300,14 @@ impl RedstringApp {
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(&self.status);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.zoom_bar(ui)
-                    })
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| -> Result<(), Error> {
+                            self.zoom_bar(ui)?;
+                            self.jobs_chip(ui)?;
+                            Ok(())
+                        },
+                    )
                     .inner
                 })
                 .inner

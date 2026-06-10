@@ -1,4 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use egui::{Pos2, RichText, Vec2};
 use petgraph::graph::NodeIndex;
@@ -9,6 +11,18 @@ use crate::modules::{Fact, ModuleRun, ModuleStatus, RunInput};
 
 use super::app::RedstringApp;
 use super::layout::LayoutAnim;
+use super::style;
+
+
+pub struct Job {
+    pub run_id: u64,
+    pub module_id: String,
+    pub module_label: String,
+    pub target_slug: String,
+    pub target_label: String,
+    pub started: Instant,
+    pub cancel: Arc<AtomicBool>,
+}
 
 impl RedstringApp {
 
@@ -17,6 +31,7 @@ impl RedstringApp {
         ui: &mut egui::Ui,
         kind: EntityKind,
         module_ok: bool,
+        slug: &str,
     ) -> Result<Option<usize>, Error> {
         let mut run_module = None;
         let mods = self.registry.for_kind(kind)?;
@@ -29,26 +44,80 @@ impl RedstringApp {
             return Ok(None);
         }
         for mi in mods {
-            let label = self.registry.entries[mi].spec.label.clone();
+            let entry = &self.registry.entries[mi];
+            let in_flight = self.job_running(&entry.spec.id, slug);
             let resp = ui.add_enabled(
-                module_ok,
+                module_ok && !in_flight,
                 egui::Button::new(RichText::new(format!(
-                    "{} {label}",
-                    egui_phosphor::regular::PLAY
+                    "{} {}",
+                    egui_phosphor::regular::PLAY,
+                    entry.spec.label
                 ))),
             );
+            let resp = if in_flight {
+                resp.on_disabled_hover_text("already running on this entity")
+            } else {
+                resp
+            };
             if resp.clicked() {
                 run_module = Some(mi);
             }
         }
-        if self.module_busy > 0 {
-            ui.label(
-                RichText::new(format!("{} lookup(s) running…", self.module_busy))
+        self.job_rows(ui)?;
+        Ok(run_module)
+    }
+
+
+    fn job_rows(&self, ui: &mut egui::Ui) -> Result<(), Error> {
+        for job in &self.jobs {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(style::ICON_SECTION));
+                ui.label(
+                    RichText::new(format!(
+                        "{} on {} · {}s",
+                        job.module_label,
+                        job.target_label,
+                        job.started.elapsed().as_secs()
+                    ))
                     .weak()
                     .small(),
-            );
+                );
+                if ui
+                    .small_button(egui_phosphor::regular::X)
+                    .on_hover_text("cancel this job — nothing will be applied")
+                    .clicked()
+                {
+                    job.cancel.store(true, Ordering::Relaxed);
+                }
+            });
         }
-        Ok(run_module)
+        if !self.jobs.is_empty() {
+            ui.ctx().request_repaint_after(Duration::from_millis(500));
+        }
+        Ok(())
+    }
+
+
+    pub fn jobs_chip(&self, ui: &mut egui::Ui) -> Result<(), Error> {
+        if self.jobs.is_empty() {
+            return Ok(());
+        }
+        ui.separator();
+        ui.add(egui::Spinner::new().size(14.0));
+        let label = if self.jobs.len() == 1 {
+            format!("{} on {}", self.jobs[0].module_label, self.jobs[0].target_label)
+        } else {
+            format!("{} lookup jobs", self.jobs.len())
+        };
+        ui.label(RichText::new(label).weak().small());
+        ui.ctx().request_repaint_after(Duration::from_millis(500));
+        Ok(())
+    }
+
+    fn job_running(&self, module_id: &str, slug: &str) -> bool {
+        self.jobs
+            .iter()
+            .any(|j| j.module_id == module_id && j.target_slug == slug)
     }
 
 
@@ -65,13 +134,21 @@ impl RedstringApp {
             self.status = "lookup needs a valid value — see the value field".into();
             return Ok(());
         };
-        self.module_busy += 1;
+        self.jobs.push(Job {
+            run_id: input.run_id,
+            module_id: input.module_id.clone(),
+            module_label: input.module_label.clone(),
+            target_slug: input.target_slug.clone(),
+            target_label: input.target_label.clone(),
+            started: Instant::now(),
+            cancel: input.cancel.clone(),
+        });
         self.status = format!("{} running on {}…", input.module_label, input.target_label);
         crate::modules::spawn_module(input, self.module_tx.clone(), ui.ctx().clone())?;
         Ok(())
     }
 
-    fn run_input(&self, mi: usize, nidx: NodeIndex) -> Result<Option<RunInput>, Error> {
+    fn run_input(&mut self, mi: usize, nidx: NodeIndex) -> Result<Option<RunInput>, Error> {
         let entry = &self.registry.entries[mi];
         let ModuleStatus::Active(bin) = &entry.status else {
             return Ok(None);
@@ -83,7 +160,10 @@ impl RedstringApp {
         let Some(value) = e.module_value()? else {
             return Ok(None);
         };
+        let run_id = self.next_run_id;
+        self.next_run_id += 1;
         Ok(Some(RunInput {
+            run_id,
             module_id: entry.spec.id.clone(),
             module_label: entry.spec.label.clone(),
             bin: bin.clone(),
@@ -93,6 +173,8 @@ impl RedstringApp {
             shapes: entry.spec.shapes.clone(),
             target_slug: e.slug.clone(),
             target_label: e.label.clone(),
+            project_root: self.project.as_ref().map(|p| p.root.clone()),
+            cancel: Arc::new(AtomicBool::new(false)),
         }))
     }
 
@@ -102,7 +184,14 @@ impl RedstringApp {
             let Ok(run) = self.module_rx.try_recv() else {
                 return Ok(());
             };
-            self.module_busy = self.module_busy.saturating_sub(1);
+            self.jobs.retain(|j| j.run_id != run.run_id);
+            if run.cancelled {
+                self.status = format!(
+                    "{} on {} cancelled — nothing applied",
+                    run.module_label, run.target_label
+                );
+                continue;
+            }
             if !run.ok {
                 self.status = format!("{} failed: {}", run.module_label, run.stderr_tail);
                 continue;
@@ -273,7 +362,7 @@ impl RedstringApp {
     }
 
     fn evidence_source(&mut self, run: &ModuleRun) -> Result<Source, Error> {
-        let Some(project) = &self.project else {
+        let Some(root) = &run.project_root else {
             return Ok(Source {
                 kind: SourceKind::Note,
                 reference: format!(
@@ -289,7 +378,7 @@ impl RedstringApp {
             run.target_slug,
             epoch_secs()?
         );
-        let abs = project.resolve(&rel)?;
+        let abs = root.join(&rel);
         let Some(dir) = abs.parent() else {
             return Err(Error::NotAProject { path: abs.clone() });
         };

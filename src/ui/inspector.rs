@@ -193,10 +193,11 @@ impl RedstringApp {
         style::section(ui, egui_phosphor::regular::NOTE_PENCIL, "note")?;
         ui.text_edit_multiline(&mut e.note);
         let kind_now = e.kind;
+        let slug_now = e.slug.clone();
         let module_ok = e.module_value()?.is_some();
 
         style::section(ui, egui_phosphor::regular::PLUGS, "lookups")?;
-        let run_module = self.lookup_buttons(ui, kind_now, module_ok)?;
+        let run_module = self.lookup_buttons(ui, kind_now, module_ok, &slug_now)?;
 
         ui.add_space(style::GAP);
         ui.separator();

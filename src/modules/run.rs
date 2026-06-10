@@ -1,6 +1,8 @@
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
@@ -11,10 +13,13 @@ use super::spec::Shape;
 
 
 pub struct ModuleRun {
+    pub run_id: u64,
     pub module_id: String,
     pub module_label: String,
     pub target_slug: String,
     pub target_label: String,
+
+    pub project_root: Option<PathBuf>,
 
     pub shape_id: String,
 
@@ -23,10 +28,13 @@ pub struct ModuleRun {
     pub raw: String,
     pub stderr_tail: String,
     pub ok: bool,
+
+    pub cancelled: bool,
 }
 
 
 pub struct RunInput {
+    pub run_id: u64,
     pub module_id: String,
     pub module_label: String,
     pub bin: PathBuf,
@@ -36,6 +44,10 @@ pub struct RunInput {
     pub shapes: Vec<Shape>,
     pub target_slug: String,
     pub target_label: String,
+
+    pub project_root: Option<PathBuf>,
+
+    pub cancel: Arc<AtomicBool>,
 }
 
 
@@ -55,16 +67,16 @@ pub fn spawn_module(
 }
 
 fn execute(input: &RunInput) -> ModuleRun {
-    let (raw, stderr, ok) = capture(input);
-    finish(input, raw, tail(&stderr), ok)
+    let (raw, stderr, ok, cancelled) = capture(input);
+    finish(input, raw, tail(&stderr), ok, cancelled)
 }
 
-fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool) -> ModuleRun {
+fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool, cancelled: bool) -> ModuleRun {
     let mut shape_id = String::new();
     let mut facts: Vec<Fact> = Vec::new();
     let mut stderr_tail = stderr_tail;
     let mut ok = ok;
-    if ok && !raw.is_empty() {
+    if ok && !cancelled && !raw.is_empty() {
         match parse_facts(input, &raw) {
             Ok((sid, fs)) => {
                 shape_id = sid;
@@ -77,15 +89,18 @@ fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool) -> Modul
         }
     }
     ModuleRun {
+        run_id: input.run_id,
         module_id: input.module_id.clone(),
         module_label: input.module_label.clone(),
         target_slug: input.target_slug.clone(),
         target_label: input.target_label.clone(),
+        project_root: input.project_root.clone(),
         shape_id,
         facts,
         raw,
         stderr_tail,
         ok,
+        cancelled,
     }
 }
 
@@ -98,7 +113,7 @@ fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<Fact>), Error
 }
 
 
-fn capture(input: &RunInput) -> (String, String, bool) {
+fn capture(input: &RunInput) -> (String, String, bool, bool) {
     let mut cmd = Command::new(&input.bin);
     cmd.args(&input.args)
         .stdin(Stdio::null())
@@ -109,29 +124,42 @@ fn capture(input: &RunInput) -> (String, String, bool) {
     }
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return (String::new(), format!("failed to launch {}: {e}", input.bin.display()), false),
+        Err(e) => {
+            return (
+                String::new(),
+                format!("failed to launch {}: {e}", input.bin.display()),
+                false,
+                false,
+            );
+        }
     };
     let Some(out_pipe) = child.stdout.take() else {
         drop(child.kill());
-        return (String::new(), "no stdout pipe".to_owned(), false);
+        return (String::new(), "no stdout pipe".to_owned(), false, false);
     };
     let Some(err_pipe) = child.stderr.take() else {
         drop(child.kill());
-        return (String::new(), "no stderr pipe".to_owned(), false);
+        return (String::new(), "no stderr pipe".to_owned(), false, false);
     };
     let out_h = std::thread::spawn(move || read_all(out_pipe));
     let err_h = std::thread::spawn(move || read_all(err_pipe));
 
     let deadline = Instant::now() + Duration::from_secs(input.timeout_secs.max(1));
     let mut timed_out = false;
+    let mut cancelled = false;
     let ok = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.success(),
             Ok(None) => {}
             Err(e) => {
                 drop(child.kill());
-                return (join_read(out_h), format!("wait failed: {e}"), false);
+                return (join_read(out_h), format!("wait failed: {e}"), false, false);
             }
+        }
+        if input.cancel.load(Ordering::Relaxed) {
+            drop(child.kill());
+            cancelled = true;
+            break false;
         }
         if Instant::now() >= deadline {
             drop(child.kill());
@@ -145,7 +173,10 @@ fn capture(input: &RunInput) -> (String, String, bool) {
     if timed_out {
         stderr = format!("timed out after {}s\n{stderr}", input.timeout_secs);
     }
-    (stdout, stderr, ok)
+    if cancelled {
+        stderr = format!("cancelled by user\n{stderr}");
+    }
+    (stdout, stderr, ok, cancelled)
 }
 
 fn read_all(mut pipe: impl Read) -> String {
@@ -175,6 +206,7 @@ mod tests {
 
     fn input(bin: &str, args: &[&str], timeout: u64) -> RunInput {
         RunInput {
+            run_id: 1,
             module_id: "t".into(),
             module_label: "t".into(),
             bin: PathBuf::from(bin),
@@ -184,31 +216,50 @@ mod tests {
             shapes: Vec::new(),
             target_slug: "x".into(),
             target_label: "x".into(),
+            project_root: None,
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
     #[test]
     fn capture_collects_stdout_and_exit() {
-        let (out, _err, ok) = capture(&input("sh", &["-c", "printf 'a: b\\n'"], 5));
+        let (out, _err, ok, _c) = capture(&input("sh", &["-c", "printf 'a: b\\n'"], 5));
         assert!(ok);
         assert_eq!(out, "a: b\n");
 
-        let (_out, _err, ok) = capture(&input("sh", &["-c", "exit 3"], 5));
+        let (_out, _err, ok, _c) = capture(&input("sh", &["-c", "exit 3"], 5));
         assert!(!ok);
     }
 
     #[test]
     fn capture_kills_on_timeout() {
         let t0 = Instant::now();
-        let (_out, err, ok) = capture(&input("sh", &["-c", "sleep 30"], 1));
+        let (_out, err, ok, cancelled) = capture(&input("sh", &["-c", "sleep 30"], 1));
         assert!(!ok);
+        assert!(!cancelled);
         assert!(t0.elapsed() < Duration::from_secs(10), "killed well before 30s");
         assert!(err.contains("timed out"), "{err}");
     }
 
     #[test]
+    fn cancel_flag_kills_promptly() {
+        let inp = input("sh", &["-c", "sleep 30"], 25);
+        let flag = inp.cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            flag.store(true, Ordering::Relaxed);
+        });
+        let t0 = Instant::now();
+        let (_out, err, ok, cancelled) = capture(&inp);
+        assert!(!ok);
+        assert!(cancelled);
+        assert!(t0.elapsed() < Duration::from_secs(5), "killed on cancel, not timeout");
+        assert!(err.contains("cancelled by user"), "{err}");
+    }
+
+    #[test]
     fn launch_failure_is_a_failed_run_not_a_panic() {
-        let (_out, err, ok) = capture(&input("/nonexistent/bin_xyz", &[], 1));
+        let (_out, err, ok, _c) = capture(&input("/nonexistent/bin_xyz", &[], 1));
         assert!(!ok);
         assert!(err.contains("failed to launch"), "{err}");
     }
