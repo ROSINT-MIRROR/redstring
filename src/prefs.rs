@@ -17,6 +17,9 @@ pub enum Theme {
     Light,
 }
 
+/// How many entries the recent-cases list keeps.
+const MAX_RECENT: usize = 8;
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(default)] // older prefs files keep loading as fields get added
 pub struct Prefs {
@@ -24,6 +27,8 @@ pub struct Prefs {
     /// Global UI scale, the egui zoom factor — bump on hi-DPI/4K monitors.
     pub ui_scale: f32,
     pub theme: Theme,
+    /// Recently opened case directories, absolute paths, newest first.
+    pub recent: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -32,6 +37,7 @@ impl Default for Prefs {
             sidebar_collapsed: false,
             ui_scale: 1.0,
             theme: Theme::Dark,
+            recent: Vec::new(),
         }
     }
 }
@@ -67,6 +73,18 @@ impl Prefs {
             .map_err(|source| Error::RonSer { source })?;
         std::fs::write(&path, text).map_err(|source| Error::io(&path, source))?;
         Ok(())
+    }
+
+    /// Move a case directory to the front of the recents list.
+    pub fn remember_recent(&mut self, path: String) {
+        self.recent.retain(|r| r != &path);
+        self.recent.insert(0, path);
+        self.recent.truncate(MAX_RECENT);
+    }
+
+    /// Drop an entry from the recents list — gone directories, manual removal.
+    pub fn forget_recent(&mut self, path: &str) {
+        self.recent.retain(|r| r != path);
     }
 }
 
@@ -104,9 +122,28 @@ mod tests {
             sidebar_collapsed: true,
             ui_scale: 1.75,
             theme: Theme::Light,
+            recent: vec!["/tmp/case_a".into(), "/tmp/case_b".into()],
         };
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn recents_dedup_front_and_cap() {
+        let mut p = Prefs::default();
+        for i in 0..12 {
+            p.remember_recent(format!("/tmp/case_{i}"));
+        }
+        assert_eq!(p.recent.len(), MAX_RECENT);
+        assert_eq!(p.recent[0], "/tmp/case_11");
+
+        // reopening an old case moves it to the front without duplicating
+        p.remember_recent("/tmp/case_7".into());
+        assert_eq!(p.recent[0], "/tmp/case_7");
+        assert_eq!(p.recent.iter().filter(|r| *r == "/tmp/case_7").count(), 1);
+
+        p.forget_recent("/tmp/case_7");
+        assert!(!p.recent.iter().any(|r| r == "/tmp/case_7"));
     }
 }

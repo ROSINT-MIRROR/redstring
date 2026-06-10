@@ -228,8 +228,9 @@ mod tests {
         let p = seeded_project("trip");
         let (zip_path, n) = export(&p).unwrap();
         assert!(zip_path.ends_with(format!("{}{BUNDLE_SUFFIX}", p.dir_name())));
-        // case + readme + rsignore + portrait + note are in; the ignored mp4 is out
-        assert_eq!(n, 5);
+        // case + readme + rsignore + portrait + note + the scaffold's 7
+        // .gitkeep markers are in; the ignored mp4 is out
+        assert_eq!(n, 12);
 
         // opening it where it sits — inside its own case dir — is refused
         assert!(matches!(

@@ -8,7 +8,8 @@
 //! and anything else about it. The evidence/ tree splits into docs, media,
 //! archives and transcripts and holds the proof; notes/ holds case-level
 //! analysis; extra/ is the user's dumping ground that redstring never
-//! parses. Directories appear on first use — git can't track empty ones.
+//! parses. The whole tree is scaffolded at creation; .gitkeep markers keep
+//! the still-empty directories alive under git.
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,17 @@ use crate::error::{Error, RsResult};
 
 /// Marker + main file name at the project root.
 pub const CASE_FILE: &str = "case.redstring";
+
+/// The canonical directories every fresh case starts with.
+const CANONICAL_DIRS: [&str; 7] = [
+    "entities",
+    "evidence/docs",
+    "evidence/media",
+    "evidence/archives",
+    "evidence/transcripts",
+    "notes",
+    "extra",
+];
 
 #[derive(Clone, Debug)]
 pub struct Project {
@@ -38,18 +50,40 @@ impl Project {
         Ok(Self { root })
     }
 
-    /// Create a fresh case directory: mkdir plus a README scaffold. The case
-    /// file itself lands on the first save.
+    /// Create a fresh case directory: the canonical tree plus a README
+    /// scaffold. The case file itself lands on the first save.
     pub fn create(path: &Path) -> RsResult<Self> {
         std::fs::create_dir_all(path).map_err(|source| Error::io(path, source))?;
         let root = std::fs::canonicalize(path).map_err(|source| Error::io(path, source))?;
         let project = Self { root };
+        project.scaffold_tree()?;
         let readme = project.root.join("README.md");
         if !readme.exists() {
             std::fs::write(&readme, scaffold_readme(&project.dir_name()))
                 .map_err(|source| Error::io(&readme, source))?;
         }
         Ok(project)
+    }
+
+    /// Materialize the canonical tree up front so a fresh case reads as a
+    /// case from its first commit. A directory that ends up empty gets a
+    /// .gitkeep marker — git refuses to track empty directories and the
+    /// README names them all.
+    fn scaffold_tree(&self) -> RsResult<()> {
+        for dir in CANONICAL_DIRS {
+            let d = self.root.join(dir);
+            std::fs::create_dir_all(&d).map_err(|source| Error::io(&d, source))?;
+            let occupied = std::fs::read_dir(&d)
+                .map_err(|source| Error::io(&d, source))?
+                .next()
+                .is_some();
+            if occupied {
+                continue;
+            }
+            let keep = d.join(".gitkeep");
+            std::fs::write(&keep, "").map_err(|source| Error::io(&keep, source))?;
+        }
+        Ok(())
     }
 
     pub fn root(&self) -> &Path {
@@ -152,6 +186,12 @@ mod tests {
         let readme = p.root().join("README.md");
         let scaffold = std::fs::read_to_string(&readme).unwrap();
         assert!(scaffold.contains("case.redstring"));
+
+        // the canonical tree materializes at creation, kept alive for git
+        for d in CANONICAL_DIRS {
+            assert!(p.root().join(d).is_dir(), "{d} scaffolded");
+            assert!(p.root().join(d).join(".gitkeep").is_file(), "{d}/.gitkeep");
+        }
 
         // user owns the README after creation — recreate must not clobber
         std::fs::write(&readme, "mine now").unwrap();

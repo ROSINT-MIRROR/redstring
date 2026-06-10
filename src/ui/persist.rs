@@ -131,8 +131,31 @@ impl RedstringApp {
         self.open_path(ui, &p);
     }
 
-    fn open_path(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let opened = if path.extension().is_some_and(|e| e == "zip") {
+    /// Pick a case directory and open it — the folder twin of open_dialog.
+    pub(super) fn open_folder_dialog(&mut self, ui: &mut egui::Ui) {
+        let Some(p) = folder_picker(self.project.as_ref()).pick_folder() else {
+            return;
+        };
+        self.open_path(ui, &p);
+    }
+
+    /// A case directory, case file or bundle dropped onto the window opens it.
+    pub(super) fn handle_drop(&mut self, ui: &mut egui::Ui) {
+        let dropped = ui.input(|i| i.raw.dropped_files.clone());
+        let Some(path) = dropped.into_iter().find_map(|f| f.path) else {
+            return;
+        };
+        self.open_path(ui, &path);
+    }
+
+    /// Open any case form. A directory goes straight to the marker check, a
+    /// `.zip` is read as a bundle, anything else as a case file. The dir test
+    /// runs first so a directory named like an archive never reaches the zip
+    /// reader.
+    pub(super) fn open_path(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let opened = if path.is_dir() {
+            Project::open(path)
+        } else if path.extension().is_some_and(|e| e == "zip") {
             project::open_bundle(path)
         } else {
             Project::open(path)
@@ -141,6 +164,8 @@ impl RedstringApp {
             Ok(project) => {
                 self.project = Some(project);
                 self.load(ui);
+                self.show_welcome = false;
+                self.remember_project();
             }
             Err(err) => self.status = format!("open failed: {err}"),
         }
@@ -154,11 +179,26 @@ impl RedstringApp {
         };
         match Project::create(&p) {
             Ok(project) => {
+                // a still-default case name takes the directory's — one
+                // less thing to type for a fresh case
+                if self.case_name.trim().is_empty() || self.case_name == "untitled case" {
+                    self.case_name = project.dir_name();
+                }
                 self.project = Some(project);
                 self.save_to_project(ui);
+                self.show_welcome = false;
+                self.remember_project();
             }
             Err(err) => self.status = format!("create case failed: {err}"),
         }
+    }
+
+    /// Front-load the open case in the recents list and persist prefs.
+    pub(super) fn remember_project(&mut self) {
+        let Some(project) = &self.project else { return };
+        let path = project.root().display().to_string();
+        self.prefs.remember_recent(path);
+        self.persist_prefs();
     }
 
     pub(super) fn load(&mut self, ui: &mut egui::Ui) {
@@ -342,11 +382,20 @@ fn mtime(path: &str) -> Option<SystemTime> {
     Some(t)
 }
 
-/// Open picker: the case file itself or a bundle.
+/// Open picker: the case file itself or a bundle. The combined filter is the
+/// default so neither form hides behind a dropdown switch.
 fn open_picker(current: Option<&Project>) -> rfd::FileDialog {
     let d = rfd::FileDialog::new()
+        .set_title("open case or bundle")
+        .add_filter("redstring case or bundle", &["redstring", "zip"])
         .add_filter("redstring case", &["redstring"])
         .add_filter("redstring bundle", &["zip"]);
+    seed_dir(d, current)
+}
+
+/// Folder picker for opening a case by its directory.
+fn folder_picker(current: Option<&Project>) -> rfd::FileDialog {
+    let d = rfd::FileDialog::new().set_title("open case directory");
     seed_dir(d, current)
 }
 

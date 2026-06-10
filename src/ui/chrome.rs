@@ -11,6 +11,13 @@ impl RedstringApp {
     /// Full-width top bar: file ops plus stub layout buttons, Maltego-style.
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            if ui
+                .button("🏠")
+                .on_hover_text("Welcome — new case, open, recents")
+                .clicked()
+            {
+                self.show_welcome = true;
+            }
             if ui.button("💾").on_hover_text("Save (Ctrl+S)").clicked() {
                 self.save(ui);
             }

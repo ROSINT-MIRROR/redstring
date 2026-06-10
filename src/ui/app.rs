@@ -67,6 +67,9 @@ pub struct RedstringApp {
     pub(super) resize: Option<NodeIndex>,
     /// Preferences window visibility — the prefs themselves live in `prefs`.
     pub(super) prefs_open: bool,
+    /// Welcome window visibility — up at startup unless cwd is a case; any
+    /// successful open or create drops it.
+    pub(super) show_welcome: bool,
     /// Left-drag node move: node plus canvas-space grab offset. Replaces the
     /// lib's built-in dragging, whose compensation step snaps the node center
     /// onto the cursor.
@@ -84,7 +87,7 @@ impl RedstringApp {
             g: Graph::from(&StableGraph::default()),
             project: None,
             case_name: "untitled case".to_owned(),
-            status: "new case".to_owned(),
+            status: "no case open".to_owned(),
             prefs: Prefs::default(),
             watched: None,
             last_watch_poll: Instant::now(),
@@ -102,25 +105,29 @@ impl RedstringApp {
             resize: None,
             node_drag: None,
             prefs_open: false,
+            show_welcome: false,
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
         };
-        // a case directory in cwd wins over the demo seed
+        // prefs first — opening a case below pushes it onto the recents list
+        match Prefs::load() {
+            Ok(p) => app.prefs = p,
+            Err(err) => app.status = format!("prefs unreadable — using defaults: {err}"),
+        }
+        // a case directory in cwd opens straight onto the board; anything
+        // else lands on the welcome window over an empty board
         match Project::open(Path::new(".")) {
             Ok(project) => {
                 app.project = Some(project);
                 app.pending_load = true;
+                app.remember_project();
             }
-            Err(Error::NotAProject { .. }) => app.seed_demo(),
+            Err(Error::NotAProject { .. }) => app.show_welcome = true,
             Err(err) => {
-                app.seed_demo();
+                app.show_welcome = true;
                 app.status = format!("case in cwd unreadable: {err}");
             }
-        }
-        match Prefs::load() {
-            Ok(p) => app.prefs = p,
-            Err(err) => app.status = format!("prefs unreadable — using defaults: {err}"),
         }
         app.apply_prefs(&cc.egui_ctx);
         app
@@ -151,6 +158,7 @@ impl App for RedstringApp {
         }
         self.sync_visuals();
         self.poll_external_edit(ui);
+        self.handle_drop(ui);
 
         // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open — also on the toolbar.
         // Shift variant FIRST: consume_key matches logically, extra held
@@ -171,6 +179,7 @@ impl App for RedstringApp {
             .resizable(false)
             .show_inside(ui, |ui| self.toolbar(ui));
         self.prefs_window(ui);
+        self.welcome_window(ui);
 
         // left sidebar collapses to a thin strip holding only the expand toggle
         let strip = egui::Panel::left("left_strip")
