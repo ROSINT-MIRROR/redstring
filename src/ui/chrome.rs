@@ -112,7 +112,7 @@ impl RedstringApp {
                             .on_hover_text(format!("{hover} — selection if any, else all"))
                             .clicked()
                         {
-                            self.apply_layout(kind)?;
+                            self.apply_layout(ui, kind)?;
                         }
                     }
                     ui.label(RichText::new("layout:").weak().small());

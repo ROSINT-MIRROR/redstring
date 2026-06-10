@@ -38,6 +38,7 @@ const ICON_SIZE: f32 = 20.0;
 
 pub const LABEL_SIZE: f32 = 7.0;
 pub const LABEL_GAP: f32 = 2.0;
+pub const LABEL_WRAP: f32 = 75.0;
 
 
 const MAX_TEX_SIDE: u32 = 512;
@@ -207,15 +208,16 @@ impl EntityNodeShape {
         let icon_pos = center - icon.size() / 2.0;
         res.push(TextShape::new(icon_pos, icon, color).into());
 
-        let label = ctx.ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                self.name.clone(),
-                FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
-                color,
-            )
-        });
+        let mut job = egui::text::LayoutJob::simple(
+            self.name.clone(),
+            FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
+            color,
+            ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
+        );
+        job.halign = egui::Align::Center;
+        let label = ctx.ctx.fonts_mut(|f| f.layout_job(job));
         let label_pos = Pos2::new(
-            center.x - label.size().x / 2.0,
+            center.x,
             center.y + r + ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size),
         );
         res.push(TextShape::new(label_pos, label, color).into());
@@ -264,10 +266,11 @@ impl EntityNodeShape {
                     ),
                     color,
                 ),
-                f.layout_no_wrap(
+                f.layout(
                     self.name.clone(),
                     FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
                     color,
+                    ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
                 ),
             )
         });

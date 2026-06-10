@@ -101,6 +101,7 @@ impl RedstringApp {
         self.edge_drag_input(ui, rect)?;
         self.pan_input(ui, rect)?;
         self.node_drag_input(ui, rect)?;
+        self.layout_anim_tick(ui)?;
         scroll_zoom(ui)?;
 
         ui.add(
@@ -215,6 +216,7 @@ impl RedstringApp {
     }
 
     fn begin_node_drag(&mut self, idx: NodeIndex, canvas_p: Pos2) {
+        self.layout_anim = None;
         let selected = self.g.selected_nodes().to_vec();
         let group = if selected.len() > 1 && selected.contains(&idx) {
             selected

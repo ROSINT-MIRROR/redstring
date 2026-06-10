@@ -247,6 +247,7 @@ impl RedstringApp {
         self.pending_edge = None;
         self.node_drag = None;
         self.resize = None;
+        self.layout_anim = None;
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;

@@ -4,7 +4,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind};
-use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, NODE_RADIUS};
+use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, NODE_RADIUS};
 
 use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
@@ -320,13 +320,14 @@ impl RedstringApp {
         let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
         let half = base * e.size * mf.zoom;
         let font_px = (LABEL_SIZE * e.size * mf.zoom).min(MAX_LABEL_PX);
-        let galley = ui.ctx().fonts_mut(|f| {
-            f.layout_no_wrap(
-                e.label.clone(),
-                egui::FontId::new(font_px, egui::FontFamily::Monospace),
-                egui::Color32::WHITE,
-            )
-        });
+        let mut job = egui::text::LayoutJob::simple(
+            e.label.clone(),
+            egui::FontId::new(font_px, egui::FontFamily::Monospace),
+            egui::Color32::WHITE,
+            LABEL_WRAP * e.size * mf.zoom,
+        );
+        job.halign = egui::Align::Center;
+        let galley = ui.ctx().fonts_mut(|f| f.layout_job(job));
         let gap = LABEL_GAP * e.size * mf.zoom;
         let top_left = egui::Pos2::new(center.x - galley.size().x / 2.0, center.y + half + gap);
         Ok(Some((

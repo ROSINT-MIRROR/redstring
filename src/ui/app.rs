@@ -67,6 +67,8 @@ pub struct RedstringApp {
     pub band: Option<Pos2>,
     pub panning: bool,
 
+    pub layout_anim: Option<super::layout::LayoutAnim>,
+
     pub ns_kind: SourceKind,
     pub ns_ref: String,
     pub ns_excerpt: String,
@@ -97,6 +99,7 @@ impl RedstringApp {
             node_drag: None,
             band: None,
             panning: false,
+            layout_anim: None,
             prefs_open: false,
             show_welcome: false,
             welcome_name: String::new(),

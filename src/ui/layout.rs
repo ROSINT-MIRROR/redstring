@@ -5,13 +5,15 @@ use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
-use crate::shapes::{IMG_RADIUS, NODE_RADIUS};
+use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, NODE_RADIUS};
 
 use super::app::RedstringApp;
 
 const STEP: f32 = 140.0;
+const STEP_MARGIN: f32 = 30.0;
 const FORCE_ITERS: u32 = 300;
 const GRAVITY: f32 = 0.04;
+const ANIM_SECS: f64 = 0.35;
 
 #[derive(Clone, Copy)]
 pub enum LayoutKind {
@@ -21,15 +23,20 @@ pub enum LayoutKind {
     Force,
 }
 
+pub struct LayoutAnim {
+    pub steps: Vec<(NodeIndex, Pos2, Pos2)>,
+    pub start: f64,
+}
+
 impl RedstringApp {
-    pub fn apply_layout(&mut self, kind: LayoutKind) -> Result<(), Error> {
+    pub fn apply_layout(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
         let targets = self.layout_targets();
         if targets.len() < 2 {
             self.status = "need at least 2 nodes to lay out".into();
             return Ok(());
         }
         let partial = targets.len() < self.g.g().node_count();
-        let step = self.layout_step(&targets);
+        let step = self.layout_step(ui, &targets);
         let center = self.layout_centroid(&targets);
         let placed = match kind {
             LayoutKind::Grid => self.grid_positions(&targets, center, step),
@@ -37,13 +44,19 @@ impl RedstringApp {
             LayoutKind::Tree => self.tree_positions(&targets, center, step),
             LayoutKind::Force => self.force_positions(&targets, center, step),
         };
-        let moved = placed.len();
-        for (idx, pos) in placed {
-            let Some(n) = self.g.node_mut(idx) else {
+        let mut steps = Vec::new();
+        for (idx, to) in placed {
+            let Some(from) = self.node_loc(idx) else {
                 continue;
             };
-            n.set_location(pos);
+            steps.push((idx, from, to));
         }
+        let moved = steps.len();
+        self.layout_anim = Some(LayoutAnim {
+            steps,
+            start: ui.input(|i| i.time),
+        });
+        ui.ctx().request_repaint();
         let name = match kind {
             LayoutKind::Grid => "grid",
             LayoutKind::Circle => "circle",
@@ -55,6 +68,27 @@ impl RedstringApp {
         Ok(())
     }
 
+    pub fn layout_anim_tick(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+        let Some(anim) = &self.layout_anim else {
+            return Ok(());
+        };
+        let t = ((ui.input(|i| i.time) - anim.start) / ANIM_SECS).clamp(0.0, 1.0) as f32;
+        let eased = t * t * (3.0 - 2.0 * t);
+        let steps = anim.steps.clone();
+        for (idx, from, to) in steps {
+            let Some(n) = self.g.node_mut(idx) else {
+                continue;
+            };
+            n.set_location(from + (to - from) * eased);
+        }
+        if t >= 1.0 {
+            self.layout_anim = None;
+        } else {
+            ui.ctx().request_repaint();
+        }
+        Ok(())
+    }
+
     fn layout_targets(&self) -> Vec<NodeIndex> {
         let sel = self.g.selected_nodes().to_vec();
         if sel.len() >= 2 {
@@ -63,8 +97,8 @@ impl RedstringApp {
         self.g.g().node_indices().collect()
     }
 
-    fn layout_step(&self, targets: &[NodeIndex]) -> f32 {
-        let mut max_half = 0.0f32;
+    fn layout_step(&self, ui: &egui::Ui, targets: &[NodeIndex]) -> f32 {
+        let mut max_footprint = 0.0f32;
         for idx in targets {
             let Some(n) = self.g.node(*idx) else {
                 continue;
@@ -75,9 +109,20 @@ impl RedstringApp {
             } else {
                 NODE_RADIUS
             };
-            max_half = max_half.max(base * e.size);
+            let half = base * e.size;
+            let label = ui.ctx().fonts_mut(|f| {
+                f.layout(
+                    e.label.clone(),
+                    egui::FontId::monospace(LABEL_SIZE * e.size),
+                    egui::Color32::WHITE,
+                    LABEL_WRAP * e.size,
+                )
+            });
+            let w = (2.0 * half).max(label.size().x);
+            let h = 2.0 * half + LABEL_GAP * e.size + label.size().y;
+            max_footprint = max_footprint.max(w.max(h));
         }
-        STEP.max(max_half * 3.0)
+        STEP.max(max_footprint + STEP_MARGIN)
     }
 
     fn layout_centroid(&self, targets: &[NodeIndex]) -> Pos2 {
