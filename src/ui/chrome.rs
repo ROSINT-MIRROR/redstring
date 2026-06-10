@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::prefs::Theme;
 
 use super::app::RedstringApp;
+use super::layout::LayoutKind;
 
 const TB_ICON: f32 = 22.0;
 const TB_TEXT: f32 = 13.0;
@@ -89,20 +90,36 @@ impl RedstringApp {
             ui.label(RichText::new(&self.case_name).strong().size(TB_NAME));
             ui.label(RichText::new(self.project_label()?).weak().size(TB_PATH));
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if tb_button(ui, "⛭", "Prefs")
-                    .on_hover_text("Preferences")
-                    .clicked()
-                {
-                    self.prefs_open = !self.prefs_open;
-                }
-                ui.separator();
-                for name in ["Grid", "Circle", "Tree", "Force"] {
-                    ui.add_enabled(false, egui::Button::new(name))
-                        .on_disabled_hover_text("layout — coming soon");
-                }
-                ui.label(RichText::new("layout:").weak().small());
-            });
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| -> Result<(), Error> {
+                    if tb_button(ui, "⛭", "Prefs")
+                        .on_hover_text("Preferences")
+                        .clicked()
+                    {
+                        self.prefs_open = !self.prefs_open;
+                    }
+                    ui.separator();
+                    let layouts = [
+                        ("Force", "organic — force-directed", LayoutKind::Force),
+                        ("Tree", "hierarchy — roots on top", LayoutKind::Tree),
+                        ("Circle", "everything on a ring", LayoutKind::Circle),
+                        ("Grid", "block grid, grouped by kind", LayoutKind::Grid),
+                    ];
+                    for (name, hover, kind) in layouts {
+                        if ui
+                            .button(name)
+                            .on_hover_text(format!("{hover} — selection if any, else all"))
+                            .clicked()
+                        {
+                            self.apply_layout(kind)?;
+                        }
+                    }
+                    ui.label(RichText::new("layout:").weak().small());
+                    Ok(())
+                },
+            )
+            .inner?;
             Ok(())
         })
         .inner
