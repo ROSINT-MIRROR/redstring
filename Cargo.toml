@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 eframe = "0.34.3"
 egui = "0.34.3"
+egui-phosphor = "0.12"
 egui_graphs = "0.30.0"
 # decode entity images (mugshots/logos) → egui textures; formats match the picker filter
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }

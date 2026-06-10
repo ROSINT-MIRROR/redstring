@@ -76,6 +76,9 @@ pub struct RedstringApp {
 
 impl RedstringApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Result<Self, Error> {
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        cc.egui_ctx.set_fonts(fonts);
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             project: None,
