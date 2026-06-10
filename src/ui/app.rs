@@ -123,14 +123,23 @@ impl RedstringApp {
                 app.pending_load = true;
                 app.remember_project();
             }
-            Err(Error::NotAProject { .. }) => app.show_welcome = true,
+            Err(Error::NotAProject { .. }) => app.start_blank(),
             Err(err) => {
-                app.show_welcome = true;
+                app.start_blank();
                 app.status = format!("case in cwd unreadable: {err}");
             }
         }
         app.apply_prefs(&cc.egui_ctx);
         app
+    }
+
+    /// Blank start — welcome window over an empty board. The widget still
+    /// force-fits its very first frame, and with zero nodes that fit lands
+    /// on a garbage fallback zoom in the hundreds; the queued default camera
+    /// stomps it right after frame one, exactly like a case-load re-assert.
+    fn start_blank(&mut self) {
+        self.show_welcome = true;
+        self.pending_camera = Some(Camera::default());
     }
 
     /// Push scale + theme prefs onto the egui context — startup and on change.

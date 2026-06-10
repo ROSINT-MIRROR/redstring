@@ -41,6 +41,10 @@ const LABEL_GAP: f32 = 2.0;
 /// Decoded images are downscaled to fit this square before GPU upload — a
 /// node is ~20 canvas units, so 512px survives any sane zoom.
 const MAX_TEX_SIDE: u32 = 512;
+/// Glyph rasterization ceiling, screen px. Text past this is unreadable
+/// anyway, and huge font sizes blow up the glyph atlas — a runaway zoom once
+/// froze the app rasterizing five-digit-px glyphs.
+const MAX_FONT_PX: f32 = 256.0;
 
 #[derive(Clone)]
 pub struct EntityNodeShape {
@@ -178,10 +182,7 @@ impl EntityNodeShape {
         let icon = ctx.ctx.fonts_mut(|f| {
             f.layout_no_wrap(
                 self.icon.clone(),
-                FontId::new(
-                    ctx.meta.canvas_to_screen_size(ICON_SIZE * self.size),
-                    FontFamily::Proportional,
-                ),
+                FontId::new(font_px(ctx, ICON_SIZE * self.size), FontFamily::Proportional),
                 color,
             )
         });
@@ -191,10 +192,7 @@ impl EntityNodeShape {
         let label = ctx.ctx.fonts_mut(|f| {
             f.layout_no_wrap(
                 self.name.clone(),
-                FontId::new(
-                    ctx.meta.canvas_to_screen_size(LABEL_SIZE * self.size),
-                    FontFamily::Monospace,
-                ),
+                FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
                 color,
             )
         });
@@ -240,17 +238,14 @@ impl EntityNodeShape {
                 f.layout_no_wrap(
                     self.icon.clone(),
                     FontId::new(
-                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * 2.0 * self.size),
+                        font_px(ctx, LABEL_SIZE * 2.0 * self.size),
                         FontFamily::Proportional,
                     ),
                     color,
                 ),
                 f.layout_no_wrap(
                     self.name.clone(),
-                    FontId::new(
-                        ctx.meta.canvas_to_screen_size(LABEL_SIZE * self.size),
-                        FontFamily::Monospace,
-                    ),
+                    FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
                     color,
                 ),
             )
@@ -267,6 +262,11 @@ impl EntityNodeShape {
         res.push(TextShape::new(name_pos, name, color).into());
         res
     }
+}
+
+/// Zoom-scaled font size with the atlas-protecting ceiling applied.
+fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
+    ctx.meta.canvas_to_screen_size(canvas_size).min(MAX_FONT_PX)
 }
 
 /// Ray from the rect center along `dir` to the square boundary with

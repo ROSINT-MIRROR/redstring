@@ -31,10 +31,24 @@ pub(super) fn camera_read(ui: &egui::Ui) -> Camera {
     }
 }
 
+/// Humanly useful zoom range. Restored cameras and wheel zoom both clamp to
+/// it — a poisoned camera in a case file must not detonate glyph
+/// rasterization on load.
+const MIN_ZOOM: f32 = 0.01;
+const MAX_ZOOM: f32 = 30.0;
+
+/// Clamp a zoom into the useful range; junk values land on 1.
+fn sane_zoom(z: f32) -> f32 {
+    if !z.is_finite() {
+        return 1.0;
+    }
+    z.clamp(MIN_ZOOM, MAX_ZOOM)
+}
+
 pub(super) fn camera_write(ui: &mut egui::Ui, cam: Camera) {
     let mut mf = meta(ui);
     mf.pan = Vec2::new(cam.x, cam.y);
-    mf.zoom = cam.zoom;
+    mf.zoom = sane_zoom(cam.zoom);
     mf.save(ui);
 }
 
@@ -64,7 +78,7 @@ fn scroll_zoom(ui: &mut egui::Ui) {
     }
 
     let mut mf = meta(ui);
-    let new_zoom = mf.zoom * (dy * SCROLL_ZOOM_SPEED).exp();
+    let new_zoom = sane_zoom(mf.zoom * (dy * SCROLL_ZOOM_SPEED).exp());
     // pan is widget-local — the lib adds the rect corner at draw time — so
     // the pointer must be too. Same zoom-about-pointer invariant as the
     // lib's own zoom handler.
