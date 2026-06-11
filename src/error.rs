@@ -21,6 +21,11 @@ pub enum Error {
         source: serde_json::Error,
     },
 
+    JsonParse {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+
     Image {
         path: PathBuf,
         source: image::ImageError,
@@ -78,6 +83,9 @@ impl std::fmt::Display for Error {
             }
             Self::RonSer { source } => write!(f, "RON serialize: {source}"),
             Self::JsonSer { source } => write!(f, "JSON serialize: {source}"),
+            Self::JsonParse { path, source } => {
+                write!(f, "{}: bad JSON: {source}", path.display())
+            }
             Self::Image { path, source } => {
                 write!(f, "{}: bad image: {source}", path.display())
             }

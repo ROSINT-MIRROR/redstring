@@ -4,15 +4,15 @@
 
 
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use zip::write::SimpleFileOptions;
 
 use crate::error::Error;
-use crate::model::{CaseFile, FORMAT_VERSION};
+use crate::model::{CaseMeta, FORMAT_VERSION};
 
 use super::ignore::RsIgnore;
+use super::io::read_case;
 use super::layout::{CASE_FILE, Project};
 use super::validate::cited_paths;
 
@@ -102,20 +102,14 @@ pub fn open_bundle(zip_path: &Path) -> Result<Project, Error> {
     let mut archive =
         zip::ZipArchive::new(f).map_err(|source| Error::Zip { path: zip_path.to_path_buf(), source })?;
 
-    let case_text = read_case_entry(&mut archive, zip_path)?;
-    let cf: CaseFile =
-        ron::from_str(&case_text).map_err(|source| Error::RonParse { path: zip_path.to_path_buf(), source })?;
-    if cf.meta.format > FORMAT_VERSION {
+    let meta_text = read_case_entry(&mut archive, zip_path)?;
+    let meta: CaseMeta =
+        ron::from_str(&meta_text).map_err(|source| Error::RonParse { path: zip_path.to_path_buf(), source })?;
+    if meta.format > FORMAT_VERSION {
         return Err(Error::FormatTooNew {
-            found: cf.meta.format,
+            found: meta.format,
             supported: FORMAT_VERSION,
         });
-    }
-    let names: HashSet<String> = archive.file_names().map(str::to_owned).collect();
-    for (_, rel) in cited_paths(&cf)? {
-        if !names.contains(&rel) {
-            return Err(Error::BundleMissingRef { reference: rel });
-        }
     }
 
     let target = parent.join(bundle_stem(zip_path));
@@ -123,7 +117,16 @@ pub fn open_bundle(zip_path: &Path) -> Result<Project, Error> {
         return Err(Error::TargetExists { path: target });
     }
     extract_all(&mut archive, &target, zip_path)?;
-    Project::open(&target)
+
+    let project = Project::open(&target)?;
+    let cf = read_case(&project)?;
+    for (_, rel) in cited_paths(&cf)? {
+        if !project.root.join(&rel).exists() {
+            let _cleanup = std::fs::remove_dir_all(&project.root);
+            return Err(Error::BundleMissingRef { reference: rel });
+        }
+    }
+    Ok(project)
 }
 
 fn read_case_entry(
@@ -191,7 +194,7 @@ fn extract_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseMeta, EntityKind, EntityRec};
+    use crate::model::{CaseFile, CaseMeta, EntityKind, EntityRec};
     use crate::project::io;
 
     fn fresh_dir(name: &str) -> PathBuf {
@@ -229,9 +232,9 @@ mod tests {
         let p = seeded_project("trip");
         let (zip_path, n) = export(&p).unwrap();
         assert!(zip_path.ends_with(format!("{}{BUNDLE_SUFFIX}", p.dir_name().unwrap())));
-        
-        
-        assert_eq!(n, 12);
+
+
+        assert_eq!(n, 16);
 
         
         assert!(matches!(

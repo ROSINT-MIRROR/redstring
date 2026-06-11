@@ -2,29 +2,207 @@
 
 
 
+use std::collections::HashSet;
+
 use crate::error::Error;
-use crate::model::{CaseFile, FORMAT_VERSION};
+use crate::model::{
+    CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, Observation, RelationRec,
+};
 
 use super::layout::Project;
 
 pub fn read_case(project: &Project) -> Result<CaseFile, Error> {
-    let path = project.case_path()?;
-    let text = std::fs::read_to_string(&path).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
-    let cf: CaseFile = ron::from_str(&text).map_err(|source| Error::RonParse { path: path.to_path_buf(), source })?;
-    if cf.meta.format > FORMAT_VERSION {
+    let meta = read_meta(project)?;
+    if meta.format > FORMAT_VERSION {
         return Err(Error::FormatTooNew {
-            found: cf.meta.format,
+            found: meta.format,
             supported: FORMAT_VERSION,
         });
     }
+    let mut cf = CaseFile::default();
+    cf.meta = meta;
+    cf.display = read_display(project)?;
+    cf.data.entities = read_entities(project)?;
+    cf.data.relations = read_relations(project)?;
     Ok(cf)
 }
 
-pub fn write_case(project: &Project, cf: &CaseFile) -> Result<(), Error> {
+fn read_meta(project: &Project) -> Result<CaseMeta, Error> {
     let path = project.case_path()?;
-    let text = ron::ser::to_string_pretty(cf, ron::ser::PrettyConfig::default())
+    let text = std::fs::read_to_string(&path)
+        .map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
+    ron::from_str(&text).map_err(|source| Error::RonParse { path, source })
+}
+
+fn read_display(project: &Project) -> Result<CaseDisplay, Error> {
+    let path = project.display_path()?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CaseDisplay::default());
+        }
+        Err(source) => return Err(Error::Io { path, source }),
+    };
+    ron::from_str(&text).map_err(|source| Error::RonParse { path, source })
+}
+
+fn read_relations(project: &Project) -> Result<Vec<RelationRec>, Error> {
+    let path = project.relations_path()?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(Error::Io { path, source }),
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let rr = serde_json::from_str(line)
+            .map_err(|source| Error::JsonParse { path: path.to_path_buf(), source })?;
+        out.push(rr);
+    }
+    Ok(out)
+}
+
+fn read_entities(project: &Project) -> Result<Vec<EntityRec>, Error> {
+    let dir = project.root.join("entities");
+    let rd = match std::fs::read_dir(&dir) {
+        Ok(r) => r,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(Error::Io { path: dir, source }),
+    };
+    let mut slugs = Vec::new();
+    for entry in rd {
+        let entry = entry.map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+        let ft = entry
+            .file_type()
+            .map_err(|source| Error::Io { path: entry.path(), source })?;
+        if !ft.is_dir() {
+            continue;
+        }
+        let Some(slug) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        slugs.push(slug);
+    }
+    slugs.sort();
+    let mut out = Vec::new();
+    for slug in slugs {
+        let head_path = project.entity_head_path(&slug)?;
+        let text = match std::fs::read_to_string(&head_path) {
+            Ok(t) => t,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(source) => return Err(Error::Io { path: head_path, source }),
+        };
+        let mut rec: EntityRec = ron::from_str(&text)
+            .map_err(|source| Error::RonParse { path: head_path.to_path_buf(), source })?;
+        rec.observations = read_obs(project, &slug)?;
+        out.push(rec);
+    }
+    Ok(out)
+}
+
+fn read_obs(project: &Project, slug: &str) -> Result<Vec<Observation>, Error> {
+    let path = project.obs_path(slug)?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(Error::Io { path, source }),
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        out.push(
+            serde_json::from_str(line)
+                .map_err(|source| Error::JsonParse { path: path.to_path_buf(), source })?,
+        );
+    }
+    Ok(out)
+}
+
+pub fn write_case(project: &Project, cf: &CaseFile) -> Result<(), Error> {
+    write_meta(project, &cf.meta)?;
+    write_display(project, &cf.display)?;
+    write_relations(project, &cf.data.relations)?;
+    let mut keep = HashSet::new();
+    for er in &cf.data.entities {
+        keep.insert(er.slug.clone());
+        write_entity(project, er)?;
+    }
+    prune_entities(project, &keep)?;
+    Ok(())
+}
+
+fn write_meta(project: &Project, meta: &CaseMeta) -> Result<(), Error> {
+    let path = project.case_path()?;
+    let text = ron::ser::to_string_pretty(meta, ron::ser::PrettyConfig::default())
         .map_err(|source| Error::RonSer { source })?;
-    std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
+    std::fs::write(&path, text).map_err(|source| Error::Io { path, source })
+}
+
+fn write_display(project: &Project, display: &CaseDisplay) -> Result<(), Error> {
+    let path = project.display_path()?;
+    let text = ron::ser::to_string_pretty(display, ron::ser::PrettyConfig::default())
+        .map_err(|source| Error::RonSer { source })?;
+    std::fs::write(&path, text).map_err(|source| Error::Io { path, source })
+}
+
+fn write_relations(project: &Project, relations: &[RelationRec]) -> Result<(), Error> {
+    let path = project.relations_path()?;
+    let mut text = String::new();
+    for rr in relations {
+        text.push_str(&serde_json::to_string(rr).map_err(|source| Error::JsonSer { source })?);
+        text.push('\n');
+    }
+    std::fs::write(&path, text).map_err(|source| Error::Io { path, source })
+}
+
+fn write_entity(project: &Project, er: &EntityRec) -> Result<(), Error> {
+    let dir = project.entity_dir(&er.slug)?;
+    std::fs::create_dir_all(&dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+    let mut head = er.clone();
+    head.observations = Vec::new();
+    let head_text = ron::ser::to_string_pretty(&head, ron::ser::PrettyConfig::default())
+        .map_err(|source| Error::RonSer { source })?;
+    let head_path = project.entity_head_path(&er.slug)?;
+    std::fs::write(&head_path, head_text).map_err(|source| Error::Io { path: head_path, source })?;
+    let mut obs_text = String::new();
+    for o in &er.observations {
+        obs_text.push_str(&serde_json::to_string(o).map_err(|source| Error::JsonSer { source })?);
+        obs_text.push('\n');
+    }
+    let obs_path = project.obs_path(&er.slug)?;
+    std::fs::write(&obs_path, obs_text).map_err(|source| Error::Io { path: obs_path, source })
+}
+
+fn prune_entities(project: &Project, keep: &HashSet<String>) -> Result<(), Error> {
+    let dir = project.root.join("entities");
+    let rd = match std::fs::read_dir(&dir) {
+        Ok(r) => r,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => return Err(Error::Io { path: dir, source }),
+    };
+    for entry in rd {
+        let entry = entry.map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+        if !entry
+            .file_type()
+            .map_err(|source| Error::Io { path: entry.path(), source })?
+            .is_dir()
+        {
+            continue;
+        }
+        let Some(slug) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if keep.contains(&slug) {
+            continue;
+        }
+        std::fs::remove_dir_all(entry.path())
+            .map_err(|source| Error::Io { path: entry.path(), source })?;
+    }
     Ok(())
 }
 

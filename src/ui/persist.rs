@@ -331,7 +331,7 @@ impl RedstringApp {
             return Ok(());
         };
         let path = project.case_path()?.display().to_string();
-        self.watched = mtime(&path).map(|t| (path, t));
+        self.watched = newest_mtime(&project.root)?.map(|t| (path, t));
         Ok(())
     }
 
@@ -346,7 +346,10 @@ impl RedstringApp {
         if Some(path.as_str()) != self.current_case_path().as_deref() {
             return Ok(());
         }
-        let Some(t) = mtime(&path) else {
+        let Some(project) = self.project.clone() else {
+            return Ok(());
+        };
+        let Some(t) = newest_mtime(&project.root)? else {
             return Ok(());
         };
         if t > seen {
@@ -407,14 +410,38 @@ fn healed_pos(display: &CaseDisplay, slug: &str, i: usize, healed: &mut usize) -
     Ok(Pos2::new(x, y))
 }
 
-fn mtime(path: &str) -> Option<SystemTime> {
-    let Ok(meta) = std::fs::metadata(path) else {
-        return None;
-    };
-    let Ok(t) = meta.modified() else {
-        return None;
-    };
-    Some(t)
+fn newest_mtime(root: &Path) -> Result<Option<SystemTime>, Error> {
+    let mut times: Vec<SystemTime> = Vec::new();
+    walk_mtime(root, &mut times)?;
+    Ok(times.into_iter().max())
+}
+
+fn walk_mtime(dir: &Path, times: &mut Vec<SystemTime>) -> Result<(), Error> {
+    let rd = std::fs::read_dir(dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+    for entry in rd {
+        let entry = entry.map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+        let ft = entry
+            .file_type()
+            .map_err(|source| Error::Io { path: entry.path(), source })?;
+        if ft.is_dir() {
+            if entry.file_name().to_str() == Some(".git") {
+                continue;
+            }
+            walk_mtime(&entry.path(), times)?;
+            continue;
+        }
+        if entry.file_name().to_str().is_some_and(|n| n.ends_with(".zip")) {
+            continue;
+        }
+        let meta = entry
+            .metadata()
+            .map_err(|source| Error::Io { path: entry.path(), source })?;
+        let t = meta
+            .modified()
+            .map_err(|source| Error::Io { path: entry.path(), source })?;
+        times.push(t);
+    }
+    Ok(())
 }
 
 fn open_picker(current: Option<&Project>) -> rfd::FileDialog {

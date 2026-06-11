@@ -20,9 +20,7 @@ pub fn validate(project: &Project) -> Result<Vec<String>, Error> {
 
     let mut slugs: HashSet<&str> = HashSet::new();
     for e in &cf.data.entities {
-        if !slugs.insert(&e.slug) {
-            findings.push(format!("duplicate slug '{}'", e.slug));
-        }
+        slugs.insert(&e.slug);
     }
     for r in &cf.data.relations {
         for end in [&r.from, &r.to] {
@@ -167,11 +165,10 @@ mod tests {
 
         let findings = validate(&p).unwrap();
         let joined = findings.join("\n");
-        assert!(joined.contains("duplicate slug 'doe'"), "{joined}");
         assert!(joined.contains("unknown slug 'ghost'"), "{joined}");
         assert!(joined.contains("missing.png"), "{joined}");
         assert!(joined.contains("contract.pdf"), "{joined}");
-        assert_eq!(findings.len(), 4, "{joined}");
+        assert_eq!(findings.len(), 3, "{joined}");
         std::fs::remove_dir_all(p.root).unwrap();
     }
 

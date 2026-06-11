@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::error::Error;
 
 pub const CASE_FILE: &str = "case.redstring";
+pub const RELATIONS_FILE: &str = "relations.ndjson";
+pub const DISPLAY_FILE: &str = "display.ron";
 
 const CANONICAL_DIRS: [&str; 7] = [
     "entities",
@@ -104,6 +106,22 @@ impl Project {
         Ok(self.entity_dir(slug)?.join("note.md"))
     }
 
+    pub fn entity_head_path(&self, slug: &str) -> Result<PathBuf, Error> {
+        Ok(self.entity_dir(slug)?.join("entity.ron"))
+    }
+
+    pub fn obs_path(&self, slug: &str) -> Result<PathBuf, Error> {
+        Ok(self.entity_dir(slug)?.join("observations.ndjson"))
+    }
+
+    pub fn relations_path(&self) -> Result<PathBuf, Error> {
+        Ok(self.root.join(RELATIONS_FILE))
+    }
+
+    pub fn display_path(&self) -> Result<PathBuf, Error> {
+        Ok(self.root.join(DISPLAY_FILE))
+    }
+
     pub fn resolve(&self, rel: &str) -> Result<PathBuf, Error> {
         Ok(self.root.join(rel))
     }
@@ -137,11 +155,15 @@ fn case_file_parent(path: &Path) -> Result<PathBuf, Error> {
 fn scaffold_readme(name: &str) -> String {
     format!(
         "# {name}\n\n\
-         A [redstring] case. The graph lives in `case.redstring`; browse the rest:\n\n\
+         A [redstring] case. It is split into line-oriented files so two analysts can \
+         fork, edit, and merge over git without trampling each other:\n\n\
          - `graph.md` — the board, rendered right here by GitHub\n\
-         - `entities/` — one dossier directory per entity\n\
-         - `evidence/` — docs, media, archives, transcripts backing the edges\n\
-         - `notes/` — case-level analysis\n\
+         - `case.redstring` — case name + ontology snapshot\n\
+         - `entities/<slug>/entity.ron` — the entity head; `observations.ndjson` — its \
+         sourced facts, one per line; `note.md` — free analysis\n\
+         - `relations.ndjson` — the edges, one per line\n\
+         - `display.ron` — board positions (layout only, safe to ignore in diffs)\n\
+         - `evidence/` — docs, media, archives, transcripts backing the claims\n\
          - `extra/` — unsorted material, never parsed\n\n\
          redstring scaffolds this file once and never touches it again.\n"
     )
