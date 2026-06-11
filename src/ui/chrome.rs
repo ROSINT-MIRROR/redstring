@@ -13,8 +13,8 @@ pub enum SettingsTab {
     Modules,
 }
 
-const TB_ICON: f32 = 22.0;
-const TB_TEXT: f32 = 13.0;
+const TB_ICON: f32 = 18.0;
+const TB_TEXT: f32 = 10.0;
 const TB_GAP: f32 = 2.0;
 const TB_NAME: f32 = 16.0;
 const TB_PATH: f32 = 12.0;
@@ -63,6 +63,7 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
 impl RedstringApp {
     pub fn toolbar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.horizontal(|ui| -> Result<(), Error> {
+            ui.spacing_mut().item_spacing.x = 6.0;
             if tb_button(ui, egui_phosphor::regular::HOUSE, "Home")
                 .on_hover_text("Welcome — new case, open, recents")
                 .clicked()

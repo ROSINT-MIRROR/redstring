@@ -12,9 +12,9 @@ pub const GAP_SM: f32 = 4.0;
 
 pub const ROW_H: f32 = 30.0;
 
-pub const BTN_SQ: f32 = 30.0;
+pub const BTN_SQ: f32 = 21.0;
 
-pub const ICON_BTN: f32 = 18.0;
+pub const ICON_BTN: f32 = 13.0;
 
 pub const ICON_SECTION: f32 = 15.0;
 

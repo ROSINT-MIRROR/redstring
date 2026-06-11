@@ -181,6 +181,24 @@ fn is_url(s: &str) -> bool {
     !rest.contains(' ') && (is_hostname(host) || host.parse::<std::net::IpAddr>().is_ok())
 }
 
+
+pub fn url_host(s: &str) -> Result<Option<String>, Error> {
+    let Some(rest) = strip_scheme(s.trim()) else {
+        return Ok(None);
+    };
+    let Some(host) = rest.split(['/', '?', '#']).next() else {
+        return Ok(None);
+    };
+    let Some(host) = host.split(':').next() else {
+        return Ok(None);
+    };
+    let host = host.trim_start_matches("www.");
+    if host.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(host.to_lowercase()))
+}
+
 pub struct KindMeta {
     pub kind: EntityKind,
     pub label: &'static str,
@@ -442,6 +460,15 @@ mod tests {
         e.value = String::new();
         e.label = "evil.example".into();
         assert_eq!(e.module_value().unwrap(), Some("evil.example".to_owned()), "valid label adopted");
+    }
+
+    #[test]
+    fn url_host_strips_scheme_path_port_and_www() {
+        assert_eq!(url_host("https://github.com/torvalds").unwrap(), Some("github.com".to_owned()));
+        assert_eq!(url_host("https://www.Reddit.com/user/x").unwrap(), Some("reddit.com".to_owned()));
+        assert_eq!(url_host("http://host.example:8080/p?q#f").unwrap(), Some("host.example".to_owned()));
+        assert_eq!(url_host("not a url").unwrap(), None);
+        assert_eq!(url_host("ftp://x.example").unwrap(), None);
     }
 
     #[test]

@@ -41,6 +41,7 @@ pub enum Extract {
         #[serde(default)]
         comments: String,
     },
+    Ndjson,
 }
 
 
@@ -59,7 +60,19 @@ pub enum EmitRule {
 
         #[serde(default)]
         attrs: Vec<(String, String)>,
+
+        #[serde(default)]
+        label: LabelMode,
     },
+}
+
+
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+pub enum LabelMode {
+    #[default]
+    Verbatim,
+
+    Host,
 }
 
 fn default_timeout() -> u64 {

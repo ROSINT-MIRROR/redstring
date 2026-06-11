@@ -28,6 +28,7 @@ impl RedstringApp {
             if style::square_btn(ui, egui_phosphor::regular::CARET_RIGHT, "collapse inspector")? {
                 self.prefs.inspector_collapsed = true;
                 self.prefs.save()?;
+                self.clear_selection()?;
             }
             ui.heading("inspector");
             Ok(())
@@ -72,7 +73,9 @@ impl RedstringApp {
     fn case_inspector(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         style::section(ui, egui_phosphor::regular::FOLDER, "case")?;
         let name = ui.add(
-            egui::TextEdit::singleline(&mut self.case_name).char_limit(MAX_CASE_NAME),
+            egui::TextEdit::singleline(&mut self.case_name)
+                .desired_width(f32::INFINITY)
+                .char_limit(MAX_CASE_NAME),
         );
         if name.changed() {
             self.status = "case renamed — save to persist".into();
@@ -110,12 +113,18 @@ impl RedstringApp {
 
         ui.horizontal(|ui| {
             ui.label("label");
-            ui.text_edit_singleline(&mut e.label);
+            ui.add(
+                egui::TextEdit::singleline(&mut e.label).desired_width(f32::INFINITY),
+            );
         });
         ui.horizontal(|ui| {
             ui.label("value")
                 .on_hover_text("the machine-readable thing lookups run against — label is free prose");
-            ui.add(egui::TextEdit::singleline(&mut e.value).hint_text(e.label.clone()));
+            ui.add(
+                egui::TextEdit::singleline(&mut e.value)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(e.label.clone()),
+            );
         });
         let vf = KIND_META[e.kind as usize].value_format;
         if vf != ValueFormat::Free {
@@ -159,10 +168,15 @@ impl RedstringApp {
         for (i, (k, v)) in e.attrs.iter_mut().enumerate() {
             ui.horizontal(|ui| -> Result<(), Error> {
                 ui.add_sized(
-                    egui::Vec2::new(110.0, ui.spacing().interact_size.y),
+                    egui::Vec2::new(90.0, ui.spacing().interact_size.y),
                     egui::Label::new(pretty_key(k)?).truncate(),
                 );
-                ui.add(egui::TextEdit::singleline(v).hint_text("value"));
+                let w = (ui.available_width() - 34.0).max(40.0);
+                ui.add(
+                    egui::TextEdit::singleline(v)
+                        .desired_width(w)
+                        .hint_text("value"),
+                );
                 if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
                     remove = Some(i);
                 }
@@ -269,8 +283,15 @@ impl RedstringApp {
             });
         let mut pick_source = false;
         ui.horizontal(|ui| {
+            let fb = SOURCE_META[self.ns_kind as usize].file_backed;
+            let w = if fb {
+                (ui.available_width() - 34.0).max(40.0)
+            } else {
+                f32::INFINITY
+            };
             ui.add(
                 egui::TextEdit::singleline(&mut self.ns_ref)
+                    .desired_width(w)
                     .hint_text(SOURCE_META[self.ns_kind as usize].hint),
             );
             if SOURCE_META[self.ns_kind as usize].file_backed
@@ -349,6 +370,7 @@ impl RedstringApp {
                     });
                 ui.add(
                     egui::TextEdit::singleline(&mut src.reference)
+                        .desired_width(f32::INFINITY)
                         .hint_text(SOURCE_META[src.kind as usize].hint),
                 );
                 ui.add(

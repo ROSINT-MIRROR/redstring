@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -22,6 +23,10 @@ pub struct Job {
     pub target_label: String,
     pub started: Instant,
     pub cancel: Arc<AtomicBool>,
+
+    pub found: usize,
+
+    pub streams: bool,
 }
 
 impl RedstringApp {
@@ -82,9 +87,14 @@ impl RedstringApp {
                     .weak()
                     .small(),
                 );
+                let hint = if job.streams {
+                    "stop the sweep — the hits already on the board stay"
+                } else {
+                    "cancel this job — nothing will be applied"
+                };
                 if ui
                     .small_button(egui_phosphor::regular::X)
-                    .on_hover_text("cancel this job — nothing will be applied")
+                    .on_hover_text(hint)
                     .clicked()
                 {
                     job.cancel.store(true, Ordering::Relaxed);
@@ -142,6 +152,8 @@ impl RedstringApp {
             target_label: input.target_label.clone(),
             started: Instant::now(),
             cancel: input.cancel.clone(),
+            found: 0,
+            streams: crate::modules::streaming(&input.shapes)?,
         });
         self.status = format!("{} running on {}…", input.module_label, input.target_label);
         crate::modules::spawn_module(input, self.module_tx.clone(), ui.ctx().clone())?;
@@ -162,6 +174,12 @@ impl RedstringApp {
         };
         let run_id = self.next_run_id;
         self.next_run_id += 1;
+        let project_root = self.project.as_ref().map(|p| p.root.clone());
+        let evidence_rel = if project_root.is_some() {
+            format!("evidence/docs/{}-{}-{}.txt", entry.spec.id, e.slug, epoch_secs()?)
+        } else {
+            String::new()
+        };
         Ok(Some(RunInput {
             run_id,
             module_id: entry.spec.id.clone(),
@@ -173,7 +191,8 @@ impl RedstringApp {
             shapes: entry.spec.shapes.clone(),
             target_slug: e.slug.clone(),
             target_label: e.label.clone(),
-            project_root: self.project.as_ref().map(|p| p.root.clone()),
+            project_root,
+            evidence_rel,
             cancel: Arc::new(AtomicBool::new(false)),
         }))
     }
@@ -184,20 +203,48 @@ impl RedstringApp {
             let Ok(run) = self.module_rx.try_recv() else {
                 return Ok(());
             };
-            self.jobs.retain(|j| j.run_id != run.run_id);
+            let run_id = run.run_id;
+            let last = run.last;
             if run.cancelled {
+                self.jobs.retain(|j| j.run_id != run_id);
                 self.status = format!(
-                    "{} on {} cancelled — nothing applied",
-                    run.module_label, run.target_label
+                    "{} on {} cancelled — {} kept",
+                    run.module_label, run.target_label, self.job_found(run_id)
                 );
                 continue;
             }
             if !run.ok {
+                self.jobs.retain(|j| j.run_id != run_id);
                 self.status = format!("{} failed: {}", run.module_label, run.stderr_tail);
                 continue;
             }
-            self.apply_run(ui, run)?;
+            if !run.facts.is_empty() {
+                self.apply_run(ui, run)?;
+            } else if last {
+                self.status = format!(
+                    "{} done — {} found",
+                    self.job_label(run_id),
+                    self.job_found(run_id)
+                );
+            }
+            if last {
+                self.jobs.retain(|j| j.run_id != run_id);
+            }
         }
+    }
+
+    fn job_found(&self, run_id: u64) -> usize {
+        let Some(job) = self.jobs.iter().find(|j| j.run_id == run_id) else {
+            return 0;
+        };
+        job.found
+    }
+
+    fn job_label(&self, run_id: u64) -> String {
+        let Some(job) = self.jobs.iter().find(|j| j.run_id == run_id) else {
+            return "lookup".to_owned();
+        };
+        format!("{} on {}", job.module_label, job.target_label)
     }
 
     fn apply_run(&mut self, ui: &egui::Ui, run: ModuleRun) -> Result<(), Error> {
@@ -214,6 +261,7 @@ impl RedstringApp {
             return Ok(());
         }
         let origin = self.node_pos(tidx);
+        let base = self.g.g().neighbors(tidx).count();
         let mut attrs_set = 0usize;
         let mut linked = 0usize;
         let mut skipped = 0usize;
@@ -227,12 +275,14 @@ impl RedstringApp {
                 Fact::Entity {
                     kind,
                     label,
+                    value,
                     rel,
                     outbound,
                     attrs,
                 } => {
-                    let nidx =
-                        self.upsert_entity(label, *kind, attrs, origin, &mut spawned, &mut steps)?;
+                    let nidx = self.upsert_entity(
+                        label, value, *kind, attrs, origin, base, &mut spawned, &mut steps,
+                    )?;
                     let (a, b) = if *outbound { (tidx, nidx) } else { (nidx, tidx) };
                     let dup = self
                         .g
@@ -257,11 +307,24 @@ impl RedstringApp {
             }
         }
         self.kick_spawn_anim(ui, steps)?;
-        self.status = format!(
-            "{}: {attrs_set} attrs set, {linked} linked, {skipped} skipped — prune what's irrelevant",
-            run.module_id
-        );
+        let total = self.bump_job_found(run.run_id, linked);
+        self.status = if run.last {
+            format!(
+                "{}: {attrs_set} attrs set, {total} linked, {skipped} skipped — prune what's irrelevant",
+                run.module_id
+            )
+        } else {
+            format!("{}: {total} linked so far…", run.module_id)
+        };
         Ok(())
+    }
+
+    fn bump_job_found(&mut self, run_id: u64, linked: usize) -> usize {
+        let Some(job) = self.jobs.iter_mut().find(|j| j.run_id == run_id) else {
+            return linked;
+        };
+        job.found += linked;
+        job.found
     }
 
     fn kick_spawn_anim(
@@ -301,21 +364,23 @@ impl RedstringApp {
     fn upsert_entity(
         &mut self,
         label: &str,
+        value: &str,
         kind: EntityKind,
         attrs: &[(String, String)],
         origin: Pos2,
+        base: usize,
         spawned: &mut usize,
         steps: &mut Vec<(NodeIndex, Pos2, Pos2)>,
     ) -> Result<NodeIndex, Error> {
-        let slug = slugify(label)?;
+        let slug = slugify(value)?;
         let existing = self.node_by_slug(&slug);
-        let nidx = self.ensure_node(existing, label, kind, origin, spawned, steps)?;
+        let nidx = self.ensure_node(existing, label, value, kind, origin, base, spawned, steps)?;
         let Some(node) = self.g.node_mut(nidx) else {
             return Ok(nidx);
         };
         let e = node.payload_mut();
         if e.value.trim().is_empty() {
-            e.value = label.to_owned();
+            e.value = value.to_owned();
         }
         let mut set = 0usize;
         let mut skip = 0usize;
@@ -329,20 +394,32 @@ impl RedstringApp {
         &mut self,
         existing: Option<NodeIndex>,
         label: &str,
+        value: &str,
         kind: EntityKind,
         origin: Pos2,
+        base: usize,
         spawned: &mut usize,
         steps: &mut Vec<(NodeIndex, Pos2, Pos2)>,
     ) -> Result<NodeIndex, Error> {
         let Some(idx) = existing else {
-            let angle = 0.45 + *spawned as f32 * 0.9;
+            let angle = 0.45 + (base + *spawned) as f32 * 0.9;
             let target = origin + Vec2::new(170.0 * angle.cos(), 170.0 * angle.sin());
             *spawned += 1;
             let idx = self.add_entity(kind, label.to_owned(), origin)?;
+            self.reslug(idx, value)?;
             steps.push((idx, origin, target));
             return Ok(idx);
         };
         Ok(idx)
+    }
+
+    fn reslug(&mut self, idx: NodeIndex, value: &str) -> Result<(), Error> {
+        let slug = slugify(value)?;
+        let Some(n) = self.g.node_mut(idx) else {
+            return Ok(());
+        };
+        n.payload_mut().slug = slug;
+        Ok(())
     }
 
     fn node_by_slug(&self, slug: &str) -> Option<NodeIndex> {
@@ -361,24 +438,14 @@ impl RedstringApp {
         n.location()
     }
 
-    fn evidence_source(&mut self, run: &ModuleRun) -> Result<Source, Error> {
-        let Some(root) = &run.project_root else {
-            return Ok(Source {
-                kind: SourceKind::Note,
-                reference: format!(
-                    "{} on {} — raw output not persisted (case was unsaved)",
-                    run.module_id, run.target_label
-                ),
-                excerpt: clip(&run.raw, 600),
-            });
+    fn evidence_source(&self, run: &ModuleRun) -> Result<Source, Error> {
+        let Some(root) = run.project_root.as_ref() else {
+            return Ok(note_source(run));
         };
-        let rel = format!(
-            "evidence/docs/{}-{}-{}.txt",
-            run.module_id,
-            run.target_slug,
-            epoch_secs()?
-        );
-        let abs = root.join(&rel);
+        if run.evidence_rel.is_empty() {
+            return Ok(note_source(run));
+        }
+        let abs = root.join(&run.evidence_rel);
         let Some(dir) = abs.parent() else {
             return Err(Error::NotAProject { path: abs.clone() });
         };
@@ -386,13 +453,21 @@ impl RedstringApp {
             path: dir.to_path_buf(),
             source,
         })?;
-        std::fs::write(&abs, &run.raw).map_err(|source| Error::Io {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&abs)
+            .map_err(|source| Error::Io {
+                path: abs.clone(),
+                source,
+            })?;
+        file.write_all(run.raw.as_bytes()).map_err(|source| Error::Io {
             path: abs.clone(),
             source,
         })?;
         Ok(Source {
             kind: SourceKind::Document,
-            reference: rel,
+            reference: run.evidence_rel.clone(),
             excerpt: clip(&run.raw, 280),
         })
     }
@@ -442,6 +517,17 @@ fn epoch_secs() -> Result<u64, Error> {
 
 fn clip(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
+}
+
+fn note_source(run: &ModuleRun) -> Source {
+    Source {
+        kind: SourceKind::Note,
+        reference: format!(
+            "{} on {} — raw output not persisted (case was unsaved)",
+            run.module_id, run.target_label
+        ),
+        excerpt: clip(&run.raw, 600),
+    }
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
 use crate::error::Error;
-use crate::model::{Camera, Entity, EntityKind, Relation, SourceKind};
+use crate::model::{Camera, Entity, EntityKind, KIND_META, Relation, SourceKind};
 use crate::prefs::{Prefs, Theme};
 use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
@@ -200,6 +200,24 @@ impl RedstringApp {
         Ok(())
     }
 
+    pub fn clear_selection(&mut self) -> Result<(), Error> {
+        let nodes = self.g.selected_nodes().to_vec();
+        for idx in nodes {
+            let Some(n) = self.g.node_mut(idx) else {
+                continue;
+            };
+            n.set_selected(false);
+        }
+        let edges = self.g.selected_edges().to_vec();
+        for idx in edges {
+            let Some(e) = self.g.edge_mut(idx) else {
+                continue;
+            };
+            e.set_selected(false);
+        }
+        Ok(())
+    }
+
     fn flag(&mut self, outcome: Result<(), Error>) {
         let Err(err) = outcome else { return };
         self.status = format!("⚠ {err}");
@@ -241,6 +259,10 @@ impl RedstringApp {
 
         egui::Panel::top("toolbar")
             .resizable(false)
+            .frame(
+                egui::Frame::side_top_panel(ui.style())
+                    .inner_margin(Margin::symmetric(8, 6)),
+            )
             .show_inside(ui, |ui| self.toolbar(ui))
             .inner?;
         self.settings_window(ui)?;
@@ -254,10 +276,32 @@ impl RedstringApp {
             .exact_size(super::style::STRIP_W + 8.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
 
+        let painter = ui.painter().clone();
+        let icon_f = egui::FontId::proportional(24.0);
+        let label_f = egui::FontId::proportional(12.0);
+        let row_w = KIND_META
+            .iter()
+            .map(|m| {
+                let iw = painter
+                    .layout_no_wrap(m.icon.to_owned(), icon_f.clone(), Color32::WHITE)
+                    .size()
+                    .x;
+                let lw = painter
+                    .layout_no_wrap(m.label.to_owned(), label_f.clone(), Color32::WHITE)
+                    .size()
+                    .x;
+                iw + lw
+            })
+            .fold(0.0f32, f32::max);
+        let extras = ui.spacing().button_padding.x * 2.0
+            + ui.spacing().item_spacing.x
+            + ui.spacing().scroll.bar_width
+            + 16.0;
+        let palette_w = ((row_w + extras) * 1.1).ceil();
         let expanded = egui::Panel::left("left")
             .resizable(true)
-            .default_size(270.0)
-            .size_range(160.0..=480.0);
+            .default_size(palette_w)
+            .size_range(140.0..=480.0);
         egui::Panel::show_animated_between_inside(
             ui,
             !self.prefs.sidebar_collapsed,
@@ -272,17 +316,19 @@ impl RedstringApp {
             },
         )
         .inner?;
+        let has_sel = !self.g.selected_nodes().is_empty() || !self.g.selected_edges().is_empty();
+        let show_inspector = !self.prefs.inspector_collapsed || has_sel;
         let insp_strip = egui::Panel::right("right_strip")
             .resizable(false)
             .exact_size(super::style::STRIP_W + 8.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
         let insp_expanded = egui::Panel::right("right")
             .resizable(true)
-            .default_size(310.0)
-            .size_range(200.0..=520.0);
+            .default_size(248.0)
+            .size_range(170.0..=520.0);
         egui::Panel::show_animated_between_inside(
             ui,
-            !self.prefs.inspector_collapsed,
+            show_inspector,
             insp_strip,
             insp_expanded,
             |ui, how_expanded| {
@@ -290,7 +336,17 @@ impl RedstringApp {
                     self.inspector_strip(ui)
                 } else {
                     egui::ScrollArea::vertical()
-                        .show(ui, |ui| self.inspector(ui))
+                        .show(ui, |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(6.0, 3.0);
+                            ui.spacing_mut().button_padding = Vec2::new(6.0, 3.0);
+                            for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
+                                let Some(f) = ui.style_mut().text_styles.get_mut(&st) else {
+                                    continue;
+                                };
+                                f.size = 15.0;
+                            }
+                            self.inspector(ui)
+                        })
                         .inner
                 }
             },

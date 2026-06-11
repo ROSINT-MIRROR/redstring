@@ -1,0 +1,23 @@
+// builtin module spec — candel username OSINT sweep for aliases/handles.
+// Runs candel against the alias label, NDJSON stream of {slug,url} hits.
+// Each hit url is a Website the alias uses_account on, labeled by host
+// (full url kept as the node value), streamed in live one node per hit.
+// No hits = empty stdout, zero facts, raw kept as evidence.
+(
+    id: "candel",
+    label: "candel username sweep",
+    applies_to: ["alias"],
+    bin: "candel",
+    args: ["{value}", "--json"],
+    timeout_secs: 180,
+    shapes: [
+        (
+            id: "candel",
+            extract: Ndjson,
+            min_hits: 1,
+            emit: [
+                Entity(from: "url", kind: "website", rel: "uses_account", label: Host),
+            ],
+        ),
+    ],
+)

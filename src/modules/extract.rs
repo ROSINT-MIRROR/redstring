@@ -9,8 +9,40 @@ pub type Vars = HashMap<String, Vec<String>>;
 
 
 pub fn extract(ex: &Extract, stdout: &str) -> Result<Vars, Error> {
-    let Extract::KeyValue { sep, comments } = ex;
-    Ok(key_value(sep, comments, stdout))
+    match ex {
+        Extract::KeyValue { sep, comments } => Ok(key_value(sep, comments, stdout)),
+        Extract::Ndjson => Ok(ndjson(stdout)),
+    }
+}
+
+
+fn ndjson(stdout: &str) -> Vars {
+    let mut vars: Vars = HashMap::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(serde_json::Value::Object(obj)) = serde_json::from_str::<serde_json::Value>(line)
+        else {
+            continue;
+        };
+        for (k, v) in obj {
+            let serde_json::Value::String(val) = v else {
+                continue;
+            };
+            let key = k.trim().to_lowercase();
+            let val = val.trim();
+            if key.is_empty() || val.is_empty() {
+                continue;
+            }
+            let entry = vars.entry(key).or_default();
+            if !entry.iter().any(|e| e == val) {
+                entry.push(val.to_owned());
+            }
+        }
+    }
+    vars
 }
 
 
@@ -99,5 +131,24 @@ no separator here
     fn first_separator_wins() {
         let vars = key_value(":", "", "Ref: https://rdap.arin.net/registry/ip/8.8.8.0");
         assert_eq!(vars["ref"], vec!["https://rdap.arin.net/registry/ip/8.8.8.0"]);
+    }
+
+    #[test]
+    fn ndjson_collects_fields_dedups_and_skips_junk() {
+        let text = "\
+{\"slug\":\"github\",\"url\":\"https://github.com/torvalds\"}
+not json at all
+{\"slug\":\"gitlab\",\"url\":\"https://gitlab.com/torvalds\"}
+{\"slug\":\"github\",\"url\":\"https://github.com/torvalds\"}
+{\"slug\":\"empty\",\"url\":\"\"}
+{\"count\":3}
+";
+        let vars = ndjson(text);
+        assert_eq!(
+            vars["url"],
+            vec!["https://github.com/torvalds", "https://gitlab.com/torvalds"]
+        );
+        assert_eq!(vars["slug"], vec!["github", "gitlab", "empty"]);
+        assert!(!vars.contains_key("count"), "non-string values dropped");
     }
 }

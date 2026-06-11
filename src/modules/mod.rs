@@ -6,4 +6,4 @@ mod spec;
 
 pub use emit::Fact;
 pub use registry::{ModuleStatus, Registry};
-pub use run::{ModuleRun, RunInput, spawn_module};
+pub use run::{ModuleRun, RunInput, spawn_module, streaming};

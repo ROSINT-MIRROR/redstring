@@ -7,7 +7,10 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 1] = [("builtin:whois", include_str!("../../modules/whois.ron"))];
+const BUILTIN: [(&str, &str); 2] = [
+    ("builtin:whois", include_str!("../../modules/whois.ron")),
+    ("builtin:candel", include_str!("../../modules/candel.ron")),
+];
 
 
 #[derive(Clone, Debug)]
@@ -212,6 +215,7 @@ OrgName:        Google LLC
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Company,
             label: "MarkMonitor Inc.".into(),
+            value: "MarkMonitor Inc.".into(),
             rel: RelationKind::RegisteredAt,
             outbound: true,
             attrs: Vec::new(),
@@ -231,6 +235,7 @@ OrgName:        Google LLC
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Organization,
             label: "APNIC Research and Development".into(),
+            value: "APNIC Research and Development".into(),
             rel: RelationKind::RegisteredAt,
             outbound: true,
             attrs: Vec::new(),
@@ -238,6 +243,7 @@ OrgName:        Google LLC
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Email,
             label: "helpdesk@apnic.net".into(),
+            value: "helpdesk@apnic.net".into(),
             rel: RelationKind::RelatedTo,
             outbound: true,
             attrs: Vec::new(),
@@ -245,6 +251,7 @@ OrgName:        Google LLC
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Location,
             label: "AU".into(),
+            value: "AU".into(),
             rel: RelationKind::LocatedAt,
             outbound: true,
             attrs: vec![("country_code".into(), "AU".into())],
@@ -261,6 +268,7 @@ OrgName:        Google LLC
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Location,
             label: "US".into(),
+            value: "US".into(),
             rel: RelationKind::LocatedAt,
             outbound: true,
             attrs: vec![

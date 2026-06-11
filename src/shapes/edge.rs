@@ -14,8 +14,11 @@ use crate::model::Relation;
 const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
 const TIP_SIZE: f32 = 12.0;
 const PARALLEL_SPACING: f32 = 12.0;
-const WIDTH: f32 = 2.0;
-const HIT_TOLERANCE: f32 = 4.0;
+const WIDTH: f32 = 3.0;
+const HOT_MULT: f32 = 1.9;
+const GLOW_MULT: f32 = 3.2;
+const HIT_TOLERANCE: f32 = 6.0;
+const HOVER_PX: f32 = 9.0;
 
 const SOURCED: Color32 = Color32::from_rgb(120, 200, 140);
 const UNSOURCED: Color32 = Color32::from_rgb(235, 80, 80);
@@ -23,6 +26,7 @@ const UNSOURCED: Color32 = Color32::from_rgb(235, 80, 80);
 #[derive(Clone)]
 pub struct SourcedEdgeShape {
     sourced: bool,
+    selected: bool,
     order: usize,
 }
 
@@ -30,6 +34,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
     fn from(props: EdgeProps<Relation>) -> Self {
         Self {
             sourced: !props.payload.sources.is_empty(),
+            selected: props.selected,
             order: props.order,
         }
     }
@@ -54,9 +59,19 @@ where
 
         let a = ctx.meta.canvas_to_screen_pos(s);
         let b = ctx.meta.canvas_to_screen_pos(e);
-        let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(WIDTH), color);
+        let hovered = ctx
+            .ctx
+            .input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| dist_point_segment(p, a, b) <= HOVER_PX);
+        let hot = self.selected || hovered;
+        let mult = if hot { HOT_MULT } else { 1.0 };
+        let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(WIDTH) * mult, color);
 
         let mut res = Vec::new();
+        if hot {
+            let halo = Stroke::new(stroke.width * GLOW_MULT, color.gamma_multiply(0.25));
+            res.push(Shape::line_segment([a, b], halo));
+        }
         if self.sourced {
             res.push(Shape::line_segment([a, b], stroke));
         } else {
@@ -68,10 +83,10 @@ where
             ));
         }
 
-        
+
         let dir = (e - s).normalized();
-        let t1 = e - rotate(dir, TIP_ANGLE) * TIP_SIZE;
-        let t2 = e - rotate(dir, -TIP_ANGLE) * TIP_SIZE;
+        let t1 = e - rotate(dir, TIP_ANGLE) * TIP_SIZE * mult;
+        let t2 = e - rotate(dir, -TIP_ANGLE) * TIP_SIZE * mult;
         let tip = vec![
             ctx.meta.canvas_to_screen_pos(e),
             ctx.meta.canvas_to_screen_pos(t1),
@@ -84,6 +99,7 @@ where
 
     fn update(&mut self, state: &EdgeProps<Relation>) {
         self.sourced = !state.payload.sources.is_empty();
+        self.selected = state.selected;
         self.order = state.order;
     }
 
