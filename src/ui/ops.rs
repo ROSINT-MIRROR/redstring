@@ -3,8 +3,8 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, RELATION_META, Relation, RelationKind,
-    Source, SourceKind,
+    DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, Origin, RELATION_META, Relation, RelationKind,
+    Source, SourceKind, Verification,
 };
 
 use super::app::RedstringApp;
@@ -16,10 +16,12 @@ impl RedstringApp {
         let domain = self.add_entity(EntityKind::Domain, "evil.example".into(), spiral(2)?)?;
         let minister = self.add_entity(EntityKind::Official, "Minister X".into(), spiral(3)?)?;
 
-        let mut controls = Relation {
-            kind: RelationKind::Controls,
-            sources: Vec::new(),
-        };
+        let mut controls = Relation::stamp(
+            RelationKind::Controls,
+            Origin::Manual,
+            Verification::AnalystAsserted,
+            self.author.clone(),
+        )?;
         controls.sources.push(Source {
             kind: SourceKind::Markdown,
             reference: "dossier.md#ownership".into(),
@@ -35,19 +37,23 @@ impl RedstringApp {
         self.g.add_edge_with_label(
             shell,
             domain,
-            Relation {
-                kind: RelationKind::OwnsDomain,
-                sources: Vec::new(),
-            },
+            Relation::stamp(
+                RelationKind::OwnsDomain,
+                Origin::Manual,
+                Verification::Unreviewed,
+                self.author.clone(),
+            )?,
             RELATION_META[RelationKind::OwnsDomain as usize].label.into(),
         );
         self.g.add_edge_with_label(
             shell,
             minister,
-            Relation {
-                kind: RelationKind::Financed,
-                sources: Vec::new(),
-            },
+            Relation::stamp(
+                RelationKind::Financed,
+                Origin::Manual,
+                Verification::Unreviewed,
+                self.author.clone(),
+            )?,
             RELATION_META[RelationKind::Financed as usize].label.into(),
         );
 
@@ -104,11 +110,7 @@ impl RedstringApp {
             kind,
             label: label.clone(),
             value: String::new(),
-            attrs: meta
-                .attrs
-                .iter()
-                .map(|k| ((*k).to_owned(), String::new()))
-                .collect(),
+            observations: Vec::new(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

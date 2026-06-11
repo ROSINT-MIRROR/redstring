@@ -9,7 +9,7 @@ use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
 use crate::error::Error;
-use crate::model::{Camera, Entity, EntityKind, KIND_META, Relation, SourceKind};
+use crate::model::{Author, Camera, Entity, EntityKind, KIND_META, Relation, SourceKind, resolve_identity};
 use crate::prefs::{Prefs, Theme};
 use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
@@ -31,6 +31,8 @@ pub struct RedstringApp {
     pub case_name: String,
     pub status: String,
     pub prefs: Prefs,
+
+    pub author: Author,
 
     pub watched: Option<(String, SystemTime)>,
     pub last_watch_poll: Instant,
@@ -112,6 +114,7 @@ impl RedstringApp {
             case_name: "untitled case".to_owned(),
             status: "no case open".to_owned(),
             prefs: Prefs::default(),
+            author: resolve_identity(None)?,
             watched: None,
             last_watch_poll: Instant::now(),
             pending_load: false,

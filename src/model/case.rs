@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::entity::{EntityKind, KIND_META};
+use super::observation::{Author, DEFAULT_CONFIDENCE, Observation, Origin, Verification};
 use super::relation::{RELATION_META, RelationKind};
 use super::source::Source;
 
@@ -106,7 +107,7 @@ pub struct EntityRec {
     #[serde(default)]
     pub value: String,
     #[serde(default)]
-    pub attrs: Vec<(String, String)>,
+    pub observations: Vec<Observation>,
 
     #[serde(default)]
     pub image: Option<String>,
@@ -118,7 +119,21 @@ pub struct RelationRec {
     pub to: String,
     pub kind: RelationKind,
     #[serde(default)]
+    pub origin: Origin,
+    #[serde(default)]
+    pub status: Verification,
+    #[serde(default = "full_confidence")]
+    pub confidence: u8,
+    #[serde(default)]
+    pub author: Author,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
     pub sources: Vec<Source>,
+}
+
+fn full_confidence() -> u8 {
+    DEFAULT_CONFIDENCE
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
@@ -210,13 +225,27 @@ mod tests {
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: "John Doe".into(),
-            attrs: vec![("dob".into(), "1971-03-04".into())],
+            observations: vec![
+                crate::model::Observation::stamp(
+                    "dob".into(),
+                    crate::model::ObsValue::Text("1971-03-04".into()),
+                    Origin::Manual,
+                    Verification::AnalystAsserted,
+                    Author::default(),
+                )
+                .unwrap(),
+            ],
             image: Some("entities/doe/portrait.png".into()),
         });
         cf.data.relations.push(RelationRec {
             from: "doe".into(),
             to: "doe".into(),
             kind: RelationKind::AliasOf,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
             sources: vec![Source {
                 kind: SourceKind::Markdown,
                 reference: "notes/dossier.md#x".into(),

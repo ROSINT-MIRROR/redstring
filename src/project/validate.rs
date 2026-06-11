@@ -104,7 +104,10 @@ fn check_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseMeta, EntityKind, EntityRec, RelationKind, RelationRec, Source, SourceKind};
+    use crate::model::{
+        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Source,
+        SourceKind, Verification,
+    };
 
     fn project(name: &str) -> Project {
         let d = std::env::temp_dir().join(format!("redstring_val_{name}_{}", std::process::id()));
@@ -118,7 +121,7 @@ mod tests {
             kind: EntityKind::Person,
             label: slug.into(),
             value: String::new(),
-            attrs: vec![],
+            observations: vec![],
             image: None,
         }
     }
@@ -135,8 +138,13 @@ mod tests {
         cf.data.entities.push(shady);
         cf.data.relations.push(RelationRec {
             from: "doe".into(),
-            to: "ghost".into(), 
+            to: "ghost".into(),
             kind: RelationKind::Paid,
+            origin: Origin::Manual,
+            status: Verification::Unreviewed,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
             sources: vec![
                 Source {
                     kind: SourceKind::Document,

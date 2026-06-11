@@ -57,7 +57,10 @@ fn label_safe(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseMeta, EntityKind, EntityRec, RelationKind, RelationRec, Source, SourceKind};
+    use crate::model::{
+        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Source,
+        SourceKind, Verification,
+    };
 
     #[test]
     fn mermaid_shape_and_escaping() {
@@ -68,7 +71,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "Radu \"the Brick\" P.".into(),
             value: String::new(),
-            attrs: vec![],
+            observations: vec![],
             image: None,
         });
         cf.data.entities.push(EntityRec {
@@ -76,13 +79,18 @@ mod tests {
             kind: EntityKind::ShellCompany,
             label: "Strada Sigur SRL".into(),
             value: String::new(),
-            attrs: vec![],
+            observations: vec![],
             image: None,
         });
         cf.data.relations.push(RelationRec {
             from: "radu".into(),
             to: "strada_sigur".into(),
             kind: RelationKind::Owns,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
             sources: vec![Source {
                 kind: SourceKind::Document,
                 reference: "evidence/docs/onrc.pdf".into(),
@@ -93,6 +101,11 @@ mod tests {
             from: "strada_sigur".into(),
             to: "radu".into(),
             kind: RelationKind::Paid,
+            origin: Origin::Manual,
+            status: Verification::Unreviewed,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
             sources: vec![],
         });
 

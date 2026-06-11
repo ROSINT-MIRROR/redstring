@@ -7,7 +7,10 @@ use egui::{Pos2, RichText, Vec2};
 use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
-use crate::model::{EntityKind, RELATION_META, Relation, Source, SourceKind, slugify};
+use crate::model::{
+    Author, EntityKind, ObsValue, Observation, Origin, RELATION_META, Relation, Source, SourceKind,
+    Verification, slugify,
+};
 use crate::modules::{Fact, ModuleRun, ModuleStatus, RunInput};
 
 use super::app::RedstringApp;
@@ -185,7 +188,7 @@ impl RedstringApp {
             module_id: entry.spec.id.clone(),
             module_label: entry.spec.label.clone(),
             bin: bin.clone(),
-            args: entry.spec.render_args(&value, &e.label, &e.slug, &e.attrs)?,
+            args: entry.spec.render_args(&value, &e.label, &e.slug, &e.attr_pairs()?)?,
             env: key_env(&entry.spec.keys, &self.prefs.api_keys),
             timeout_secs: entry.spec.timeout_secs,
             shapes: entry.spec.shapes.clone(),
@@ -270,7 +273,14 @@ impl RedstringApp {
         for fact in &run.facts {
             match fact {
                 Fact::Attr { key, value } => {
-                    self.apply_attr_fact(tidx, key, value, &mut attrs_set, &mut skipped)?;
+                    self.apply_attr_fact(
+                        tidx,
+                        key,
+                        value,
+                        &run.module_id,
+                        &mut attrs_set,
+                        &mut skipped,
+                    )?;
                 }
                 Fact::Entity {
                     kind,
@@ -281,7 +291,8 @@ impl RedstringApp {
                     attrs,
                 } => {
                     let nidx = self.upsert_entity(
-                        label, value, *kind, attrs, origin, base, &mut spawned, &mut steps,
+                        label, value, *kind, attrs, &run.module_id, origin, base, &mut spawned,
+                        &mut steps,
                     )?;
                     let (a, b) = if *outbound { (tidx, nidx) } else { (nidx, tidx) };
                     let dup = self
@@ -293,13 +304,17 @@ impl RedstringApp {
                         skipped += 1;
                         continue;
                     }
+                    let mut relation = Relation::stamp(
+                        *rel,
+                        Origin::Lookup(run.module_id.clone()),
+                        Verification::MachineSuggested,
+                        self.author.clone(),
+                    )?;
+                    relation.sources.push(source.clone());
                     self.g.add_edge_with_label(
                         a,
                         b,
-                        Relation {
-                            kind: *rel,
-                            sources: vec![source.clone()],
-                        },
+                        relation,
                         RELATION_META[*rel as usize].label.into(),
                     );
                     linked += 1;
@@ -351,13 +366,23 @@ impl RedstringApp {
         tidx: NodeIndex,
         key: &str,
         value: &str,
+        module_id: &str,
         attrs_set: &mut usize,
         skipped: &mut usize,
     ) -> Result<(), Error> {
+        let author = self.author.clone();
         let Some(node) = self.g.node_mut(tidx) else {
             return Ok(());
         };
-        fill_attr(node.payload_mut().attrs.as_mut(), key, value, attrs_set, skipped);
+        fill_obs(
+            &mut node.payload_mut().observations,
+            key,
+            value,
+            module_id,
+            &author,
+            attrs_set,
+            skipped,
+        )?;
         Ok(())
     }
 
@@ -367,6 +392,7 @@ impl RedstringApp {
         value: &str,
         kind: EntityKind,
         attrs: &[(String, String)],
+        module_id: &str,
         origin: Pos2,
         base: usize,
         spawned: &mut usize,
@@ -375,6 +401,7 @@ impl RedstringApp {
         let slug = slugify(value)?;
         let existing = self.node_by_slug(&slug);
         let nidx = self.ensure_node(existing, label, value, kind, origin, base, spawned, steps)?;
+        let author = self.author.clone();
         let Some(node) = self.g.node_mut(nidx) else {
             return Ok(nidx);
         };
@@ -385,7 +412,7 @@ impl RedstringApp {
         let mut set = 0usize;
         let mut skip = 0usize;
         for (k, v) in attrs {
-            fill_attr(&mut e.attrs, k, v, &mut set, &mut skip);
+            fill_obs(&mut e.observations, k, v, module_id, &author, &mut set, &mut skip)?;
         }
         Ok(nidx)
     }
@@ -473,25 +500,36 @@ impl RedstringApp {
     }
 }
 
-fn fill_attr(
-    attrs: &mut Vec<(String, String)>,
+fn fill_obs(
+    observations: &mut Vec<Observation>,
     key: &str,
     value: &str,
+    module_id: &str,
+    author: &Author,
     set: &mut usize,
     skipped: &mut usize,
-) {
-    let pos = attrs.iter().position(|(k, _)| k == key);
+) -> Result<(), Error> {
+    let pos = observations.iter().position(|o| o.name == key);
     let Some(p) = pos else {
-        attrs.push((key.to_owned(), value.to_owned()));
+        observations.push(Observation::stamp(
+            key.to_owned(),
+            ObsValue::Text(value.to_owned()),
+            Origin::Lookup(module_id.to_owned()),
+            Verification::MachineSuggested,
+            author.clone(),
+        )?);
         *set += 1;
-        return;
+        return Ok(());
     };
-    if attrs[p].1.trim().is_empty() {
-        attrs[p].1 = value.to_owned();
+    if observations[p].value.text()?.trim().is_empty() {
+        observations[p].value = ObsValue::Text(value.to_owned());
+        observations[p].origin = Origin::Lookup(module_id.to_owned());
+        observations[p].status = Verification::MachineSuggested;
         *set += 1;
-        return;
+        return Ok(());
     }
     *skipped += 1;
+    Ok(())
 }
 
 fn key_env(keys: &[String], api_keys: &[(String, String)]) -> Vec<(String, String)> {
@@ -546,15 +584,34 @@ mod tests {
     }
 
     #[test]
-    fn fill_attr_never_clobbers() {
-        let mut attrs = vec![("country".to_owned(), "AU".to_owned()), ("city".to_owned(), String::new())];
+    fn fill_obs_never_clobbers() {
+        let author = Author::default();
+        let mut obs = vec![
+            Observation::stamp(
+                "country".to_owned(),
+                ObsValue::Text("AU".to_owned()),
+                Origin::Manual,
+                Verification::AnalystAsserted,
+                author.clone(),
+            )
+            .unwrap(),
+            Observation::stamp(
+                "city".to_owned(),
+                ObsValue::Text(String::new()),
+                Origin::Manual,
+                Verification::AnalystAsserted,
+                author.clone(),
+            )
+            .unwrap(),
+        ];
         let (mut set, mut skip) = (0usize, 0usize);
-        fill_attr(&mut attrs, "country", "US", &mut set, &mut skip);
-        fill_attr(&mut attrs, "city", "Brisbane", &mut set, &mut skip);
-        fill_attr(&mut attrs, "region", "QLD", &mut set, &mut skip);
-        assert_eq!(attrs[0].1, "AU", "existing value untouched");
-        assert_eq!(attrs[1].1, "Brisbane", "empty filled");
-        assert_eq!(attrs[2], ("region".to_owned(), "QLD".to_owned()), "missing appended");
+        fill_obs(&mut obs, "country", "US", "mod", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "city", "Brisbane", "mod", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "region", "QLD", "mod", &author, &mut set, &mut skip).unwrap();
+        assert_eq!(obs[0].value.text().unwrap(), "AU", "existing value untouched");
+        assert_eq!(obs[1].value.text().unwrap(), "Brisbane", "empty filled");
+        assert_eq!(obs[2].name, "region", "missing appended");
+        assert_eq!(obs[2].value.text().unwrap(), "QLD");
         assert_eq!((set, skip), (2, 1));
     }
 

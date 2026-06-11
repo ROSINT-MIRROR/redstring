@@ -30,7 +30,7 @@ impl RedstringApp {
                 kind: e.kind,
                 label: e.label.clone(),
                 value: e.value.clone(),
-                attrs: e.attrs.clone(),
+                observations: e.observations.clone(),
                 image: self.image_rec(&e.image)?,
             });
             let loc = n.location();
@@ -44,11 +44,17 @@ impl RedstringApp {
             let Some(r) = g.edge_weight(idx) else { continue };
             let Some(from) = g.node_weight(a) else { continue };
             let Some(to) = g.node_weight(b) else { continue };
+            let rel = r.payload();
             cf.data.relations.push(RelationRec {
                 from: from.payload().slug.clone(),
                 to: to.payload().slug.clone(),
-                kind: r.payload().kind,
-                sources: r.payload().sources.clone(),
+                kind: rel.kind,
+                origin: rel.origin.clone(),
+                status: rel.status,
+                confidence: rel.confidence,
+                author: rel.author.clone(),
+                created_at: rel.created_at,
+                sources: rel.sources.clone(),
             });
         }
         cf.display.camera = camera_read(ui)?;
@@ -83,7 +89,7 @@ impl RedstringApp {
             let loc = n.location();
             parts.push(format!(
                 "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}",
-                e.slug, e.kind, e.label, e.value, e.attrs, e.image, e.note, loc.x, loc.y, e.size
+                e.slug, e.kind, e.label, e.value, e.observations, e.image, e.note, loc.x, loc.y, e.size
             ));
         }
         for idx in g.edge_indices() {
@@ -232,7 +238,6 @@ impl RedstringApp {
         let mut g: RsGraph = Graph::from(&StableGraph::default());
         let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
         let mut healed = 0usize;
-        let mut upgraded = 0usize;
         let mut note_errs: Vec<String> = Vec::new();
         for (i, er) in cf.data.entities.iter().enumerate() {
             if by_slug.contains_key(&er.slug) {
@@ -248,18 +253,17 @@ impl RedstringApp {
                     String::new()
                 }
             };
-            let mut ent = Entity {
+            let ent = Entity {
                 slug: er.slug.clone(),
                 kind: er.kind,
                 label: er.label.clone(),
                 value: er.value.clone(),
-                attrs: er.attrs.clone(),
+                observations: er.observations.clone(),
                 note,
                 image: image_abs(&project, &er.image)?,
                 size: size_of(&cf.display, &er.slug),
                 boost: 1.0,
             };
-            upgraded += ent.merge_template_attrs()?;
             let idx = g.add_node_with_label_and_location(
                 ent,
                 format!("{} {}", KIND_META[er.kind as usize].icon, er.label),
@@ -279,6 +283,11 @@ impl RedstringApp {
                 b,
                 Relation {
                     kind: rr.kind,
+                    origin: rr.origin.clone(),
+                    status: rr.status,
+                    confidence: rr.confidence,
+                    author: rr.author.clone(),
+                    created_at: rr.created_at,
                     sources: rr.sources.clone(),
                 },
                 RELATION_META[rr.kind as usize].label.into(),
@@ -297,10 +306,6 @@ impl RedstringApp {
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;
         self.saved_fp = self.fingerprint()?;
-        if upgraded > 0 {
-
-            self.saved_fp.clear();
-        }
 
         self.status = format!(
             "loaded {} entities / {} links from {}",
@@ -310,9 +315,6 @@ impl RedstringApp {
         );
         if healed > 0 {
             self.status += &format!(" · placed {healed} unpositioned");
-        }
-        if upgraded > 0 {
-            self.status += &format!(" · added {upgraded} new template attrs — save to persist");
         }
         if !note_errs.is_empty() {
             self.status += &format!(" · {} notes unreadable: {}", note_errs.len(), note_errs[0]);

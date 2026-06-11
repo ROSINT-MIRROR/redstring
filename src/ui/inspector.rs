@@ -1,10 +1,11 @@
-use egui::RichText;
+use egui::{RichText, Vec2};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, RELATION_META, RelationKind, SOURCE_META,
-    Source, ValueFormat, format_hint, pretty_key, slugify,
+    Author, CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, ObsValue, Observation, Origin,
+    RELATION_META, RelationKind, SOURCE_META, Source, ValueFormat, Verification, format_hint,
+    pretty_key, slugify, status_color, status_label,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
@@ -99,17 +100,14 @@ impl RedstringApp {
     fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> Result<(), Error> {
         let mut picked_image: Option<String> = None;
         let mut delete = false;
+        let author = self.author.clone();
 
         let Some(node) = self.g.node_mut(nidx) else {
             return Ok(());
         };
         let e = node.payload_mut();
 
-        let prev_kind = e.kind;
         kind_combo(ui, "insp_kind", &mut e.kind);
-        if e.kind != prev_kind {
-            e.merge_template_attrs()?;
-        }
 
         ui.horizontal(|ui| {
             ui.label("label");
@@ -165,26 +163,34 @@ impl RedstringApp {
 
         style::section(ui, egui_phosphor::regular::TAG, "attributes")?;
         let mut remove: Option<usize> = None;
-        for (i, (k, v)) in e.attrs.iter_mut().enumerate() {
-            ui.horizontal(|ui| -> Result<(), Error> {
-                ui.add_sized(
-                    egui::Vec2::new(90.0, ui.spacing().interact_size.y),
-                    egui::Label::new(pretty_key(k)?).truncate(),
-                );
-                let w = (ui.available_width() - 34.0).max(40.0);
-                ui.add(
-                    egui::TextEdit::singleline(v)
-                        .desired_width(w)
-                        .hint_text("value"),
-                );
-                if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
-                    remove = Some(i);
-                }
-                Ok(())
-            })
-            .inner?;
+        for (i, o) in e.observations.iter_mut().enumerate() {
+            observation_row(ui, i, o, &mut remove)?;
         }
-        remove_marked(&mut e.attrs, remove);
+        remove_marked(&mut e.observations, remove);
+
+        ui.horizontal_wrapped(|ui| -> Result<(), Error> {
+            for key in KIND_META[e.kind as usize].attrs {
+                if e.observations.iter().any(|o| o.name == *key) {
+                    continue;
+                }
+                if ui
+                    .small_button(format!("+ {}", pretty_key(key)?))
+                    .on_hover_text("add this attribute as an observation")
+                    .clicked()
+                {
+                    e.observations.push(Observation::stamp(
+                        (*key).to_owned(),
+                        ObsValue::default(),
+                        Origin::Manual,
+                        Verification::Unreviewed,
+                        author.clone(),
+                    )?);
+                }
+            }
+            Ok(())
+        })
+        .inner?;
+
         ui.horizontal(|ui| -> Result<(), Error> {
             ui.add(
                 egui::TextEdit::singleline(&mut self.new_attr_key)
@@ -195,8 +201,14 @@ impl RedstringApp {
                 && !self.new_attr_key.trim().is_empty()
             {
                 let key = slugify(&self.new_attr_key)?;
-                if !e.attrs.iter().any(|(k, _)| *k == key) {
-                    e.attrs.push((key, String::new()));
+                if !e.observations.iter().any(|o| o.name == key) {
+                    e.observations.push(Observation::stamp(
+                        key,
+                        ObsValue::default(),
+                        Origin::Manual,
+                        Verification::AnalystAsserted,
+                        author.clone(),
+                    )?);
                 }
                 self.new_attr_key.clear();
             }
@@ -434,6 +446,101 @@ fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
     let Some(i) = marked else { return };
     items.remove(i);
+}
+
+fn observation_row(
+    ui: &mut egui::Ui,
+    i: usize,
+    o: &mut Observation,
+    remove: &mut Option<usize>,
+) -> Result<(), Error> {
+    ui.horizontal(|ui| -> Result<(), Error> {
+        ui.add_sized(
+            Vec2::new(90.0, ui.spacing().interact_size.y),
+            egui::Label::new(pretty_key(&o.name)?).truncate(),
+        );
+        let w = (ui.available_width() - 34.0).max(40.0);
+        match &mut o.value {
+            ObsValue::Text(s) => {
+                ui.add(egui::TextEdit::singleline(s).desired_width(w).hint_text("value"));
+            }
+            other => {
+                let mut buf = other.text()?;
+                let resp =
+                    ui.add(egui::TextEdit::singleline(&mut buf).desired_width(w).hint_text("value"));
+                if resp.changed() {
+                    *other = ObsValue::Text(buf);
+                }
+            }
+        }
+        if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
+            *remove = Some(i);
+        }
+        Ok(())
+    })
+    .inner?;
+
+    ui.horizontal(|ui| -> Result<(), Error> {
+        ui.add_space(90.0 + ui.spacing().item_spacing.x);
+        verification_combo(ui, i, &mut o.status)?;
+        ui.add(egui::DragValue::new(&mut o.confidence).range(0..=100u8).suffix("%"))
+            .on_hover_text("confidence");
+        ui.label(RichText::new(origin_label(&o.origin)).weak().small())
+            .on_hover_text(format!("who: {}", who(&o.author)));
+        if !o.sources.is_empty() {
+            ui.label(
+                RichText::new(format!("{} {}", egui_phosphor::regular::LINK, o.sources.len()))
+                    .weak()
+                    .small(),
+            )
+            .on_hover_text("cited sources");
+        }
+        Ok(())
+    })
+    .inner?;
+    Ok(())
+}
+
+
+fn verification_combo(ui: &mut egui::Ui, id: usize, status: &mut Verification) -> Result<(), Error> {
+    let cur_color = status_color(*status)?;
+    let cur_label = status_label(*status)?;
+    let mut faces = Vec::new();
+    for s in [
+        Verification::Unreviewed,
+        Verification::MachineSuggested,
+        Verification::AnalystAsserted,
+        Verification::Corroborated,
+        Verification::Rejected,
+    ] {
+        faces.push((s, status_label(s)?, status_color(s)?));
+    }
+    egui::ComboBox::from_id_salt(("obs_status", id))
+        .selected_text(RichText::new(cur_label).color(cur_color).small())
+        .show_ui(ui, |ui| {
+            for (s, l, c) in &faces {
+                ui.selectable_value(status, *s, RichText::new(*l).color(*c));
+            }
+        });
+    Ok(())
+}
+
+
+fn origin_label(o: &Origin) -> String {
+    match o {
+        Origin::Manual => "manual".to_owned(),
+        Origin::Lookup(m) => format!("via {m}"),
+        Origin::Import(s) => format!("import {s}"),
+        Origin::Inference => "inferred".to_owned(),
+    }
+}
+
+
+fn who(a: &Author) -> String {
+    if a.name.trim().is_empty() {
+        return "unknown".to_owned();
+    }
+    a.name.clone()
 }
 
 fn pick_image() -> Option<String> {

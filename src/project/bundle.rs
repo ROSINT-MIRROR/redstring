@@ -216,7 +216,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: String::new(),
-            attrs: vec![],
+            observations: vec![],
             image: Some("entities/doe/portrait.png".into()),
         });
         io::write_case(&p, &cf).unwrap();

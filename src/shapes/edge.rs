@@ -9,7 +9,7 @@ use egui::{Color32, Pos2, Shape, Stroke, Vec2};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
-use crate::model::Relation;
+use crate::model::{Relation, Verification};
 
 const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
 const TIP_SIZE: f32 = 12.0;
@@ -20,12 +20,10 @@ const GLOW_MULT: f32 = 3.2;
 const HIT_TOLERANCE: f32 = 6.0;
 const HOVER_PX: f32 = 9.0;
 
-const SOURCED: Color32 = Color32::from_rgb(120, 200, 140);
-const UNSOURCED: Color32 = Color32::from_rgb(235, 80, 80);
-
 #[derive(Clone)]
 pub struct SourcedEdgeShape {
     sourced: bool,
+    status: Verification,
     selected: bool,
     order: usize,
 }
@@ -34,6 +32,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
     fn from(props: EdgeProps<Relation>) -> Self {
         Self {
             sourced: !props.payload.sources.is_empty(),
+            status: props.payload.status,
             selected: props.selected,
             order: props.order,
         }
@@ -55,7 +54,13 @@ where
     ) -> Vec<Shape> {
         let (s, e) = trim_to_boundaries(start, end);
         let (s, e) = offset_ends(s, e, self.order);
-        let color = if self.sourced { SOURCED } else { UNSOURCED };
+        let color = match self.status {
+            Verification::Rejected => Color32::from_rgb(235, 80, 80),
+            Verification::Unreviewed => Color32::from_rgb(235, 150, 70),
+            Verification::MachineSuggested => Color32::from_rgb(230, 200, 90),
+            Verification::AnalystAsserted => Color32::from_rgb(110, 190, 200),
+            Verification::Corroborated => Color32::from_rgb(120, 200, 140),
+        };
 
         let a = ctx.meta.canvas_to_screen_pos(s);
         let b = ctx.meta.canvas_to_screen_pos(e);
@@ -99,6 +104,7 @@ where
 
     fn update(&mut self, state: &EdgeProps<Relation>) {
         self.sourced = !state.payload.sources.is_empty();
+        self.status = state.payload.status;
         self.selected = state.selected;
         self.order = state.order;
     }

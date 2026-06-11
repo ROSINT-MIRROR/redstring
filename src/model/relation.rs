@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
+
+use super::observation::{Author, DEFAULT_CONFIDENCE, Origin, Verification, now_unix};
 use super::source::Source;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -183,7 +186,41 @@ pub const RELATION_META: [RelMeta; 78] = [
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Relation {
     pub kind: RelationKind,
+    #[serde(default)]
+    pub origin: Origin,
+    #[serde(default)]
+    pub status: Verification,
+    #[serde(default = "full_confidence")]
+    pub confidence: u8,
+    #[serde(default)]
+    pub author: Author,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
     pub sources: Vec<Source>,
+}
+
+fn full_confidence() -> u8 {
+    DEFAULT_CONFIDENCE
+}
+
+impl Relation {
+    pub fn stamp(
+        kind: RelationKind,
+        origin: Origin,
+        status: Verification,
+        author: Author,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            kind,
+            origin,
+            status,
+            confidence: DEFAULT_CONFIDENCE,
+            author,
+            created_at: now_unix()?,
+            sources: Vec::new(),
+        })
+    }
 }
 
 #[cfg(test)]

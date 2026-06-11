@@ -3,7 +3,7 @@ use egui::{Rect, RichText, Shape, Stroke};
 use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
-use crate::model::{RELATION_META, Relation, RelationKind};
+use crate::model::{Origin, RELATION_META, Relation, RelationKind, Verification};
 use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, NODE_RADIUS};
 
 use super::app::{ALARM_RED, RedstringApp};
@@ -153,7 +153,7 @@ impl RedstringApp {
         if area.response.clicked_elsewhere() {
             close = true;
         }
-        close |= self.commit_verb(from, to, &from_l, &to_l, picked);
+        close |= self.commit_verb(from, to, &from_l, &to_l, picked)?;
         if close {
             self.pending_edge = None;
         }
@@ -167,20 +167,14 @@ impl RedstringApp {
         from_l: &str,
         to_l: &str,
         picked: Option<RelationKind>,
-    ) -> bool {
-        let Some(kind) = picked else { return false };
+    ) -> Result<bool, Error> {
+        let Some(kind) = picked else { return Ok(false) };
         let label = RELATION_META[kind as usize].label;
-        self.g.add_edge_with_label(
-            from,
-            to,
-            Relation {
-                kind,
-                sources: Vec::new(),
-            },
-            label.into(),
-        );
+        let relation =
+            Relation::stamp(kind, Origin::Manual, Verification::Unreviewed, self.author.clone())?;
+        self.g.add_edge_with_label(from, to, relation, label.into());
         self.status = format!("linked: {from_l} —{label}→ {to_l} (unsourced — attach a source!)");
-        true
+        Ok(true)
     }
 
     pub fn label_editor(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {

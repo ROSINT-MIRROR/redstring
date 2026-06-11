@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
+use super::observation::Observation;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
     People,
@@ -300,7 +302,8 @@ pub struct Entity {
 
     #[serde(default)]
     pub value: String,
-    pub attrs: Vec<(String, String)>,
+    #[serde(default)]
+    pub observations: Vec<Observation>,
     pub note: String,
     pub image: Option<String>,
     #[serde(default = "default_node_size")]
@@ -351,15 +354,12 @@ pub fn pretty_key(slug: &str) -> Result<String, Error> {
 impl Entity {
 
 
-    pub fn merge_template_attrs(&mut self) -> Result<usize, Error> {
-        let mut added = 0usize;
-        for key in KIND_META[self.kind as usize].attrs {
-            if !self.attrs.iter().any(|(k, _)| k == key) {
-                self.attrs.push(((*key).to_owned(), String::new()));
-                added += 1;
-            }
+    pub fn attr_pairs(&self) -> Result<Vec<(String, String)>, Error> {
+        let mut out = Vec::new();
+        for o in &self.observations {
+            out.push((o.name.clone(), o.value.text()?));
         }
-        Ok(added)
+        Ok(out)
     }
 
 
@@ -394,25 +394,42 @@ mod tests {
     }
 
     #[test]
-    fn merge_template_attrs_fills_gaps_idempotently() {
+    fn attr_pairs_flattens_observations_to_text() {
+        use crate::model::{Author, ObsValue, Observation, Origin, Verification};
         let mut e = Entity {
             slug: "j_doe".into(),
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: String::new(),
-            attrs: vec![("dob".into(), "1953-01-20".into()), ("custom".into(), "x".into())],
+            observations: Vec::new(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
             boost: 1.0,
         };
-        let added = e.merge_template_attrs().unwrap();
-        assert_eq!(added, 4);
-        assert!(e.attrs.iter().any(|(k, _)| k == "first_name"));
-
-        assert_eq!(e.attrs[0], ("dob".to_string(), "1953-01-20".to_string()));
-        assert!(e.attrs.iter().any(|(k, v)| k == "custom" && v == "x"));
-        assert_eq!(e.merge_template_attrs().unwrap(), 0);
+        e.observations.push(
+            Observation::stamp(
+                "dob".into(),
+                ObsValue::Text("1953-01-20".into()),
+                Origin::Manual,
+                Verification::AnalystAsserted,
+                Author::default(),
+            )
+            .unwrap(),
+        );
+        e.observations.push(
+            Observation::stamp(
+                "weight_kg".into(),
+                ObsValue::Number(82.0),
+                Origin::Manual,
+                Verification::AnalystAsserted,
+                Author::default(),
+            )
+            .unwrap(),
+        );
+        let pairs = e.attr_pairs().unwrap();
+        assert_eq!(pairs[0], ("dob".to_string(), "1953-01-20".to_string()));
+        assert_eq!(pairs[1], ("weight_kg".to_string(), "82".to_string()));
     }
 
     #[test]
@@ -448,7 +465,7 @@ mod tests {
             kind: EntityKind::Domain,
             label: "the suspicious site evil.example".into(),
             value: String::new(),
-            attrs: Vec::new(),
+            observations: Vec::new(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
