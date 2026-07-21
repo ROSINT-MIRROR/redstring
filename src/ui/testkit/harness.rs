@@ -104,6 +104,24 @@ pub fn frame<R>(
     outcome
 }
 
+pub fn frame_input<R>(
+    app: &mut RedstringApp,
+    input: egui::RawInput,
+    mut body: impl FnMut(&mut RedstringApp, &mut egui::Ui) -> Result<R, Error>,
+) -> Result<R, Error> {
+    let ctx = egui::Context::default();
+    let mut slot: Option<Result<R, Error>> = None;
+    let _full = ctx.run(input, |c| {
+        egui::CentralPanel::default().show(c, |ui| {
+            slot = Some(body(app, ui));
+        });
+    });
+    let outcome = slot.ok_or(Error::Testkit {
+        what: "headless egui frame did not execute the panel body".to_owned(),
+    })?;
+    outcome
+}
+
 pub fn save(app: &mut RedstringApp) -> Result<(), Error> {
     frame(app, |a, ui| a.save(ui))
 }
