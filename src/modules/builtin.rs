@@ -1,4 +1,4 @@
-pub const BUILTIN: [(&str, &str); 25] = [
+pub const BUILTIN: [(&str, &str); 27] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
     ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
@@ -24,4 +24,6 @@ pub const BUILTIN: [(&str, &str); 25] = [
     ("builtin:filehash", include_str!("../../modules/filehash.ron")),
     ("builtin:geocode", include_str!("../../modules/geocode.ron")),
     ("builtin:favicon", include_str!("../../modules/favicon.ron")),
+    ("builtin:shodan", include_str!("../../modules/shodan.ron")),
+    ("builtin:binwalk", include_str!("../../modules/binwalk.ron")),
 ];
