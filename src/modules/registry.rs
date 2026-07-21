@@ -22,7 +22,7 @@ pub enum ModuleStatus {
 
     Active(PathBuf),
 
-    Missing,
+    Missing(Vec<String>),
 
     Broken(String),
 }
@@ -85,10 +85,23 @@ fn module_status(spec: &ModuleSpec, problems: Vec<String>) -> ModuleStatus {
     if !problems.is_empty() {
         return ModuleStatus::Broken(problems.join("; "));
     }
-    let Some(p) = which(&spec.bin) else {
-        return ModuleStatus::Missing;
+    let bin_path = which(&spec.bin);
+    let mut missing = Vec::new();
+    if bin_path.is_none() {
+        missing.push(spec.bin.clone());
+    }
+    for req in &spec.requires {
+        if which(req).is_none() {
+            missing.push(req.clone());
+        }
+    }
+    let Some(path) = bin_path else {
+        return ModuleStatus::Missing(missing);
     };
-    ModuleStatus::Active(p)
+    if !missing.is_empty() {
+        return ModuleStatus::Missing(missing);
+    }
+    ModuleStatus::Active(path)
 }
 
 fn user_specs() -> Result<Vec<(String, String)>, Error> {
@@ -399,5 +412,52 @@ OrgName:        Google LLC
     fn which_finds_sh_and_rejects_nonsense() {
         assert!(which("sh").is_some());
         assert!(which("definitely_not_a_real_binary_xyz").is_none());
+    }
+
+    fn probe_spec(bin: &str, requires: &[&str]) -> ModuleSpec {
+        ModuleSpec {
+            id: "t".into(),
+            label: "t".into(),
+            applies_to: vec!["domain".into()],
+            bin: bin.into(),
+            requires: requires.iter().map(|s| (*s).to_string()).collect(),
+            args: Vec::new(),
+            timeout_secs: 5,
+            keys: Vec::new(),
+            shapes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn requires_gate_names_missing_pipeline_bin() {
+        let spec = probe_spec("sh", &["definitely_not_a_real_binary_xyz"]);
+        let ModuleStatus::Missing(missing) = module_status(&spec, Vec::new()) else {
+            panic!("a required pipeline bin being absent must yield Missing");
+        };
+        assert!(missing.iter().any(|m| m == "definitely_not_a_real_binary_xyz"));
+        assert!(!missing.iter().any(|m| m == "sh"));
+    }
+
+    #[test]
+    fn bin_and_requires_all_present_is_active() {
+        let spec = probe_spec("sh", &["sh"]);
+        let ModuleStatus::Active(_) = module_status(&spec, Vec::new()) else {
+            panic!("sh present with requires=[sh] must be Active");
+        };
+    }
+
+    #[test]
+    fn missing_bin_is_named_in_missing_list() {
+        let spec = probe_spec("definitely_not_a_real_binary_xyz", &[]);
+        let ModuleStatus::Missing(missing) = module_status(&spec, Vec::new()) else {
+            panic!("an absent bin must yield Missing");
+        };
+        assert!(missing.iter().any(|m| m == "definitely_not_a_real_binary_xyz"));
+    }
+
+    #[test]
+    fn katana_now_applies_to_domain() {
+        let entry = entry_from_str("builtin:katana", BUILTIN[4].1).unwrap();
+        assert!(entry.spec.kinds().unwrap().contains(&EntityKind::Domain));
     }
 }

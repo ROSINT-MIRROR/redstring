@@ -367,11 +367,11 @@ fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
                     ui.label(RichText::new(&entry.spec.label).strong());
                     ui.label(RichText::new(path.display().to_string()).weak().small());
                 }
-                crate::modules::ModuleStatus::Missing => {
+                crate::modules::ModuleStatus::Missing(missing) => {
                     ui.colored_label(super::app::ALARM_RED, egui_phosphor::regular::X);
                     ui.label(RichText::new(&entry.spec.label).strong());
                     ui.label(
-                        RichText::new(format!("'{}' not on PATH — hidden", entry.spec.bin))
+                        RichText::new(format!("{} not on PATH — hidden", missing.join(", ")))
                             .weak()
                             .small(),
                     );

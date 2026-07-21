@@ -8,6 +8,7 @@
     label: "candel username sweep",
     applies_to: ["alias"],
     bin: "candel",
+    requires: [],
     args: ["{value}", "--json"],
     timeout_secs: 180,
     shapes: [

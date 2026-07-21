@@ -8,8 +8,9 @@
 (
     id: "katana",
     label: "katana crawl",
-    applies_to: ["website", "web_page"],
+    applies_to: ["domain", "website", "web_page"],
     bin: "sh",
+    requires: ["katana", "jq"],
     args: ["-c", "katana -u '{value}' -jsonl -silent -d 2 | jq -c '{url: (.request.endpoint // .endpoint // .url)}'"],
     timeout_secs: 120,
     shapes: [

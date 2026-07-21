@@ -13,6 +13,7 @@
     label: "crt.sh CT subdomains",
     applies_to: ["domain"],
     bin: "sh",
+    requires: ["curl", "jq"],
     args: ["-c", "r=$(curl -sf --retry 3 --retry-delay 2 --retry-all-errors -m 40 'https://crt.sh/?q={value}&output=json') && printf '%s' \"$r\" | jq -c '.[] | {issuer: .issuer_name, san: (.name_value | split(\"\\n\")[])}'"],
     timeout_secs: 150,
     shapes: [
