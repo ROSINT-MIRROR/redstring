@@ -1,0 +1,6 @@
+(
+    slug: "evil_corp_example",
+    kind: Domain,
+    label: "evil-corp.example",
+    value: "evil-corp.example",
+)

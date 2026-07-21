@@ -1,0 +1,2 @@
+{"id":"000000000000000000000c01000000000000d101","name":"registrar","value":{"Text":"MarkMonitor Inc."},"origin":{"Lookup":"whois"},"status":"MachineSuggested","confidence":100,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[]}
+{"id":"000000000000000000000c02000000000000d102","name":"registered_on","value":{"Text":"2019-04-12T10:22:31Z"},"origin":{"Lookup":"whois"},"status":"MachineSuggested","confidence":100,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[]}

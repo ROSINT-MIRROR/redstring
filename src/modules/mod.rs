@@ -3,6 +3,8 @@ mod extract;
 mod registry;
 mod run;
 mod spec;
+#[cfg(test)]
+pub mod testkit;
 
 pub use emit::Fact;
 pub use registry::{ModuleStatus, Registry};

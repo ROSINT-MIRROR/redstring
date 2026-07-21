@@ -84,6 +84,16 @@ pub enum Error {
         pattern: String,
         source: regex::Error,
     },
+
+    #[cfg(test)]
+    InvariantViolated {
+        what: String,
+    },
+
+    #[cfg(test)]
+    Testkit {
+        what: String,
+    },
 }
 
 impl std::error::Error for Error {}
@@ -157,6 +167,10 @@ impl std::fmt::Display for Error {
             Self::BadRegex { pattern, source } => {
                 write!(f, "bad regex '{pattern}': {source}")
             }
+            #[cfg(test)]
+            Self::InvariantViolated { what } => write!(f, "invariant violated: {what}"),
+            #[cfg(test)]
+            Self::Testkit { what } => write!(f, "testkit: {what}"),
         }
     }
 }

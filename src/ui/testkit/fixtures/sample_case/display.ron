@@ -1,0 +1,17 @@
+(
+    camera: (
+        x: 12.0,
+        y: -8.0,
+        zoom: 1.1,
+    ),
+    positions: {
+        "j_doe": (-120.0, 40.0),
+        "shell_co_ltd": (60.0, -30.0),
+        "evil_corp_example": (180.0, 90.0),
+    },
+    sizes: {
+        "shell_co_ltd": 2.5,
+    },
+    size_by_degree: false,
+    collapsed: [],
+)

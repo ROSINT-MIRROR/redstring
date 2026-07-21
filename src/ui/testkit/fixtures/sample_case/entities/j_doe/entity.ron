@@ -1,0 +1,6 @@
+(
+    slug: "j_doe",
+    kind: Person,
+    label: "J. Doe",
+    value: "John Doe",
+)

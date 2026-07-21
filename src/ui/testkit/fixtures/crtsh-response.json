@@ -1,0 +1,22 @@
+[
+  {
+    "issuer_ca_id": 183267,
+    "issuer_name": "C=US, O=Let's Encrypt, CN=R3",
+    "common_name": "evil-corp.example",
+    "name_value": "evil-corp.example\nwww.evil-corp.example",
+    "id": 9876543210,
+    "entry_timestamp": "2024-01-15T04:22:11.123",
+    "not_before": "2024-01-15T03:22:10",
+    "not_after": "2024-04-14T03:22:09"
+  },
+  {
+    "issuer_ca_id": 183267,
+    "issuer_name": "C=US, O=Let's Encrypt, CN=R3",
+    "common_name": "mail.evil-corp.example",
+    "name_value": "mail.evil-corp.example",
+    "id": 9876543099,
+    "entry_timestamp": "2023-12-02T11:03:41.900",
+    "not_before": "2023-12-02T10:03:40",
+    "not_after": "2024-03-01T10:03:39"
+  }
+]
