@@ -264,9 +264,10 @@ impl RedstringApp {
             )
         });
 
+        let sec_on_empty = matches!(self.right_press, Some((None, _)));
         if !self.panning
             && pointer.is_some_and(|p| rect.contains(p))
-            && (mid_pressed || (sec_pressed && self.edge_drag.is_none()))
+            && (mid_pressed || (sec_pressed && sec_on_empty))
         {
             self.panning = true;
         }

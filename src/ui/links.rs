@@ -10,14 +10,59 @@ use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
 
 const MAX_LABEL_PX: f32 = 256.0;
+const DRAG_THRESHOLD: f32 = 4.0;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum RightRelease {
+    Idle,
+    Menu(NodeIndex),
+    Link(NodeIndex, NodeIndex),
+    CancelLink,
+}
+
+fn right_release_outcome(
+    edge_drag: Option<NodeIndex>,
+    press_node: Option<NodeIndex>,
+    release_node: Option<NodeIndex>,
+) -> RightRelease {
+    let Some(from) = edge_drag else {
+        let Some(node) = press_node else {
+            return RightRelease::Idle;
+        };
+        if release_node == Some(node) {
+            return RightRelease::Menu(node);
+        }
+        return RightRelease::Idle;
+    };
+    let Some(to) = release_node else {
+        return RightRelease::CancelLink;
+    };
+    if to == from {
+        return RightRelease::CancelLink;
+    }
+    RightRelease::Link(from, to)
+}
+
+fn edge_start_node(
+    edge_drag: Option<NodeIndex>,
+    down: bool,
+    press_node: Option<NodeIndex>,
+    moved: bool,
+) -> Option<NodeIndex> {
+    if edge_drag.is_some() || !down || !moved {
+        return None;
+    }
+    press_node
+}
 
 impl RedstringApp {
     pub fn edge_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
-        let (pressed, released, down, pointer) = ui.input(|i| {
+        let (pressed, released, down, escape, pointer) = ui.input(|i| {
             (
                 i.pointer.secondary_pressed(),
                 i.pointer.secondary_released(),
                 i.pointer.secondary_down(),
+                i.key_pressed(egui::Key::Escape),
                 i.pointer.interact_pos(),
             )
         });
@@ -27,41 +72,79 @@ impl RedstringApp {
             && self.node_drag.is_none()
             && let Some(p) = pointer.filter(|p| rect.contains(*p))
         {
-            self.edge_drag = self.node_at_screen(ui, rect, p)?;
-            if self.edge_drag.is_some() {
-                self.status = "release on a target entity to link".into();
-            }
+            let node = self.node_at_screen(ui, rect, p)?;
+            self.right_press = Some((node, p));
         }
 
-        let Some(from) = self.edge_drag else {
-            return Ok(());
-        };
-
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if escape {
+            if self.edge_drag.is_some() {
+                self.status = "link cancelled".into();
+            }
             self.edge_drag = None;
-            self.status = "link cancelled".into();
+            self.right_press = None;
             return Ok(());
+        }
+
+        let press_node = self.right_press.and_then(|(n, _)| n);
+        let moved = self.right_moved(pointer);
+        if self.edge_drag.is_none()
+            && let Some(node) = edge_start_node(self.edge_drag, down, press_node, moved)
+        {
+            self.edge_drag = Some(node);
+            self.status = "release on a target entity to link".into();
         }
 
         if released {
-            self.edge_drag = None;
-            let to = self.released_target(ui, rect, pointer)?;
-            let (Some(to), Some(p)) = (to, pointer) else {
-                self.status = "link cancelled".into();
-                return Ok(());
-            };
-            if to == from {
-                self.node_menu = Some((from, p));
-                self.status = "expand or collapse this node's subtree".into();
-                return Ok(());
-            }
-            self.verb_filter.clear();
-            self.verb_filter_focus = true;
-            self.pending_edge = Some((from, to, p));
-            return Ok(());
+            return self.right_release(ui, rect, pointer);
         }
         if !down {
             self.edge_drag = None;
+            self.right_press = None;
+        }
+        Ok(())
+    }
+
+    fn right_moved(&self, pointer: Option<egui::Pos2>) -> bool {
+        let Some((_, origin)) = self.right_press else {
+            return false;
+        };
+        let Some(p) = pointer else {
+            return false;
+        };
+        (p - origin).length() > DRAG_THRESHOLD
+    }
+
+    fn right_release(
+        &mut self,
+        ui: &egui::Ui,
+        rect: Rect,
+        pointer: Option<egui::Pos2>,
+    ) -> Result<(), Error> {
+        let press = self.right_press.take();
+        let edge_from = self.edge_drag.take();
+        let press_node = press.and_then(|(n, _)| n);
+        let release_node = self.released_target(ui, rect, pointer)?;
+        match right_release_outcome(edge_from, press_node, release_node) {
+            RightRelease::Idle => {}
+            RightRelease::CancelLink => {
+                self.status = "link cancelled".into();
+            }
+            RightRelease::Menu(node) => {
+                let Some(p) = pointer else {
+                    return Ok(());
+                };
+                self.node_menu = Some((node, p));
+                self.node_menu_just_opened = true;
+                self.status = "expand or collapse this node's subtree".into();
+            }
+            RightRelease::Link(from, to) => {
+                let Some(p) = pointer else {
+                    return Ok(());
+                };
+                self.verb_filter.clear();
+                self.verb_filter_focus = true;
+                self.pending_edge = Some((from, to, p));
+            }
         }
         Ok(())
     }
@@ -335,6 +418,53 @@ impl RedstringApp {
 
 #[cfg(test)]
 mod tests {
+    use petgraph::graph::NodeIndex;
+
+    use super::{RightRelease, edge_start_node, right_release_outcome};
+
+    fn n(i: usize) -> NodeIndex {
+        NodeIndex::new(i)
+    }
+
+    #[test]
+    fn simple_right_click_on_node_opens_menu() {
+        let a = n(0);
+        assert_eq!(
+            right_release_outcome(None, Some(a), Some(a)),
+            RightRelease::Menu(a)
+        );
+    }
+
+    #[test]
+    fn right_click_released_off_node_does_not_open_menu() {
+        let a = n(0);
+        assert_eq!(right_release_outcome(None, Some(a), None), RightRelease::Idle);
+        assert_eq!(right_release_outcome(None, None, None), RightRelease::Idle);
+    }
+
+    #[test]
+    fn right_drag_between_nodes_links_and_never_opens_menu() {
+        let a = n(0);
+        let b = n(1);
+        assert_eq!(edge_start_node(None, true, Some(a), true), Some(a));
+        assert_eq!(edge_start_node(None, true, Some(a), false), None);
+        assert_eq!(edge_start_node(None, false, Some(a), true), None);
+        assert_eq!(edge_start_node(Some(a), true, Some(a), true), None);
+        assert_eq!(edge_start_node(None, true, None, true), None);
+        assert_eq!(
+            right_release_outcome(Some(a), Some(a), Some(b)),
+            RightRelease::Link(a, b)
+        );
+        assert_eq!(
+            right_release_outcome(Some(a), Some(a), Some(a)),
+            RightRelease::CancelLink
+        );
+        assert_eq!(
+            right_release_outcome(Some(a), Some(a), None),
+            RightRelease::CancelLink
+        );
+    }
+
     fn editor_pass(ctx: &egui::Context, buf: &mut String) -> (f32, f32, usize) {
         let mut got = (0.0, 0.0, 0usize);
         let _ = ctx.run(egui::RawInput::default(), |ctx| {

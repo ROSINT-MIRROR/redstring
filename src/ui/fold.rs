@@ -27,6 +27,17 @@ fn derive_hidden(g: &RsGraph) -> HashSet<NodeIndex> {
     hidden
 }
 
+fn fold_target(double: bool, over: Option<NodeIndex>) -> Option<NodeIndex> {
+    if !double {
+        return None;
+    }
+    over
+}
+
+fn menu_should_close(escape: bool, clicked_elsewhere: bool, acted: bool, just_opened: bool) -> bool {
+    escape || acted || (clicked_elsewhere && !just_opened)
+}
+
 fn collect_subtree(g: &RsGraph, root: NodeIndex) -> Vec<NodeIndex> {
     let inner = g.g();
     let mut seen = HashSet::new();
@@ -130,13 +141,11 @@ impl RedstringApp {
                 i.pointer.interact_pos(),
             )
         });
-        if !dbl {
-            return Ok(());
-        }
         let Some(p) = pointer.filter(|p| rect.contains(*p)) else {
             return Ok(());
         };
-        let Some(idx) = self.node_at_screen(ui, rect, p)? else {
+        let over = self.node_at_screen(ui, rect, p)?;
+        let Some(idx) = fold_target(dbl, over) else {
             return Ok(());
         };
         self.toggle_collapse(idx)?;
@@ -150,8 +159,10 @@ impl RedstringApp {
         };
         if self.g.node(idx).is_none() {
             self.node_menu = None;
+            self.node_menu_just_opened = false;
             return Ok(());
         }
+        let just_opened = std::mem::take(&mut self.node_menu_just_opened);
         let label = self.node_label(idx)?;
         let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
         let mut collapse_all = false;
@@ -181,7 +192,9 @@ impl RedstringApp {
         if expand_all {
             self.expand_subtree(idx)?;
         }
-        if escape || area.response.clicked_elsewhere() || collapse_all || expand_all {
+        let acted = collapse_all || expand_all;
+        let elsewhere = area.response.clicked_elsewhere();
+        if menu_should_close(escape, elsewhere, acted, just_opened) {
             self.node_menu = None;
         }
         Ok(())
@@ -196,7 +209,7 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::super::app::RsGraph;
-    use super::{collect_subtree, derive_hidden};
+    use super::{collect_subtree, derive_hidden, fold_target, menu_should_close};
     use crate::model::{
         Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind, Verification,
     };
@@ -261,12 +274,24 @@ mod tests {
     }
 
     #[test]
-    fn double_click_hides_one_level_only() {
+    fn double_click_over_node_targets_that_node_and_toggles_one_level() {
         let (mut g, ids) = chain();
+        assert_eq!(fold_target(true, Some(ids[0])), Some(ids[0]));
+        assert_eq!(fold_target(true, None), None);
+        assert_eq!(fold_target(false, Some(ids[0])), None);
         set_collapsed(&mut g, ids[0], true);
         assert_eq!(hidden_slugs(&g), vec!["b".to_string()]);
         set_collapsed(&mut g, ids[0], false);
         assert!(hidden_slugs(&g).is_empty());
+    }
+
+    #[test]
+    fn menu_stays_on_the_frame_it_opens_then_closes_on_outside_click() {
+        assert!(!menu_should_close(false, true, false, true));
+        assert!(menu_should_close(false, true, false, false));
+        assert!(menu_should_close(true, false, false, false));
+        assert!(menu_should_close(false, false, true, false));
+        assert!(!menu_should_close(false, false, false, false));
     }
 
     #[test]

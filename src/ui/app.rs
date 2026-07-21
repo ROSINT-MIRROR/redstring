@@ -49,9 +49,11 @@ pub struct RedstringApp {
     pub palette_open: [bool; CATEGORY_META.len()],
 
     pub edge_drag: Option<NodeIndex>,
+    pub right_press: Option<(Option<NodeIndex>, Pos2)>,
     pub pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
 
     pub node_menu: Option<(NodeIndex, Pos2)>,
+    pub node_menu_just_opened: bool,
     pub verb_filter: String,
     pub verb_filter_focus: bool,
 
@@ -130,8 +132,10 @@ impl RedstringApp {
             kind_search: String::new(),
             palette_open: [true; CATEGORY_META.len()],
             edge_drag: None,
+            right_press: None,
             pending_edge: None,
             node_menu: None,
+            node_menu_just_opened: false,
             verb_filter: String::new(),
             verb_filter_focus: false,
             label_edit: None,
