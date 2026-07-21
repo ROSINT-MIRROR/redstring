@@ -56,6 +56,18 @@ impl Registry {
         }
         Ok(out)
     }
+
+    pub fn key_ids(&self) -> Result<Vec<String>, Error> {
+        let mut out: Vec<String> = Vec::new();
+        for e in &self.entries {
+            for k in &e.spec.keys {
+                if !out.contains(k) {
+                    out.push(k.clone());
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 fn entry_from_str(origin: &str, text: &str) -> Result<ModuleEntry, Error> {
@@ -151,3 +163,5 @@ fn is_exec(p: &Path) -> bool {
 include!("registry_tests.rs");
 #[cfg(test)]
 include!("transforms_tests.rs");
+#[cfg(test)]
+include!("key_ids_tests.rs");
