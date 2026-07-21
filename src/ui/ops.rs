@@ -3,8 +3,8 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, Origin, RELATION_META, Relation, RelationKind,
-    Source, SourceKind, Verification,
+    DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, Origin, Preset, RELATION_META, Relation,
+    RelationKind, Role, Source, SourceKind, Verification, apply_preset,
 };
 
 use super::app::RedstringApp;
@@ -14,7 +14,7 @@ impl RedstringApp {
         let doe = self.add_entity(EntityKind::Person, "J. Doe".into(), spiral(0)?)?;
         let shell = self.add_entity(EntityKind::ShellCompany, "Shell Co Ltd".into(), spiral(1)?)?;
         let domain = self.add_entity(EntityKind::Domain, "evil.example".into(), spiral(2)?)?;
-        let minister = self.add_entity(EntityKind::Official, "Minister X".into(), spiral(3)?)?;
+        let minister = self.add_entity(EntityKind::Person, "Minister X".into(), spiral(3)?)?;
 
         let mut controls = Relation::stamp(
             RelationKind::Controls,
@@ -111,6 +111,7 @@ impl RedstringApp {
             label: label.clone(),
             value: String::new(),
             observations: Vec::new(),
+            role: Role::Unset,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -121,6 +122,15 @@ impl RedstringApp {
         Ok(self
             .g
             .add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos))
+    }
+
+    pub fn add_preset(&mut self, preset: &Preset, pos: Pos2) -> Result<NodeIndex, Error> {
+        let idx = self.add_entity(preset.base_kind, preset.label.to_owned(), pos)?;
+        let Some(n) = self.g.node_mut(idx) else {
+            return Ok(idx);
+        };
+        apply_preset(n.payload_mut(), preset, &self.author)?;
+        Ok(idx)
     }
 
     pub fn apply_label(&mut self, idx: NodeIndex, label: &str) -> Result<(), Error> {

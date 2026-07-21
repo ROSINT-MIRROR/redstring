@@ -58,7 +58,7 @@ fn label_safe(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::model::{
-        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Source,
+        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Role, Source,
         SourceKind, Verification,
     };
 
@@ -72,6 +72,7 @@ mod tests {
             label: "Radu \"the Brick\" P.".into(),
             value: String::new(),
             observations: vec![],
+            role: Role::Unset,
             image: None,
         });
         cf.data.entities.push(EntityRec {
@@ -80,6 +81,7 @@ mod tests {
             label: "Strada Sigur SRL".into(),
             value: String::new(),
             observations: vec![],
+            role: Role::Unset,
             image: None,
         });
         cf.data.relations.push(RelationRec {

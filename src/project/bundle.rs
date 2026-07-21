@@ -194,7 +194,7 @@ fn extract_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseFile, CaseMeta, EntityKind, EntityRec};
+    use crate::model::{CaseFile, CaseMeta, EntityKind, EntityRec, Role};
     use crate::project::io;
 
     fn fresh_dir(name: &str) -> PathBuf {
@@ -220,6 +220,7 @@ mod tests {
             label: "J. Doe".into(),
             value: String::new(),
             observations: vec![],
+            role: Role::Unset,
             image: Some("entities/doe/portrait.png".into()),
         });
         io::write_case(&p, &cf).unwrap();

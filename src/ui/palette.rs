@@ -1,10 +1,12 @@
-use egui::{RichText, Vec2};
+use egui::{Color32, RichText, Vec2};
 
 use crate::error::Error;
-use crate::model::{CATEGORY_META, CategoryMeta, KIND_META, KindMeta};
+use crate::model::{CATEGORY_META, CategoryMeta, KIND_META, KindMeta, PRESETS, Preset};
 
 use super::app::RedstringApp;
 use super::style;
+
+const PRESET_ACCENT: Color32 = Color32::from_rgb(210, 180, 240);
 
 const SEARCH_TEXT: f32 = 19.0;
 
@@ -63,6 +65,7 @@ impl RedstringApp {
             .id_salt("ne_kind_grid")
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                self.preset_group(ui, &needle, searching);
                 for cat in &CATEGORY_META {
                     let ci = cat.category as usize;
                     let hits: Vec<&KindMeta> = KIND_META
@@ -80,13 +83,82 @@ impl RedstringApp {
                         continue;
                     }
                     for m in hits {
-                        if kind_row(ui, m, cat, self.ne_kind == m.kind) {
+                        if kind_row(ui, m, cat, self.ne_kind == m.kind && self.ne_preset.is_none()) {
                             self.ne_kind = m.kind;
+                            self.ne_preset = None;
                         }
                     }
                 }
             });
     }
+
+    fn preset_group(&mut self, ui: &mut egui::Ui, needle: &str, searching: bool) {
+        let hits: Vec<&Preset> = PRESETS.iter().filter(|p| preset_matches(p, needle)).collect();
+        if hits.is_empty() {
+            return;
+        }
+        let open = searching || self.presets_open;
+        if presets_header(ui, open, hits.len()) {
+            self.presets_open = !self.presets_open;
+        }
+        if !open {
+            return;
+        }
+        for p in hits {
+            if preset_row(ui, p, self.ne_preset.as_ref() == Some(p)) {
+                self.ne_preset = Some(*p);
+            }
+        }
+    }
+}
+
+fn presets_header(ui: &mut egui::Ui, open: bool, count: usize) -> bool {
+    let caret = if open {
+        egui_phosphor::regular::CARET_DOWN
+    } else {
+        egui_phosphor::regular::CARET_RIGHT
+    };
+    let resp = ui.add(
+        egui::Button::new((
+            RichText::new(format!("{caret}  {}", egui_phosphor::regular::STAR))
+                .color(PRESET_ACCENT)
+                .size(16.0f32),
+            RichText::new("Presets").color(PRESET_ACCENT).strong().size(14.0f32),
+            egui::Atom::grow(),
+            RichText::new(count.to_string())
+                .color(PRESET_ACCENT.gamma_multiply(0.7f32))
+                .size(12.0f32),
+        ))
+        .fill(PRESET_ACCENT.gamma_multiply(0.10f32))
+        .stroke(egui::Stroke::new(1.0f32, PRESET_ACCENT.gamma_multiply(0.6f32)))
+        .min_size(Vec2::new(ui.available_width(), style::ROW_H)),
+    );
+    resp.clicked()
+}
+
+fn preset_row(ui: &mut egui::Ui, p: &Preset, selected: bool) -> bool {
+    let resp = ui.add(
+        egui::Button::selectable(
+            selected,
+            (
+                RichText::new(p.icon).color(p.color).size(24.0f32),
+                RichText::new(p.label).color(p.color).size(12.0f32),
+                egui::Atom::grow(),
+            ),
+        )
+        .stroke(egui::Stroke::new(1.0f32, PRESET_ACCENT.gamma_multiply(0.5f32)))
+        .sense(egui::Sense::click_and_drag())
+        .min_size(Vec2::new(ui.available_width(), 40.0)),
+    );
+    resp.dnd_set_drag_payload(*p);
+    resp.clicked()
+}
+
+fn preset_matches(p: &Preset, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    fuzzy(needle, p.label) || p.occupation.is_some_and(|occ| fuzzy(needle, occ))
 }
 
 

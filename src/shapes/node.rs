@@ -20,7 +20,7 @@ use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
 use crate::error::Error;
-use crate::model::{Entity, KIND_META};
+use crate::model::{Entity, KIND_META, ROLE_META, Role};
 
 
 
@@ -67,6 +67,7 @@ pub struct EntityNodeShape {
     icon: String,
     name: String,
 
+    role: Role,
 
     size: f32,
     hidden: bool,
@@ -80,6 +81,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             image: props.payload.image.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: props.payload.label.clone(),
+            role: props.payload.role,
             size: props.payload.size * props.payload.boost,
             hidden: props.payload.hidden,
             circle,
@@ -120,6 +122,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = state.payload.label.clone();
+        self.role = state.payload.role;
         self.size = state.payload.size * state.payload.boost;
         self.hidden = state.payload.hidden;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
@@ -223,6 +226,13 @@ impl EntityNodeShape {
         let icon_pos = center - icon.size() / 2.0;
         res.push(TextShape::new(icon_pos, icon, color).into());
 
+        self.role_badge(
+            ctx,
+            &mut res,
+            center + Vec2::new(r * 0.72, -r * 0.72),
+            (r * 0.5).clamp(3.0, 40.0),
+        );
+
         let mut job = egui::text::LayoutJob::simple(
             self.name.clone(),
             FontId::new(font_px(ctx, LABEL_SIZE * self.size), FontFamily::Monospace),
@@ -269,9 +279,13 @@ impl EntityNodeShape {
         );
         res.push(RectShape::stroke(rect, cr, stroke, StrokeKind::Inside).into());
 
-        
-        
-        
+        self.role_badge(
+            ctx,
+            &mut res,
+            rect.right_top(),
+            (rect.width().min(rect.height()) * 0.24).clamp(3.0, 40.0),
+        );
+
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             (
                 f.layout_no_wrap(
@@ -306,6 +320,44 @@ impl EntityNodeShape {
         res.push(TextShape::new(icon_pos, icon, color).into());
         res.push(TextShape::new(name_pos, name, color).into());
         res
+    }
+
+    fn role_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
+        if self.role == Role::Unset {
+            return;
+        }
+        let meta = &ROLE_META[self.role as usize];
+        let bg = ctx.ctx.global_style().visuals.panel_fill;
+        res.push(
+            CircleShape {
+                center,
+                radius,
+                fill: meta.color,
+                stroke: Stroke::new((radius * 0.18).max(0.6), bg),
+            }
+            .into(),
+        );
+        if radius < 4.0 {
+            return;
+        }
+        let fg = badge_fg(meta.color);
+        let glyph = ctx.ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                meta.icon.to_owned(),
+                FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
+                fg,
+            )
+        });
+        res.push(TextShape::new(center - glyph.size() / 2.0, glyph, fg).into());
+    }
+}
+
+fn badge_fg(bg: Color32) -> Color32 {
+    let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
+    if lum > 150.0 {
+        Color32::from_rgb(25, 25, 30)
+    } else {
+        Color32::from_rgb(245, 245, 245)
     }
 }
 

@@ -4,8 +4,8 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 use crate::model::{
     Author, CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, ObsValue, Observation, Origin,
-    RELATION_META, RelationKind, SOURCE_META, Source, ValueFormat, Verification, format_hint,
-    pretty_key, slugify, status_color, status_label,
+    RELATION_META, ROLE_META, RelationKind, Role, SOURCE_META, Source, ValueFormat, Verification,
+    format_hint, pretty_key, slugify, status_color, status_label,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
@@ -108,6 +108,12 @@ impl RedstringApp {
         let e = node.payload_mut();
 
         kind_combo(ui, "insp_kind", &mut e.kind);
+
+        ui.horizontal(|ui| {
+            ui.label("role")
+                .on_hover_text("case-role — painted as a colored badge on the node");
+            role_combo(ui, "insp_role", &mut e.role);
+        });
 
         ui.horizontal(|ui| {
             ui.label("label");
@@ -561,6 +567,21 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
                     ui.label(RichText::new(last_cat).weak().small());
                 }
                 ui.selectable_value(kind, m.kind, m.label);
+            }
+        });
+}
+
+fn role_combo(ui: &mut egui::Ui, id: &str, role: &mut Role) {
+    let cur = &ROLE_META[*role as usize];
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(RichText::new(format!("{} {}", cur.icon, cur.label)).color(cur.color))
+        .show_ui(ui, |ui| {
+            for m in &ROLE_META {
+                ui.selectable_value(
+                    role,
+                    m.role,
+                    RichText::new(format!("{} {}", m.icon, m.label)).color(m.color),
+                );
             }
         });
 }

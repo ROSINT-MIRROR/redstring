@@ -17,6 +17,7 @@ use crate::error::Error;
 use super::entity::{EntityKind, KIND_META};
 use super::observation::{Author, DEFAULT_CONFIDENCE, Observation, Origin, Verification};
 use super::relation::{RELATION_META, RelationKind};
+use super::role::Role;
 use super::source::Source;
 
 
@@ -109,8 +110,15 @@ pub struct EntityRec {
     #[serde(default)]
     pub observations: Vec<Observation>,
 
+    #[serde(default, skip_serializing_if = "role_is_unset")]
+    pub role: Role,
+
     #[serde(default)]
     pub image: Option<String>,
+}
+
+fn role_is_unset(role: &Role) -> bool {
+    *role == Role::Unset
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -238,6 +246,7 @@ mod tests {
                 )
                 .unwrap(),
             ],
+            role: Role::Suspect,
             image: Some("entities/doe/portrait.png".into()),
         });
         cf.data.relations.push(RelationRec {
@@ -267,5 +276,6 @@ mod tests {
         let back: CaseFile = ron::from_str(&s).unwrap();
         assert_eq!(cf, back);
         assert_eq!(back.display.sizes.get("doe").copied(), Some(3.5));
+        assert_eq!(back.data.entities[0].role, Role::Suspect, "role must round-trip");
     }
 }
