@@ -8,10 +8,10 @@ use egui::{
 use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
-use egui_phosphor::regular::PLUS;
+use crate::error::Error;
+use crate::model::{Entity, Facet, FacetValue, KIND_META};
 
-use crate::model::{BadgeCorner, Entity, FACET_META, Facet, FacetValue, KIND_META, facet_badge};
-
+use super::badge::{Corners, backdrop, badge_fg, collapsed_badge, draw_facet_badges};
 use super::label::{
     BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX,
     badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
@@ -27,6 +27,13 @@ const BORDER_ACTIVE: f32 = 2.0;
 
 pub const NODE_RADIUS: f32 = 11.0;
 
+pub fn base_radius(e: &Entity) -> Result<f32, Error> {
+    if e.image.is_some() {
+        return Ok(IMG_RADIUS);
+    }
+    Ok(NODE_RADIUS)
+}
+
 const ICON_SIZE: f32 = 15.0;
 
 const LABEL_MIN_PX: f32 = 9.0;
@@ -37,11 +44,6 @@ const LABEL_TAIL_CHARS: usize = 6;
 
 const DISC_FILL_DARK: f32 = 0.25;
 const DISC_FILL_LIGHT: f32 = 0.5;
-
-const BACKDROP_MIX: f32 = 0.14;
-const BACKDROP_LINE_MIX: f32 = 0.34;
-
-const COLLAPSE_BADGE: Color32 = Color32::from_rgb(72, 96, 132);
 
 #[derive(Clone)]
 pub struct EntityNodeShape {
@@ -167,10 +169,6 @@ impl EntityNodeShape {
         col
     }
 
-    fn label_ink(&self, ctx: &DrawContext) -> Color32 {
-        badge_fg(ctx.ctx.global_style().visuals.panel_fill)
-    }
-
     fn kind_color(&self, ctx: &DrawContext) -> Color32 {
         let Some(c) = self.circle.color else {
             return self.frame_color(ctx);
@@ -236,14 +234,14 @@ impl EntityNodeShape {
             tl: center + Vec2::new(-badge_off, -badge_off),
             br: center + Vec2::new(badge_off, badge_off),
         };
-        self.draw_facet_badges(ctx, &mut res, badge_r, &corners);
-        self.collapsed_badge(ctx, &mut res, corners.tl, badge_r);
+        let Ok(()) = draw_facet_badges(&self.facets, ctx, &mut res, badge_r, &corners) else { return res };
+        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, corners.tl, badge_r) else { return res };
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
             return res;
         }
-        let ink = self.label_ink(ctx);
+        let Ok(ink) = badge_fg(bg) else { return res };
         let mut job = egui::text::LayoutJob::simple(
             self.name.clone(),
             FontId::new(fpx, FontFamily::Monospace),
@@ -268,7 +266,7 @@ impl EntityNodeShape {
             return res;
         }
         let label_pos = Pos2::new(center.x, box_rect.min.y + lpad);
-        backdrop(&mut res, box_rect, bg, dark);
+        let Ok(()) = backdrop(&mut res, box_rect, bg, dark) else { return res };
         res.push(TextShape::new(label_pos, label, ink).into());
         res
     }
@@ -314,14 +312,14 @@ impl EntityNodeShape {
             tl: rect.left_top(),
             br: rect.right_bottom(),
         };
-        self.draw_facet_badges(ctx, &mut res, img_badge_r, &corners);
-        self.collapsed_badge(ctx, &mut res, corners.tl, img_badge_r);
+        let Ok(()) = draw_facet_badges(&self.facets, ctx, &mut res, img_badge_r, &corners) else { return res };
+        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, corners.tl, img_badge_r) else { return res };
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
             return res;
         }
-        let ink = self.label_ink(ctx);
+        let Ok(ink) = badge_fg(ctx.ctx.global_style().visuals.panel_fill) else { return res };
         let name_wrap = ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size);
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             let icon = f.layout_no_wrap(
@@ -362,93 +360,10 @@ impl EntityNodeShape {
         let icon_pos = Pos2::new(left, top + (row_h - icon.size().y) / 2.0);
         let name_pos = Pos2::new(left + icon.size().x + gap, top + (row_h - name.size().y) / 2.0);
         let bg = ctx.ctx.global_style().visuals.panel_fill;
-        backdrop(&mut res, box_rect, bg, dark);
+        let Ok(()) = backdrop(&mut res, box_rect, bg, dark) else { return res };
         res.push(TextShape::new(icon_pos, icon, color).into());
         res.push(TextShape::new(name_pos, name, ink).into());
         res
-    }
-
-    fn draw_facet_badges(
-        &self,
-        ctx: &DrawContext,
-        res: &mut Vec<Shape>,
-        radius: f32,
-        corners: &Corners,
-    ) {
-        for (facet, value) in &self.facets {
-            let Ok(Some(badge)) = facet_badge(*facet, value) else {
-                continue;
-            };
-            let Some(meta) = FACET_META.iter().find(|m| m.facet == *facet) else {
-                continue;
-            };
-            glyph_badge(ctx, res, corners.at(meta.corner), radius, badge.color, badge.glyph);
-        }
-    }
-
-    fn collapsed_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
-        if !self.collapsed {
-            return;
-        }
-        glyph_badge(ctx, res, center, radius, COLLAPSE_BADGE, PLUS);
-    }
-}
-
-struct Corners {
-    tr: Pos2,
-    bl: Pos2,
-    tl: Pos2,
-    br: Pos2,
-}
-
-impl Corners {
-    fn at(&self, corner: BadgeCorner) -> Pos2 {
-        match corner {
-            BadgeCorner::TopRight => self.tr,
-            BadgeCorner::BottomLeft => self.bl,
-            BadgeCorner::BottomRight => self.br,
-        }
-    }
-}
-
-fn glyph_badge(
-    ctx: &DrawContext,
-    res: &mut Vec<Shape>,
-    center: Pos2,
-    radius: f32,
-    fill: Color32,
-    glyph: &str,
-) {
-    let bg = ctx.ctx.global_style().visuals.panel_fill;
-    res.push(
-        CircleShape {
-            center,
-            radius,
-            fill,
-            stroke: Stroke::new((radius * 0.18).max(0.6), bg),
-        }
-        .into(),
-    );
-    if radius < 4.0 {
-        return;
-    }
-    let fg = badge_fg(fill);
-    let g = ctx.ctx.fonts_mut(|f| {
-        f.layout_no_wrap(
-            glyph.to_owned(),
-            FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
-            fg,
-        )
-    });
-    res.push(TextShape::new(center - g.size() / 2.0, g, fg).into());
-}
-
-fn badge_fg(bg: Color32) -> Color32 {
-    let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
-    if lum > 150.0 {
-        Color32::from_rgb(25, 25, 30)
-    } else {
-        Color32::from_rgb(245, 245, 245)
     }
 }
 
@@ -459,22 +374,6 @@ fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
 fn disc_fill(bg: Color32, kind: Color32, dark: bool) -> Color32 {
     let frac = if dark { DISC_FILL_DARK } else { DISC_FILL_LIGHT };
     bg.lerp_to_gamma(kind, frac)
-}
-
-fn backdrop(res: &mut Vec<Shape>, rect: Rect, bg: Color32, dark: bool) {
-    let toward = if dark { Color32::WHITE } else { Color32::BLACK };
-    let fill = bg.lerp_to_gamma(toward, BACKDROP_MIX);
-    let line = bg.lerp_to_gamma(toward, BACKDROP_LINE_MIX);
-    res.push(
-        RectShape::new(
-            rect,
-            CornerRadius::same(2),
-            fill,
-            Stroke::new(1.0_f32, line),
-            StrokeKind::Inside,
-        )
-        .into(),
-    );
 }
 
 fn display_label(raw: &str) -> String {
@@ -511,6 +410,7 @@ fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_phosphor::regular::PLUS;
 
     #[test]
     fn boundary_point_hits_square() {

@@ -18,7 +18,7 @@ use egui_phosphor::regular::{PAPERCLIP, WARNING};
 use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind, Verification, status_color};
 
-use super::label::claim_edge_label;
+use super::label::{claim_edge_label, theme_shift};
 
 const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
 const TIP_SIZE: f32 = 12.0;
@@ -307,11 +307,11 @@ fn warn_color(dark: bool) -> Color32 {
 }
 
 fn label_backdrop_fill(bg: Color32, dark: bool) -> Color32 {
-    if dark {
-        bg.lerp_to_gamma(Color32::WHITE, EDGE_BACKDROP_LIGHTEN)
-    } else {
-        bg.lerp_to_gamma(Color32::BLACK, EDGE_BACKDROP_DARKEN)
-    }
+    let mix = if dark { EDGE_BACKDROP_LIGHTEN } else { EDGE_BACKDROP_DARKEN };
+    let Ok(c) = theme_shift(bg, dark, mix) else {
+        return bg;
+    };
+    c
 }
 
 fn trim_to_boundaries<N, Ty, Ix, D>(
