@@ -18,6 +18,8 @@ use egui_phosphor::regular::{PAPERCLIP, WARNING};
 use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind, Verification, status_color};
 
+use super::label::claim_edge_label;
+
 const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
 const TIP_SIZE: f32 = 12.0;
 const PARALLEL_SPACING: f32 = 12.0;
@@ -36,6 +38,10 @@ const EDGE_BACKDROP_ALPHA: f32 = 0.94;
 const EDGE_BACKDROP_LIGHTEN: f32 = 0.16;
 const EDGE_BACKDROP_DARKEN: f32 = 0.17;
 const EDGE_WARN_MULT: f32 = 1.4;
+
+const EDGE_LABEL_WARN_PRIORITY: f32 = 1000.0;
+const EDGE_LABEL_HOT_PRIORITY: f32 = 500.0;
+const EDGE_LABEL_VERB_PRIORITY: f32 = 0.0;
 
 thread_local! {
     static SHOT_LABELS: Cell<bool> = const { Cell::new(false) };
@@ -222,6 +228,13 @@ impl SourcedEdgeShape {
         let sz = galley.size();
         let pad = (fpx * EDGE_LABEL_PAD_FRAC).max(EDGE_LABEL_PAD_MIN);
         let box_rect = Rect::from_center_size(mid, sz + Vec2::splat(pad * 2.0));
+        let (priority, force) = edge_label_claim(parts.warn, hot);
+        let Ok(draw) = claim_edge_label(ctx.ctx, box_rect, priority, force) else {
+            return Vec::new();
+        };
+        if !draw {
+            return Vec::new();
+        }
         let bg = ctx.ctx.global_style().visuals.panel_fill;
         let fill = label_backdrop_fill(bg, dark).gamma_multiply(EDGE_BACKDROP_ALPHA);
         let mut res = Vec::with_capacity(2);
@@ -260,6 +273,17 @@ fn edge_label_parts(
         tail: format!("  {PAPERCLIP} {count}"),
         warn: false,
     })
+}
+
+fn edge_label_claim(warn: bool, hot: bool) -> (f32, bool) {
+    let priority = if warn {
+        EDGE_LABEL_WARN_PRIORITY
+    } else if hot {
+        EDGE_LABEL_HOT_PRIORITY
+    } else {
+        EDGE_LABEL_VERB_PRIORITY
+    };
+    (priority, warn || hot)
 }
 
 #[cfg(test)]
@@ -499,6 +523,36 @@ mod tests {
             "light theme must darken the edge status color for legibility: dark {} vs light {}",
             lum(dark),
             lum(light)
+        );
+    }
+
+    #[test]
+    fn edge_label_priority_wiring() {
+        let (warn_priority, warn_force) = edge_label_claim(true, false);
+        assert!(
+            warn_force,
+            "an unsourced-edge warning must be force-drawn so it can never be hidden in a pile-up"
+        );
+        assert!(
+            warn_priority > 12.0,
+            "warning priority must outrank the largest node label (max size 12) so a colliding node label yields"
+        );
+
+        let (hot_priority, hot_force) = edge_label_claim(false, true);
+        assert!(hot_force, "a hovered or selected edge label must be force-drawn");
+        assert!(
+            hot_priority > 12.0,
+            "hot-edge priority must outrank node labels so the focused label is not buried"
+        );
+
+        let (verb_priority, verb_force) = edge_label_claim(false, false);
+        assert!(
+            !verb_force,
+            "a sourced verb at rest must be gated, not forced, so it can drop out of a dense knot"
+        );
+        assert!(
+            verb_priority < 0.5,
+            "sourced-verb priority must sit below every node label (min size 0.5) so it yields first"
         );
     }
 }
