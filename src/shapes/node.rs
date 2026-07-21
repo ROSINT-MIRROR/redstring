@@ -19,10 +19,10 @@ use egui::{
 use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
+use egui_phosphor::regular::PLUS;
+
 use crate::error::Error;
 use crate::model::{Entity, KIND_META, OCC_BADGE, OCCUPATION_ICONS, Occupation, ROLE_META, Role};
-
-
 
 pub const IMG_RADIUS: f32 = 10.0;
 
@@ -43,8 +43,6 @@ pub const LABEL_WRAP: f32 = 75.0;
 
 const MAX_TEX_SIDE: u32 = 512;
 
-
-
 const MAX_FONT_PX: f32 = 256.0;
 
 
@@ -57,6 +55,9 @@ const BADGE_RADIUS_FRAC: f32 = 0.5;
 const IMG_BADGE_RADIUS_FRAC: f32 = 0.24;
 const BADGE_R_MIN: f32 = 3.0;
 const BADGE_R_MAX: f32 = 40.0;
+
+const LABEL_MIN_PX: f32 = 9.0;
+const COLLAPSE_BADGE: Color32 = Color32::from_rgb(72, 96, 132);
 
 #[derive(Clone)]
 pub struct EntityNodeShape {
@@ -77,6 +78,7 @@ pub struct EntityNodeShape {
     occupation: Option<Occupation>,
 
     size: f32,
+    collapsed: bool,
     hidden: bool,
 }
 
@@ -91,6 +93,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             role: props.payload.role,
             occupation: props.payload.occupation.clone(),
             size: props.payload.size * props.payload.boost,
+            collapsed: props.payload.collapsed,
             hidden: props.payload.hidden,
             circle,
             tex_ok: false,
@@ -133,6 +136,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         self.role = state.payload.role;
         self.occupation = state.payload.occupation.clone();
         self.size = state.payload.size * state.payload.boost;
+        self.collapsed = state.payload.collapsed;
         self.hidden = state.payload.hidden;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
         
@@ -239,8 +243,12 @@ impl EntityNodeShape {
         let badge_r = badge_radius(r);
         self.role_badge(ctx, &mut res, center + Vec2::new(badge_off, -badge_off), badge_r);
         self.occupation_badge(ctx, &mut res, center + Vec2::new(-badge_off, badge_off), badge_r);
+        self.collapsed_badge(ctx, &mut res, center + Vec2::new(badge_off, badge_off), badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
+        if fpx < LABEL_MIN_PX {
+            return res;
+        }
         let mut job = egui::text::LayoutJob::simple(
             self.name.clone(),
             FontId::new(fpx, FontFamily::Monospace),
@@ -291,8 +299,12 @@ impl EntityNodeShape {
         let img_badge_r = badge_radius_img(rect.width().min(rect.height()));
         self.role_badge(ctx, &mut res, rect.right_top(), img_badge_r);
         self.occupation_badge(ctx, &mut res, rect.left_bottom(), img_badge_r);
+        self.collapsed_badge(ctx, &mut res, rect.right_bottom(), img_badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
+        if fpx < LABEL_MIN_PX {
+            return res;
+        }
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             (
                 f.layout_no_wrap(
@@ -337,57 +349,61 @@ impl EntityNodeShape {
             return;
         }
         let meta = &ROLE_META[self.role as usize];
-        let bg = ctx.ctx.global_style().visuals.panel_fill;
-        res.push(
-            CircleShape {
-                center,
-                radius,
-                fill: meta.color,
-                stroke: Stroke::new((radius * 0.18).max(0.6), bg),
-            }
-            .into(),
-        );
-        if radius < 4.0 {
-            return;
-        }
-        let fg = badge_fg(meta.color);
-        let glyph = ctx.ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                meta.icon.to_owned(),
-                FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
-                fg,
-            )
-        });
-        res.push(TextShape::new(center - glyph.size() / 2.0, glyph, fg).into());
+        glyph_badge(ctx, res, center, radius, meta.color, meta.icon);
     }
 
     fn occupation_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
         let Some(occ) = &self.occupation else {
             return;
         };
-        let bg = ctx.ctx.global_style().visuals.panel_fill;
-        res.push(
-            CircleShape {
-                center,
-                radius,
-                fill: OCC_BADGE,
-                stroke: Stroke::new((radius * 0.18).max(0.6), bg),
-            }
-            .into(),
+        glyph_badge(
+            ctx,
+            res,
+            center,
+            radius,
+            OCC_BADGE,
+            OCCUPATION_ICONS[occ.icon as usize].glyph,
         );
-        if radius < 4.0 {
+    }
+
+    fn collapsed_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
+        if !self.collapsed {
             return;
         }
-        let fg = badge_fg(OCC_BADGE);
-        let glyph = ctx.ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                OCCUPATION_ICONS[occ.icon as usize].glyph.to_owned(),
-                FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
-                fg,
-            )
-        });
-        res.push(TextShape::new(center - glyph.size() / 2.0, glyph, fg).into());
+        glyph_badge(ctx, res, center, radius, COLLAPSE_BADGE, PLUS);
     }
+}
+
+fn glyph_badge(
+    ctx: &DrawContext,
+    res: &mut Vec<Shape>,
+    center: Pos2,
+    radius: f32,
+    fill: Color32,
+    glyph: &str,
+) {
+    let bg = ctx.ctx.global_style().visuals.panel_fill;
+    res.push(
+        CircleShape {
+            center,
+            radius,
+            fill,
+            stroke: Stroke::new((radius * 0.18).max(0.6), bg),
+        }
+        .into(),
+    );
+    if radius < 4.0 {
+        return;
+    }
+    let fg = badge_fg(fill);
+    let g = ctx.ctx.fonts_mut(|f| {
+        f.layout_no_wrap(
+            glyph.to_owned(),
+            FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
+            fg,
+        )
+    });
+    res.push(TextShape::new(center - g.size() / 2.0, g, fg).into());
 }
 
 fn badge_fg(bg: Color32) -> Color32 {
@@ -698,4 +714,84 @@ mod tests {
             "node.rs draw and links.rs label_zone must derive an identical label box"
         );
     }
+
+    fn node_label_texts(size: f32, collapsed: bool) -> Vec<String> {
+        let ent = Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            value: String::new(),
+            observations: Vec::new(),
+            role: Role::Unset,
+            occupation: None,
+            note: String::new(),
+            image: None,
+            size,
+            boost: 1.0,
+            collapsed,
+            hidden: false,
+        };
+        let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(ent);
+        let mut out = Vec::new();
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        ctx.run(input, |c| {
+            let painter = c.debug_painter();
+            let style = SettingsStyle::default();
+            let meta = MetadataFrame::default();
+            let dctx = DrawContext {
+                ctx: c,
+                painter: &painter,
+                style: &style,
+                is_directed: true,
+                meta: &meta,
+            };
+            let shapes =
+                <EntityNodeShape as DisplayNode<Entity, Relation, Directed, DefaultIx>>::shapes(
+                    node.display_mut(),
+                    &dctx,
+                );
+            for s in &shapes {
+                if let Shape::Text(t) = s {
+                    out.push(t.galley.text().to_owned());
+                }
+            }
+        });
+        out
+    }
+
+    #[test]
+    fn collapsed_node_draws_marker() {
+        let collapsed = node_label_texts(DEFAULT_NODE_SIZE, true);
+        assert!(
+            collapsed.iter().any(|t| t.as_str() == PLUS),
+            "a collapsed node must render the collapse marker glyph, got {collapsed:?}"
+        );
+        let normal = node_label_texts(DEFAULT_NODE_SIZE, false);
+        assert!(
+            !normal.iter().any(|t| t.as_str() == PLUS),
+            "a non-collapsed node must not render the collapse marker, got {normal:?}"
+        );
+    }
+
+    #[test]
+    fn label_hidden_below_lod() {
+        let big = (LABEL_MIN_PX * 2.0) / LABEL_SIZE;
+        let shown = node_label_texts(big, false);
+        assert!(
+            shown.iter().any(|t| t.as_str() == "Node Label"),
+            "above the LOD threshold the node label must render, got {shown:?}"
+        );
+        let tiny = (LABEL_MIN_PX * 0.5) / LABEL_SIZE;
+        let hidden = node_label_texts(tiny, false);
+        assert!(
+            !hidden.iter().any(|t| t.as_str() == "Node Label"),
+            "below the LOD threshold the node label must be omitted, got {hidden:?}"
+        );
+    }
+
+    use crate::model::{DEFAULT_NODE_SIZE, EntityKind, Relation};
+    use egui_graphs::{MetadataFrame, Node, SettingsStyle};
+    use petgraph::{Directed, stable_graph::DefaultIx};
 }
