@@ -19,7 +19,7 @@ use super::board;
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
 pub const OK_GREEN: Color32 = Color32::from_rgb(120, 200, 140);
-pub const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
+pub const ALARM_RED: Color32 = super::style::DANGER;
 const DIRTY_AMBER: Color32 = Color32::from_rgb(235, 150, 70);
 
 pub const BOARD_META_ID: &str = "redstring_board";

@@ -196,7 +196,7 @@ fn parse_century(s: &str) -> Option<i64> {
     if !(1..=99).contains(&n) {
         return None;
     }
-    Some(days_from_civil((n - 1) * 100 + 1, 1, 1) * 86_400)
+    civil_secs((n - 1) * 100 + 1, 1, 1)
 }
 
 fn parse_decade(s: &str) -> Option<i64> {
@@ -207,7 +207,7 @@ fn parse_decade(s: &str) -> Option<i64> {
     if n % 10 != 0 || !(0..=9999).contains(&n) {
         return None;
     }
-    Some(days_from_civil(n, 1, 1) * 86_400)
+    civil_secs(n, 1, 1)
 }
 
 fn parse_ymd(raw: &str) -> Option<(i64, DatePrecision)> {
@@ -225,7 +225,7 @@ fn parse_ymd(raw: &str) -> Option<(i64, DatePrecision)> {
             if time_part.is_some() {
                 return None;
             }
-            Some((days_from_civil(year_in_range(y)?, 1, 1) * 86_400, DatePrecision::Year))
+            Some((civil_secs(year_in_range(y)?, 1, 1)?, DatePrecision::Year))
         }
         [y, mo] => {
             if time_part.is_some() {
@@ -235,7 +235,7 @@ fn parse_ymd(raw: &str) -> Option<(i64, DatePrecision)> {
             if !(1..=12).contains(&month) {
                 return None;
             }
-            Some((days_from_civil(year_in_range(y)?, month, 1) * 86_400, DatePrecision::Month))
+            Some((civil_secs(year_in_range(y)?, month, 1)?, DatePrecision::Month))
         }
         [y, mo, da] => {
             let month = to_i64(mo)?;
@@ -243,7 +243,7 @@ fn parse_ymd(raw: &str) -> Option<(i64, DatePrecision)> {
             if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
                 return None;
             }
-            let secs = days_from_civil(to_i64(y)?, month, day) * 86_400;
+            let secs = civil_secs(to_i64(y)?, month, day)?;
             let Some(time_part) = time_part else {
                 return Some((secs, DatePrecision::Day));
             };
@@ -285,14 +285,11 @@ fn offset_split(t: &str) -> (String, i64) {
     (stripped.to_owned(), 0)
 }
 
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
+fn civil_secs(y: i64, m: i64, d: i64) -> Option<i64> {
+    let Ok(days) = crate::model::days_from_civil(y, m, d) else {
+        return None;
+    };
+    Some(days * 86_400)
 }
 
 fn to_i64(s: &str) -> Option<i64> {

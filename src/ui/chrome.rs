@@ -368,7 +368,7 @@ fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
                     ui.label(RichText::new(path.display().to_string()).weak().small());
                 }
                 crate::modules::ModuleStatus::Missing(missing) => {
-                    ui.colored_label(super::app::ALARM_RED, egui_phosphor::regular::X);
+                    ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
                     ui.label(RichText::new(&entry.spec.label).strong());
                     ui.label(
                         RichText::new(format!("{} not on PATH — hidden", missing.join(", ")))
@@ -377,7 +377,7 @@ fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
                     );
                 }
                 crate::modules::ModuleStatus::Broken(reason) => {
-                    ui.colored_label(super::app::ALARM_RED, egui_phosphor::regular::X);
+                    ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
                     ui.label(RichText::new(&entry.spec.label).strong());
                     ui.label(RichText::new(format!("broken spec: {reason}")).weak().small());
                 }

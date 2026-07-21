@@ -1,4 +1,5 @@
 mod case;
+mod civil;
 mod entity;
 mod facet;
 mod observation;
@@ -9,6 +10,7 @@ mod source;
 mod value;
 
 pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, MAX_CASE_NAME, RelationRec};
+pub use civil::{days_from_civil, fmt_civil_date, fnv1a};
 pub use entity::{CATEGORY_META, CategoryMeta, DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, KindMeta, pretty_key, slugify};
 pub use facet::Facet;
 pub use observation::{Author, DATE_PRECISION_META, DatePrecision, DateVal, ObsValue, Observation, Origin, VERIFICATION_META, Verification, now_unix, resolve_identity, status_color, status_label};

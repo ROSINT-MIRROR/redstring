@@ -8,18 +8,11 @@ use crate::model::Camera;
 use crate::shapes::{IMG_RADIUS, NODE_RADIUS};
 
 use super::app::RsGraph;
-use super::board::{MAX_ZOOM, MIN_ZOOM};
+use super::board::fit_box_to_board;
 use super::graphalg;
 
 const CENTER_MARGIN: f32 = 0.85;
 const CENTER_MAX_ZOOM: f32 = 1.5;
-
-fn clamp_zoom(z: f32) -> f32 {
-    if !z.is_finite() {
-        return 1.0;
-    }
-    z.clamp(MIN_ZOOM, MAX_ZOOM)
-}
 
 fn visible_set(g: &RsGraph) -> HashSet<NodeIndex> {
     let mut set = HashSet::new();
@@ -78,20 +71,8 @@ pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>
     let Some(bbox) = cluster_bbox(g, members) else {
         return Ok(None);
     };
-    let span = bbox.size();
-    let w = span.x.max(1.0);
-    let h = span.y.max(1.0);
-    let fit = (board.x * CENTER_MARGIN / w).min(board.y * CENTER_MARGIN / h);
-    let zoom = clamp_zoom(fit.min(CENTER_MAX_ZOOM));
-    let pan = board / 2.0 - bbox.center().to_vec2() * zoom;
-    Ok(Some((
-        Camera {
-            x: pan.x,
-            y: pan.y,
-            zoom,
-        },
-        members.len(),
-    )))
+    let cam = fit_box_to_board(bbox, board, CENTER_MARGIN, CENTER_MAX_ZOOM)?;
+    Ok(Some((cam, members.len())))
 }
 
 #[cfg(test)]

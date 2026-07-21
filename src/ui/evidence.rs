@@ -4,7 +4,10 @@ use egui::RichText;
 use sha2::{Digest, Sha256};
 
 use crate::error::Error;
-use crate::model::{SOURCE_META, SOURCE_TIER_META, Source, SourceKind, SourceTier, now_unix};
+use crate::model::{
+    DatePrecision, SOURCE_META, SOURCE_TIER_META, Source, SourceKind, SourceTier, fmt_civil_date,
+    now_unix,
+};
 use crate::modules::ModuleRun;
 
 use super::style;
@@ -76,18 +79,8 @@ fn clip(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-fn fmt_unix_date(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
-    format!("{year:04}-{month:02}-{day:02}")
+fn fmt_unix_date(secs: i64) -> Result<String, Error> {
+    fmt_civil_date(secs, DatePrecision::Day)
 }
 
 pub fn source_group(
@@ -136,7 +129,8 @@ fn source_provenance(ui: &mut egui::Ui, i: usize, src: &mut Source) -> Result<()
                 .on_hover_text("source organisation");
         }
         for ts in src.fetched_at.iter() {
-            ui.label(RichText::new(format!("· fetched {}", fmt_unix_date(*ts))).weak().small())
+            let when = fmt_unix_date(*ts)?;
+            ui.label(RichText::new(format!("· fetched {when}")).weak().small())
                 .on_hover_text("capture time — when the evidence was fetched");
         }
         Ok(())
@@ -262,7 +256,7 @@ mod tests {
 
     #[test]
     fn date_formats_epoch() {
-        assert_eq!(fmt_unix_date(0), "1970-01-01");
-        assert_eq!(fmt_unix_date(1_700_000_000), "2023-11-14");
+        assert_eq!(fmt_unix_date(0).unwrap(), "1970-01-01");
+        assert_eq!(fmt_unix_date(1_700_000_000).unwrap(), "2023-11-14");
     }
 }

@@ -182,7 +182,7 @@ fn level_color(level: Level, visuals: &Visuals) -> Color32 {
         Level::Debug => visuals.weak_text_color(),
         Level::Info => visuals.text_color(),
         Level::Warn => Color32::from_rgb(235, 170, 60),
-        Level::Error => Color32::from_rgb(235, 80, 80),
+        Level::Error => super::style::DANGER,
     }
 }
 

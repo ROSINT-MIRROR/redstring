@@ -49,17 +49,31 @@ pub fn camera_read(ui: &egui::Ui) -> Result<Camera, Error> {
     })
 }
 
-fn sane_zoom(z: f32) -> f32 {
+pub fn clamp_zoom(z: f32) -> Result<f32, Error> {
     if !z.is_finite() {
-        return 1.0;
+        return Ok(1.0);
     }
-    z.clamp(MIN_ZOOM, MAX_ZOOM)
+    Ok(z.clamp(MIN_ZOOM, MAX_ZOOM))
+}
+
+pub fn fit_box_to_board(bbox: Rect, board: Vec2, margin: f32, max_zoom: f32) -> Result<Camera, Error> {
+    let span = bbox.size();
+    let w = span.x.max(1.0);
+    let h = span.y.max(1.0);
+    let fit = (board.x * margin / w).min(board.y * margin / h);
+    let zoom = clamp_zoom(fit.min(max_zoom))?;
+    let pan = board / 2.0 - bbox.center().to_vec2() * zoom;
+    Ok(Camera {
+        x: pan.x,
+        y: pan.y,
+        zoom,
+    })
 }
 
 pub fn camera_write(ui: &mut egui::Ui, cam: Camera) -> Result<(), Error> {
     let mut mf = meta(ui)?;
     mf.pan = Vec2::new(cam.x, cam.y);
-    mf.zoom = sane_zoom(cam.zoom);
+    mf.zoom = clamp_zoom(cam.zoom)?;
     mf.save(ui);
     Ok(())
 }
@@ -85,7 +99,7 @@ fn scroll_zoom(ui: &mut egui::Ui) -> Result<(), Error> {
     }
 
     let mut mf = meta(ui)?;
-    let new_zoom = sane_zoom(mf.zoom * factor);
+    let new_zoom = clamp_zoom(mf.zoom * factor)?;
     crate::dlog_debug!("board", "zoom {:.3}->{:.3}", mf.zoom, new_zoom);
 
     let local = pointer - board.left_top();

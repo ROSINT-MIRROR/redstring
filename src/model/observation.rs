@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
+use super::civil::{fmt_civil_date, fnv1a};
 use super::source::Source;
 
 
@@ -168,56 +169,11 @@ impl ObsValue {
         Ok(match self {
             ObsValue::Text(s) => s.clone(),
             ObsValue::Number(n) => format!("{n}"),
-            ObsValue::Date(d) => fmt_date(d.secs, d.precision),
+            ObsValue::Date(d) => fmt_civil_date(d.secs, d.precision)?,
             ObsValue::Coord { lat, lon } => format!("{lat},{lon}"),
             ObsValue::Bool(b) => format!("{b}"),
         })
     }
-}
-
-
-fn fmt_date(secs: i64, precision: DatePrecision) -> String {
-    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
-    match precision {
-        DatePrecision::Day => format!("{y:04}-{m:02}-{d:02}"),
-        DatePrecision::Month => format!("{y:04}-{m:02}"),
-        DatePrecision::Year => format!("{y}"),
-        DatePrecision::Decade => format!("{}s", y.div_euclid(10) * 10),
-        DatePrecision::Century => format!("{} c.", ordinal((y - 1).div_euclid(100) + 1)),
-        DatePrecision::Circa => format!("~{y}"),
-    }
-}
-
-fn ordinal(n: i64) -> String {
-    let in_teens = (11..=13).contains(&n.rem_euclid(100));
-    let ones = n.rem_euclid(10);
-    let suffix = if in_teens {
-        "th"
-    } else if ones == 1 {
-        "st"
-    } else if ones == 2 {
-        "nd"
-    } else if ones == 3 {
-        "rd"
-    } else {
-        "th"
-    };
-    format!("{n}{suffix}")
-}
-
-fn civil_from_days(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let base = if z >= 0 { z } else { z - 146_096 };
-    let era = base.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if month <= 2 { year + 1 } else { year };
-    (year, month, day)
 }
 
 
@@ -300,18 +256,8 @@ pub fn fresh_id(author_email: &str) -> Result<ObsId, Error> {
         .map_err(|source| Error::Clock { source })?
         .as_nanos();
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let salt = fnv1a(author_email).wrapping_add(seq);
+    let salt = fnv1a(author_email)?.wrapping_add(seq);
     Ok(ObsId(format!("{nanos:024x}{salt:016x}")))
-}
-
-
-fn fnv1a(s: &str) -> u64 {
-    let mut h = 0xcbf29ce484222325u64;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    h
 }
 
 
@@ -437,21 +383,6 @@ mod tests {
             "the raw negative epoch must never leak: {rendered}"
         );
         assert_eq!(date(-2_208_988_800, DatePrecision::Year).text().unwrap(), "1900");
-    }
-
-    #[test]
-    fn ordinal_suffixes_follow_english_rules() {
-        assert_eq!(ordinal(1), "1st");
-        assert_eq!(ordinal(2), "2nd");
-        assert_eq!(ordinal(3), "3rd");
-        assert_eq!(ordinal(4), "4th");
-        assert_eq!(ordinal(11), "11th");
-        assert_eq!(ordinal(12), "12th");
-        assert_eq!(ordinal(13), "13th");
-        assert_eq!(ordinal(14), "14th");
-        assert_eq!(ordinal(21), "21st");
-        assert_eq!(ordinal(22), "22nd");
-        assert_eq!(ordinal(23), "23rd");
     }
 
     #[test]
