@@ -16,10 +16,10 @@ use crate::error::Error;
 use crate::model::{Camera, Entity, KIND_META, RELATION_META, VERIFICATION_META, Verification};
 use crate::project::{Project, read_case};
 use crate::shapes::{
-    IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, NODE_RADIUS, SourcedEdgeShape,
-    label_box,
+    IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX, NODE_RADIUS,
+    SourcedEdgeShape, label_box,
 };
-use crate::ui::{RsGraph, apply_visuals, board_color, build_graph};
+use crate::ui::{RsGraph, apply_visuals, board_color, build_graph, clamp_zoom, fit_box_to_board};
 
 use super::png::render_png;
 
@@ -29,10 +29,7 @@ const DEFAULT_WIDTH: u32 = 1600;
 const DEFAULT_HEIGHT: u32 = 1000;
 const MAX_DIM: u32 = 8192;
 const MARGIN_FRAC: f32 = 0.86;
-const MIN_ZOOM: f32 = 0.01;
-const MAX_ZOOM: f32 = 30.0;
 const MAX_FIT_ZOOM: f32 = 2.2;
-const MAX_FONT_PX: f32 = 256.0;
 const FORCE_ITERS: u32 = 240;
 const FORCE_STEP: f32 = 150.0;
 const FORCE_GRAVITY: f32 = 0.04;
@@ -233,13 +230,6 @@ fn screen(p: Pos2, cam: Camera) -> Pos2 {
     Pos2::new(p.x * cam.zoom + cam.x, p.y * cam.zoom + cam.y)
 }
 
-fn clamp_zoom(z: f32) -> f32 {
-    if !z.is_finite() {
-        return 1.0;
-    }
-    z.clamp(MIN_ZOOM, MAX_ZOOM)
-}
-
 fn fit_camera(g: &RsGraph, board: Vec2) -> Camera {
     let mut pts: Vec<(Pos2, f32)> = Vec::new();
     for idx in g.g().node_indices() {
@@ -257,17 +247,10 @@ fn fit_camera(g: &RsGraph, board: Vec2) -> Camera {
     let Ok(bbox) = super::frame::cluster_bounds(&pts) else {
         return Camera::default();
     };
-    let span = bbox.size();
-    let w = span.x.max(1.0);
-    let h = span.y.max(1.0);
-    let fit = (board.x * MARGIN_FRAC / w).min(board.y * MARGIN_FRAC / h);
-    let zoom = clamp_zoom(fit.min(MAX_FIT_ZOOM));
-    let pan = board / 2.0 - bbox.center().to_vec2() * zoom;
-    Camera {
-        x: pan.x,
-        y: pan.y,
-        zoom,
-    }
+    let Ok(cam) = fit_box_to_board(bbox, board, MARGIN_FRAC, MAX_FIT_ZOOM) else {
+        return Camera::default();
+    };
+    cam
 }
 
 fn layout_pass(g: &mut RsGraph) {
@@ -441,7 +424,7 @@ pub(super) fn run_frames(
 fn write_camera(ui: &mut egui::Ui, cam: Camera) -> Result<(), Error> {
     let mut mf = MetadataFrame::new(Some(META_ID.to_owned())).load(ui);
     mf.pan = Vec2::new(cam.x, cam.y);
-    mf.zoom = clamp_zoom(cam.zoom);
+    mf.zoom = clamp_zoom(cam.zoom)?;
     mf.save(ui);
     Ok(())
 }

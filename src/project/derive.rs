@@ -12,7 +12,7 @@ use super::layout::Project;
 
 pub fn write_json(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("case.json");
-    let public = redact(cf);
+    let public = redact(cf)?;
     let text = serde_json::to_string_pretty(&public).map_err(|source| Error::JsonSer { source })?;
     std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
@@ -20,7 +20,7 @@ pub fn write_json(project: &Project, cf: &CaseFile) -> Result<(), Error> {
 
 pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("graph.md");
-    let public = redact(cf);
+    let public = redact(cf)?;
     std::fs::write(&path, graph_md(&public))
         .map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
@@ -28,12 +28,12 @@ pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
 
 const SEALED_LABEL: &str = "[sealed]";
 
-fn redact(cf: &CaseFile) -> CaseFile {
+fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
     let mut out = cf.clone();
     let mut remap: BTreeMap<String, String> = BTreeMap::new();
     for e in &mut out.data.entities {
         if e.sealed {
-            let alias = sealed_alias(&e.slug);
+            let alias = sealed_alias(&e.slug)?;
             remap.insert(e.slug.clone(), alias.clone());
             e.slug = alias;
             e.label = SEALED_LABEL.to_owned();
@@ -53,7 +53,7 @@ fn redact(cf: &CaseFile) -> CaseFile {
     out.display.positions = remapped_map(&out.display.positions, &remap);
     out.display.sizes = remapped_map(&out.display.sizes, &remap);
     out.display.collapsed = remapped_set(&out.display.collapsed, &remap);
-    out
+    Ok(out)
 }
 
 fn resolve(remap: &BTreeMap<String, String>, slug: &str) -> String {
@@ -74,17 +74,8 @@ fn remapped_set(src: &BTreeSet<String>, remap: &BTreeMap<String, String>) -> BTr
     src.iter().map(|k| resolve(remap, k)).collect()
 }
 
-fn sealed_alias(slug: &str) -> String {
-    format!("sealed_{:016x}", fnv1a(slug))
-}
-
-fn fnv1a(s: &str) -> u64 {
-    let mut h = 0xcbf29ce484222325u64;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    h
+fn sealed_alias(slug: &str) -> Result<String, Error> {
+    Ok(format!("sealed_{:016x}", crate::model::fnv1a(slug)?))
 }
 
 
@@ -248,10 +239,10 @@ mod tests {
         cf.data.relations.push(rel("acme", "jane_victim", RelationKind::Owns));
         cf.display.positions.insert("jane_victim".into(), (10.0, 20.0));
 
-        let public = redact(&cf);
+        let public = redact(&cf).unwrap();
         let md = graph_md(&public);
         let json = serde_json::to_string_pretty(&public).unwrap();
-        let alias = sealed_alias("jane_victim");
+        let alias = sealed_alias("jane_victim").unwrap();
 
         for leak in [
             "Jane Victim",
@@ -309,7 +300,7 @@ mod tests {
 
         let before_md = graph_md(&cf);
         let before_json = serde_json::to_string_pretty(&cf).unwrap();
-        let public = redact(&cf);
+        let public = redact(&cf).unwrap();
 
         assert_eq!(public, cf, "redact is a no-op when nothing is sealed");
         assert_eq!(graph_md(&public), before_md, "graph.md stays byte-identical");
@@ -330,7 +321,7 @@ mod tests {
         auditor.observations = vec![secret, obs("role_title", "Compliance Auditor")];
         cf.data.entities.push(auditor);
 
-        let json = serde_json::to_string_pretty(&redact(&cf)).unwrap();
+        let json = serde_json::to_string_pretty(&redact(&cf).unwrap()).unwrap();
         assert!(!json.contains("Deep Throat"), "sealed obs content must not leak: {json}");
         assert!(!json.contains("informant_name"), "sealed obs key must not leak: {json}");
         assert!(json.contains("Compliance Auditor"), "an unsealed obs survives: {json}");
@@ -363,7 +354,7 @@ mod tests {
         ];
         cf.data.relations.push(edge);
 
-        let public = redact(&cf);
+        let public = redact(&cf).unwrap();
         let json = serde_json::to_string_pretty(&public).unwrap();
         assert!(!json.contains("confidential-wire-tap"), "sealed source ref must not leak: {json}");
         assert!(!json.contains("intercept transcript"), "sealed source excerpt must not leak: {json}");

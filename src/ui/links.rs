@@ -6,8 +6,9 @@ use crate::error::Error;
 use crate::model::{Origin, RELATION_META, Relation, RelationKind, Verification};
 use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, NODE_RADIUS, label_box};
 
-use super::app::{ALARM_RED, RedstringApp};
+use super::app::RedstringApp;
 use super::board::meta;
+use super::style::DANGER;
 
 const MAX_LABEL_PX: f32 = 256.0;
 const DRAG_THRESHOLD: f32 = 4.0;
@@ -178,10 +179,10 @@ impl RedstringApp {
         };
 
         let a = meta(ui)?.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
-        let stroke = Stroke::new(2.0_f32, ALARM_RED);
+        let stroke = Stroke::new(2.0_f32, DANGER);
         let painter = ui.painter().with_clip_rect(rect);
         painter.extend(Shape::dashed_line(&[a, pointer], stroke, 9.0, 6.0));
-        painter.circle_filled(pointer, 3.5, ALARM_RED);
+        painter.circle_filled(pointer, 3.5, DANGER);
         Ok(())
     }
 
