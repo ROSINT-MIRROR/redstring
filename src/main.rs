@@ -1,4 +1,5 @@
 mod error;
+mod log;
 mod model;
 mod modules;
 mod prefs;
@@ -11,15 +12,26 @@ use std::path::Path;
 use ui::RedstringApp;
 
 fn main() -> eframe::Result {
-    let mut args = std::env::args().skip(1);
-    let Some(flag) = args.next() else {
-        return run_gui();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let check = args.iter().position(|a| a == "--check");
+    let Some(check_at) = check else {
+        return run_after_flags(&args);
     };
-    if flag == "--check" {
-        run_check(args.next());
+    run_check(args.get(check_at + 1).cloned())
+}
+
+fn run_after_flags(args: &[String]) -> eframe::Result {
+    if args.iter().any(|a| a == "--debug") {
+        enable_debug();
     }
-    eprintln!("usage: redstring [--check <case dir or case.redstring>]");
-    std::process::exit(2);
+    run_gui()
+}
+
+fn enable_debug() {
+    let Err(err) = log::enable() else {
+        return;
+    };
+    eprintln!("debug logging unavailable: {err}");
 }
 
 fn run_gui() -> eframe::Result {

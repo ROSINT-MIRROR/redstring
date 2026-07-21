@@ -6,6 +6,7 @@ mod inspector;
 mod layout;
 mod links;
 mod lookups;
+mod logview;
 mod ops;
 mod palette;
 mod persist;

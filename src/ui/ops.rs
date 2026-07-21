@@ -119,9 +119,11 @@ impl RedstringApp {
             collapsed: false,
             hidden: false,
         };
-        Ok(self
+        let idx = self
             .g
-            .add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos))
+            .add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos);
+        crate::dlog_info!("ops", "add_entity kind={:?} label={label:?} idx={}", kind, idx.index());
+        Ok(idx)
     }
 
     pub fn add_preset(&mut self, preset: &Preset, pos: Pos2) -> Result<NodeIndex, Error> {
@@ -141,6 +143,7 @@ impl RedstringApp {
         let e = n.payload_mut();
         e.label = label.to_owned();
         e.slug = slug;
+        crate::dlog_info!("ops", "rename idx={} slug={} label={label:?}", idx.index(), e.slug);
         Ok(())
     }
 
@@ -149,6 +152,7 @@ impl RedstringApp {
             return Ok(());
         };
         n.payload_mut().size = size;
+        crate::dlog_debug!("ops", "resize idx={} size={size:.2}", idx.index());
         Ok(())
     }
 

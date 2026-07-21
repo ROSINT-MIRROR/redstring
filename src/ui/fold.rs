@@ -150,6 +150,77 @@ fn menu_should_close(escape: bool, clicked_elsewhere: bool, acted: bool, just_op
     escape || acted || (clicked_elsewhere && !just_opened)
 }
 
+fn node_slug_str(g: &RsGraph, idx: NodeIndex) -> String {
+    let Some(n) = g.node(idx) else {
+        return String::new();
+    };
+    n.payload().slug.clone()
+}
+
+fn slug_list(g: &RsGraph, set: &HashSet<NodeIndex>) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for idx in set {
+        let Some(n) = g.node(*idx) else {
+            continue;
+        };
+        v.push(n.payload().slug.clone());
+    }
+    v.sort();
+    v
+}
+
+fn currently_hidden(g: &RsGraph) -> HashSet<NodeIndex> {
+    let inner = g.g();
+    let mut out = HashSet::new();
+    for idx in inner.node_indices() {
+        let Some(n) = inner.node_weight(idx) else {
+            continue;
+        };
+        if n.payload().hidden {
+            out.insert(idx);
+        }
+    }
+    out
+}
+
+fn collapsed_with_root(g: &RsGraph, root: NodeIndex) -> HashSet<NodeIndex> {
+    let mut c = collapsed_set(g);
+    c.insert(root);
+    c
+}
+
+fn log_components(g: &RsGraph, collapsed: &HashSet<NodeIndex>, op: &str, root: &str) {
+    if !crate::log::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    for members in undirected_components(g) {
+        let has_k = members.iter().any(|idx| collapsed.contains(idx));
+        if !has_k {
+            crate::dlog_debug!(
+                "fold",
+                "{op} root={root} component sz={} no-collapsed-member skipped",
+                members.len()
+            );
+            continue;
+        }
+        let subs = subcomponents(g, &members, collapsed);
+        let board = pick_board(&subs);
+        let mut would_hide = 0usize;
+        for (sid, m) in subs.iter().enumerate() {
+            if Some(sid) != board {
+                would_hide += m.len();
+            }
+        }
+        crate::dlog_info!(
+            "fold",
+            "{op} root={root} component sz={} subs={} board_sz={:?} would_hide={would_hide}",
+            members.len(),
+            subs.len(),
+            board.map(|b| subs[b].len())
+        );
+    }
+}
+
 impl RedstringApp {
     fn node_caption(&self, idx: NodeIndex) -> String {
         let Some(n) = self.g.node(idx) else {
@@ -178,6 +249,16 @@ impl RedstringApp {
 
     pub fn apply_fold(&mut self) -> Result<(), Error> {
         let hidden = derive_hidden(&self.g);
+        let prior = currently_hidden(&self.g);
+        if hidden != prior {
+            crate::dlog_debug!(
+                "fold",
+                "apply_fold hidden {}->{} now={:?}",
+                prior.len(),
+                hidden.len(),
+                slug_list(&self.g, &hidden)
+            );
+        }
         let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
         for idx in nodes {
             let h = hidden.contains(&idx);
@@ -204,6 +285,8 @@ impl RedstringApp {
     }
 
     pub fn toggle_collapse(&mut self, idx: NodeIndex) -> Result<(), Error> {
+        let before = collapsed_set(&self.g);
+        let slug = node_slug_str(&self.g, idx);
         let Some(n) = self.g.node_mut(idx) else {
             return Ok(());
         };
@@ -211,6 +294,16 @@ impl RedstringApp {
         e.collapsed = !e.collapsed;
         let now = e.collapsed;
         let label = e.label.clone();
+        let after = collapsed_set(&self.g);
+        let hidden = hidden_for(&self.g, &after);
+        crate::dlog_info!(
+            "fold",
+            "toggle slug={slug} collapsed={now} before={:?} after={:?} hidden={:?}",
+            slug_list(&self.g, &before),
+            slug_list(&self.g, &after),
+            slug_list(&self.g, &hidden)
+        );
+        log_components(&self.g, &after, "toggle", &slug);
         self.status = if now {
             format!("collapsed {label}")
         } else {
@@ -220,17 +313,53 @@ impl RedstringApp {
     }
 
     pub fn collapse_subtree(&mut self, root: NodeIndex) -> Result<(), Error> {
+        let before = collapsed_set(&self.g);
         let cluster = pendant_cluster(&self.g, root);
+        let root_slug = node_slug_str(&self.g, root);
         let label = self.node_caption(root);
+        crate::dlog_info!(
+            "fold",
+            "collapse_all root={root_slug} before={:?} cluster={:?}",
+            slug_list(&self.g, &before),
+            slug_list(&self.g, &cluster)
+        );
+        log_components(&self.g, &collapsed_with_root(&self.g, root), "collapse_all", &root_slug);
         let count = self.apply_cluster_collapse(root, cluster, true);
+        let after = collapsed_set(&self.g);
+        crate::dlog_info!(
+            "fold",
+            "collapse_all root={root_slug} after={:?} folded={count}",
+            slug_list(&self.g, &after)
+        );
         self.status = format!("collapsed {label} — {count} node(s) folded");
         Ok(())
     }
 
     pub fn expand_subtree(&mut self, root: NodeIndex) -> Result<(), Error> {
+        let before = collapsed_set(&self.g);
         let cluster = pendant_cluster(&self.g, root);
+        let root_slug = node_slug_str(&self.g, root);
         let label = self.node_caption(root);
+        crate::dlog_info!(
+            "fold",
+            "expand_all root={root_slug} before={:?} cluster={:?}",
+            slug_list(&self.g, &before),
+            slug_list(&self.g, &cluster)
+        );
+        log_components(&self.g, &collapsed_with_root(&self.g, root), "expand_all", &root_slug);
         let count = self.apply_cluster_collapse(root, cluster, false);
+        let after = collapsed_set(&self.g);
+        if after.is_empty() {
+            crate::dlog_info!("fold", "expand_all root={root_slug} after=[] shown={count}");
+        } else {
+            crate::dlog_warn!(
+                "fold",
+                "expand_all root={root_slug} left {} STALE collapsed flags {:?} — cluster was computed from {} before-collapsed nodes, not collapse's set",
+                after.len(),
+                slug_list(&self.g, &after),
+                before.len()
+            );
+        }
         self.status = format!("expanded {label} — {count} node(s) shown");
         Ok(())
     }
@@ -252,6 +381,7 @@ impl RedstringApp {
         let Some(idx) = fold_target(dbl, over) else {
             return Ok(());
         };
+        crate::dlog_debug!("fold", "double-click toggle on {}", node_slug_str(&self.g, idx));
         self.toggle_collapse(idx)?;
         ui.ctx().request_repaint();
         Ok(())
@@ -291,9 +421,11 @@ impl RedstringApp {
             });
 
         if collapse_all {
+            crate::dlog_info!("fold", "menu collapse-all on {}", node_slug_str(&self.g, idx));
             self.collapse_subtree(idx)?;
         }
         if expand_all {
+            crate::dlog_info!("fold", "menu expand-all on {}", node_slug_str(&self.g, idx));
             self.expand_subtree(idx)?;
         }
         let acted = collapse_all || expand_all;

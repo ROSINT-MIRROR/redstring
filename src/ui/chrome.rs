@@ -113,6 +113,14 @@ impl RedstringApp {
                     {
                         self.prefs_open = !self.prefs_open;
                     }
+                    if crate::log::ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+                        && tb_button(ui, egui_phosphor::regular::BUG, "Log")
+                            .on_hover_text("toggle the debug log window (--debug)")
+                            .clicked()
+                    {
+                        let open = crate::log::is_open()?;
+                        crate::log::set_open(!open)?;
+                    }
                     ui.separator();
                     let layouts = [
                         (egui_phosphor::regular::GRAPH, "Force", "organic — force-directed", LayoutKind::Force),
@@ -201,9 +209,11 @@ impl RedstringApp {
 
     pub fn request_quit(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         if self.dirty()? {
+            crate::dlog_info!("quit", "quit requested — dirty, showing confirm");
             self.quit_confirm = true;
             return Ok(());
         }
+        crate::dlog_info!("quit", "quit requested — clean, closing");
         self.allow_close = true;
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         Ok(())
@@ -216,6 +226,7 @@ impl RedstringApp {
         if !self.dirty()? {
             return Ok(());
         }
+        crate::dlog_warn!("quit", "window close intercepted — unsaved changes, cancelling");
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
         self.quit_confirm = true;
         Ok(())
@@ -257,6 +268,7 @@ impl RedstringApp {
                     removed += 1;
                 }
             }
+            crate::dlog_info!("ops", "delete removed={removed} requested={}", list.len());
             self.delete_confirm = None;
             self.status = format!("removed {removed} entities and their relations");
         }
@@ -288,6 +300,7 @@ impl RedstringApp {
                 });
             });
         if save_quit {
+            crate::dlog_info!("quit", "save & quit chosen");
             self.save(ui)?;
             if !self.dirty()? {
                 self.quit_confirm = false;
@@ -296,11 +309,13 @@ impl RedstringApp {
             }
         }
         if discard {
+            crate::dlog_warn!("quit", "quit without saving chosen");
             self.quit_confirm = false;
             self.allow_close = true;
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if cancel {
+            crate::dlog_info!("quit", "quit cancelled");
             self.quit_confirm = false;
         }
         Ok(())

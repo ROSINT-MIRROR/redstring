@@ -158,6 +158,13 @@ impl RedstringApp {
             found: 0,
             streams: crate::modules::streaming(&input.shapes)?,
         });
+        crate::dlog_info!(
+            "lookups",
+            "job launch run_id={} module={} target={}",
+            input.run_id,
+            input.module_label,
+            input.target_label
+        );
         self.status = format!("{} running on {}…", input.module_label, input.target_label);
         crate::modules::spawn_module(input, self.module_tx.clone(), ui.ctx().clone())?;
         Ok(())
@@ -209,6 +216,7 @@ impl RedstringApp {
             let run_id = run.run_id;
             let last = run.last;
             if run.cancelled {
+                crate::dlog_warn!("lookups", "job cancelled run_id={run_id} module={}", run.module_label);
                 self.jobs.retain(|j| j.run_id != run_id);
                 self.status = format!(
                     "{} on {} cancelled — {} kept",
@@ -217,6 +225,7 @@ impl RedstringApp {
                 continue;
             }
             if !run.ok {
+                crate::dlog_error!("lookups", "job failed run_id={run_id} module={}: {}", run.module_label, run.stderr_tail);
                 self.jobs.retain(|j| j.run_id != run_id);
                 self.status = format!("{} failed: {}", run.module_label, run.stderr_tail);
                 continue;
@@ -224,6 +233,7 @@ impl RedstringApp {
             if !run.facts.is_empty() {
                 self.apply_run(ui, run)?;
             } else if last {
+                crate::dlog_info!("lookups", "job done run_id={run_id} found={}", self.job_found(run_id));
                 self.status = format!(
                     "{} done — {} found",
                     self.job_label(run_id),
@@ -323,6 +333,12 @@ impl RedstringApp {
         }
         self.kick_spawn_anim(ui, steps)?;
         let total = self.bump_job_found(run.run_id, linked);
+        crate::dlog_info!(
+            "lookups",
+            "apply run_id={} module={} attrs={attrs_set} linked={total} skipped={skipped} spawned={spawned}",
+            run.run_id,
+            run.module_id
+        );
         self.status = if run.last {
             format!(
                 "{}: {attrs_set} attrs set, {total} linked, {skipped} skipped — prune what's irrelevant",

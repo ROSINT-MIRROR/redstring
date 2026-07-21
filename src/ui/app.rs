@@ -185,6 +185,7 @@ impl RedstringApp {
 
         match Project::open(Path::new(".")) {
             Ok(project) => {
+                crate::dlog_info!("app", "opened case in cwd {}", project.root.display());
                 app.project = Some(project);
                 app.pending_load = true;
                 app.remember_project()?;
@@ -196,10 +197,12 @@ impl RedstringApp {
             }
         }
         app.apply_prefs(&cc.egui_ctx)?;
+        crate::dlog_info!("app", "startup case={:?} has_project={}", app.case_name, app.project.is_some());
         Ok(app)
     }
 
     fn start_blank(&mut self) {
+        crate::dlog_info!("app", "start blank (no case in cwd)");
         self.show_welcome = true;
         self.pending_camera = Some(Camera::default());
     }
@@ -322,6 +325,7 @@ impl RedstringApp {
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
         self.welcome_window(ui)?;
+        super::logview::window(ui.ctx())?;
 
         let strip = egui::Panel::left("left_strip")
             .resizable(false)

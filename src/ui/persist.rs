@@ -130,6 +130,13 @@ impl RedstringApp {
         self.watch_current()?;
         self.saved_fp = self.fingerprint()?;
         self.last_saved_at = Some(now_unix()?);
+        crate::dlog_info!(
+            "persist",
+            "save {} entities / {} links -> {}",
+            cf.data.entities.len(),
+            cf.data.relations.len(),
+            project.root.display()
+        );
         self.status = format!(
             "saved {} entities / {} links → {}{}",
             cf.data.entities.len(),
@@ -161,6 +168,7 @@ impl RedstringApp {
             return Ok(());
         };
         let (path, n) = project::export(project)?;
+        crate::dlog_info!("persist", "export bundle {n} files -> {}", path.display());
         self.status = format!("bundled {n} files → {}", path.display());
         Ok(())
     }
@@ -197,6 +205,7 @@ impl RedstringApp {
         };
         match opened {
             Ok(project) => {
+                crate::dlog_info!("persist", "open ok {}", project.root.display());
                 self.project = Some(project);
                 self.load(ui)?;
                 self.show_welcome = false;
@@ -204,6 +213,7 @@ impl RedstringApp {
                 Ok(())
             }
             Err(err) => {
+                crate::dlog_warn!("persist", "open failed: {err}");
                 self.status = format!("open failed: {err}");
                 Ok(())
             }
@@ -239,6 +249,7 @@ impl RedstringApp {
             self.status = "no case open".into();
             return Ok(());
         };
+        crate::dlog_info!("persist", "load begin {}", project.root.display());
         let cf = project::read_case(&project)?;
 
         let mut g: RsGraph = Graph::from(&StableGraph::default());
@@ -316,6 +327,13 @@ impl RedstringApp {
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;
         self.saved_fp = self.fingerprint()?;
+        crate::dlog_info!(
+            "persist",
+            "load done {} entities / {} links / {healed} healed / {} skipped",
+            cf.data.entities.len(),
+            cf.data.relations.len(),
+            skipped.len()
+        );
 
         self.status = format!(
             "loaded {} entities / {} links from {}",
@@ -363,6 +381,7 @@ impl RedstringApp {
             return Ok(());
         };
         if t > seen {
+            crate::dlog_info!("persist", "hot-reload: external edit on {path}");
             self.load(ui)?;
             self.status = format!("external edit detected — reloaded {path}");
         }
