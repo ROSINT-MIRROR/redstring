@@ -1,5 +1,6 @@
 use crate::error::Error;
 
+use super::engine::{norm_key, push_dedup};
 use super::{Extractor, Record, Records};
 
 pub struct Ndjson;
@@ -25,11 +26,11 @@ impl Extractor for Ndjson {
             };
             let mut record: Record = Record::new();
             for (k, v) in &obj {
-                let key = k.trim().to_lowercase();
+                let key = norm_key(k)?;
                 if key.is_empty() {
                     continue;
                 }
-                absorb(&mut record, &key, v, true);
+                absorb(&mut record, &key, v, true)?;
             }
             if !record.is_empty() {
                 records.push(record);
@@ -39,46 +40,47 @@ impl Extractor for Ndjson {
     }
 }
 
-fn absorb(record: &mut Record, key: &str, value: &serde_json::Value, nest: bool) {
-    if push_scalar(record, key, value) {
-        return;
+fn absorb(record: &mut Record, key: &str, value: &serde_json::Value, nest: bool) -> Result<(), Error> {
+    if push_scalar(record, key, value)? {
+        return Ok(());
     }
     if let serde_json::Value::Array(items) = value {
         for item in items {
-            push_scalar(record, key, item);
+            push_scalar(record, key, item)?;
         }
-        return;
+        return Ok(());
     }
     if !nest {
-        return;
+        return Ok(());
     }
     let serde_json::Value::Object(inner) = value else {
-        return;
+        return Ok(());
     };
     for (child_key, child) in inner {
-        let sub = child_key.trim().to_lowercase();
+        let sub = norm_key(child_key)?;
         if sub.is_empty() {
             continue;
         }
         let dotted = format!("{key}.{sub}");
-        absorb(record, &dotted, child, false);
+        absorb(record, &dotted, child, false)?;
     }
+    Ok(())
 }
 
-fn push_scalar(record: &mut Record, key: &str, value: &serde_json::Value) -> bool {
+fn push_scalar(record: &mut Record, key: &str, value: &serde_json::Value) -> Result<bool, Error> {
     if let serde_json::Value::String(s) = value {
-        push_field(record, key, s);
-        return true;
+        push_dedup(record, key, s)?;
+        return Ok(true);
     }
     if let serde_json::Value::Number(n) = value {
-        push_field(record, key, &number_text(n));
-        return true;
+        push_dedup(record, key, &number_text(n))?;
+        return Ok(true);
     }
     if let serde_json::Value::Bool(b) = value {
-        push_field(record, key, &b.to_string());
-        return true;
+        push_dedup(record, key, &b.to_string())?;
+        return Ok(true);
     }
-    false
+    Ok(false)
 }
 
 fn number_text(n: &serde_json::Number) -> String {
@@ -93,17 +95,6 @@ fn float_text(n: &serde_json::Number) -> String {
         return n.to_string();
     };
     f.to_string()
-}
-
-fn push_field(record: &mut Record, key: &str, val: &str) {
-    let val = val.trim();
-    if val.is_empty() {
-        return;
-    }
-    let entry = record.entry(key.to_owned()).or_default();
-    if !entry.iter().any(|e| e == val) {
-        entry.push(val.to_owned());
-    }
 }
 
 #[cfg(test)]

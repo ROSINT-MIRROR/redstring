@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 use crate::error::Error;
 
+use super::engine::norm_key;
 use super::{Extractor, Record, Records};
 
 #[derive(Deserialize)]
@@ -33,7 +34,7 @@ impl Lines {
                     .field
             }
         };
-        let field = raw.trim().to_lowercase();
+        let field = norm_key(&raw)?;
         let field = if field.is_empty() {
             default_field()
         } else {

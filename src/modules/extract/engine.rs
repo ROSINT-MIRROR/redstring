@@ -12,6 +12,22 @@ use super::regex::RegexExtract;
 pub type Record = BTreeMap<String, Vec<String>>;
 pub type Records = Vec<Record>;
 
+pub(super) fn norm_key(k: &str) -> Result<String, Error> {
+    Ok(k.trim().to_lowercase())
+}
+
+pub(super) fn push_dedup(record: &mut Record, key: &str, val: &str) -> Result<(), Error> {
+    let val = val.trim();
+    if val.is_empty() {
+        return Ok(());
+    }
+    let entry = record.entry(key.to_owned()).or_default();
+    if !entry.iter().any(|e| e == val) {
+        entry.push(val.to_owned());
+    }
+    Ok(())
+}
+
 pub trait Extractor {
     fn extract(&self, stdout: &str) -> Result<Records, Error>;
 }
