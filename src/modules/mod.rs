@@ -1,3 +1,4 @@
+mod builtin;
 mod emit;
 mod extract;
 mod registry;
