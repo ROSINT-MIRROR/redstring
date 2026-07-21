@@ -7,13 +7,15 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 6] = [
+const BUILTIN: [(&str, &str); 8] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
     ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
     ("builtin:tlsx", include_str!("../../modules/tlsx.ron")),
     ("builtin:katana", include_str!("../../modules/katana.ron")),
     ("builtin:crtsh", include_str!("../../modules/crtsh.ron")),
+    ("builtin:webprobe", include_str!("../../modules/webprobe.ron")),
+    ("builtin:hrefs", include_str!("../../modules/hrefs.ron")),
 ];
 
 
@@ -459,5 +461,74 @@ OrgName:        Google LLC
     fn katana_now_applies_to_domain() {
         let entry = entry_from_str("builtin:katana", BUILTIN[4].1).unwrap();
         assert!(entry.spec.kinds().unwrap().contains(&EntityKind::Domain));
+    }
+
+    fn builtin(origin: &str) -> ModuleSpec {
+        let Some((_, text)) = BUILTIN.iter().find(|(o, _)| *o == origin) else {
+            panic!("BUILTIN missing {origin}");
+        };
+        entry_from_str(origin, text).unwrap().spec
+    }
+
+    #[test]
+    fn webprobe_and_hrefs_apply_to_web_kinds() {
+        let wp = builtin("builtin:webprobe").kinds().unwrap();
+        assert!(wp.contains(&EntityKind::Domain));
+        assert!(wp.contains(&EntityKind::Website));
+        let hr = builtin("builtin:hrefs").kinds().unwrap();
+        assert!(hr.contains(&EntityKind::Website));
+        assert!(hr.contains(&EntityKind::WebPage));
+    }
+
+    #[test]
+    fn webprobe_probe_emits_web_page_served_with_observations() {
+        let spec = builtin("builtin:webprobe");
+        let text = "{\"status_code\":\"200\",\"final_url\":\"https://acme.example/\",\"title\":\"ACME Home\"}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::WebPage,
+            label: "https://acme.example/".into(),
+            value: "https://acme.example/".into(),
+            rel: RelationKind::Serves,
+            outbound: true,
+            attrs: vec![
+                ("status_code".into(), "200".into()),
+                ("title".into(), "ACME Home".into()),
+                ("final_url".into(), "https://acme.example/".into()),
+            ],
+        }));
+    }
+
+    #[test]
+    fn hrefs_lines_link_to_discovered_web_pages() {
+        let spec = builtin("builtin:hrefs");
+        let text = "https://a.example/one\nhttps://a.example/two\nhttps://b.example/x\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let pages = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::WebPage, rel: RelationKind::LinksTo, .. }))
+            .count();
+        assert_eq!(pages, 3, "one web page per href line");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::WebPage,
+            label: "https://b.example/x".into(),
+            value: "https://b.example/x".into(),
+            rel: RelationKind::LinksTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn webprobe_renders_the_verified_shell_pipeline() {
+        let spec = builtin("builtin:webprobe");
+        let args = spec
+            .render_args("example.com", "example.com", "example_com", &[])
+            .unwrap();
+        assert_eq!(args[0], "-c");
+        let expected = "b=$(curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring probe' -w ' RSMETAxZ %{http_code} %{url_effective}' 'example.com'); meta=$(printf '%s' \"$b\" | grep -oE 'RSMETAxZ [0-9]+ [^ ]+' | tail -n1); c=$(printf '%s' \"$meta\" | cut -d' ' -f2); u=$(printf '%s' \"$meta\" | cut -d' ' -f3); case \"$c\" in ''|000) exit 0 ;; esac; t=$(printf '%s' \"$b\" | paste -sd' ' - | grep -oiE '<title[^>]*>[^<]*' | head -n1 | sed 's/<[^>]*>//'); jq -cn --arg c \"$c\" --arg u \"$u\" --arg t \"$t\" '{status_code:$c,final_url:$u,title:$t}'";
+        assert_eq!(args[1], expected);
     }
 }

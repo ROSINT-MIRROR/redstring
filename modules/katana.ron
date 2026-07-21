@@ -1,17 +1,19 @@
-// builtin module spec — katana crawl of a website / web page (depth 2).
-// Follows hyperlinks and emits every discovered URL as a web page the target
-// links to, keeping the full URL as the value so distinct paths stay distinct
-// and any shared external URL converges across crawled sites.
-// katana -jsonl nests the crawled URL at request.endpoint, so jq lifts it to
-// a flat {url} per line (falling back to endpoint/url across versions) before
-// ndjson reads it.
+// builtin module spec — katana DEEP crawl (opt-in) of a domain / website / web page.
+// Unlike webprobe+hrefs (the shallow default pivot), this follows hyperlinks to depth 2
+// for exhaustive discovery. Two HARD flood guards keep it from exploding the board:
+//   -fs rdn      scopes the crawl to the root domain (no wandering off-site), and
+//   | head -200  caps the output — when head closes the pipe, SIGPIPE tears katana down.
+// Emits every discovered URL as a web page the target links_to, full URL as the value so
+// distinct paths stay distinct and shared external URLs converge across crawled sites.
+// katana -jsonl nests the crawled URL at request.endpoint, so jq lifts it to a flat {url}
+// per line (falling back to endpoint/url across versions) before ndjson reads it.
 (
     id: "katana",
-    label: "katana crawl",
+    label: "katana deep crawl",
     applies_to: ["domain", "website", "web_page"],
     bin: "sh",
     requires: ["katana", "jq"],
-    args: ["-c", "katana -u '{value}' -jsonl -silent -d 2 | jq -c '{url: (.request.endpoint // .endpoint // .url)}'"],
+    args: ["-c", "katana -u '{value}' -jsonl -silent -d 2 -fs rdn | head -200 | jq -c '{url: (.request.endpoint // .endpoint // .url)}'"],
     timeout_secs: 120,
     shapes: [
         (

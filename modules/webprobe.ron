@@ -1,0 +1,31 @@
+// builtin module spec — webprobe: probe a domain's live site and index it as a web page.
+// The shallow default pivot (Domain --serves--> Web page); pair with hrefs to walk the
+// links, or katana for the deep crawl. One curl follows redirects to the live endpoint;
+// -w appends an unambiguous marker token carrying the final HTTP status and effective
+// URL, which grep/cut lift back out; the page <title> is sliced from the delivered HTML
+// with grep+sed (no HTML parser dependency here). jq assembles one safe JSON record
+// (escaping any title) that ndjson reads. A dead probe (000, no connection) emits nothing.
+// The web page's value is the final URL; status_code/title/final_url ride as observations.
+(
+    id: "webprobe",
+    label: "web probe",
+    applies_to: ["domain", "website"],
+    bin: "sh",
+    requires: ["curl", "jq"],
+    args: ["-c", "b=$(curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring probe' -w ' RSMETAxZ %{http_code} %{url_effective}' '{value}'); meta=$(printf '%s' \"$b\" | grep -oE 'RSMETAxZ [0-9]+ [^ ]+' | tail -n1); c=$(printf '%s' \"$meta\" | cut -d' ' -f2); u=$(printf '%s' \"$meta\" | cut -d' ' -f3); case \"$c\" in ''|000) exit 0 ;; esac; t=$(printf '%s' \"$b\" | paste -sd' ' - | grep -oiE '<title[^>]*>[^<]*' | head -n1 | sed 's/<[^>]*>//'); jq -cn --arg c \"$c\" --arg u \"$u\" --arg t \"$t\" '{status_code:$c,final_url:$u,title:$t}'"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "probe",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "final_url", kind: "web_page", rel: "serves", attrs: [
+                    ("status_code", "status_code"),
+                    ("title", "title"),
+                    ("final_url", "final_url"),
+                ]),
+            ],
+        ),
+    ],
+)
