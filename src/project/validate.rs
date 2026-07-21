@@ -121,6 +121,7 @@ mod tests {
             value: String::new(),
             observations: vec![],
             role: Role::Unset,
+            occupation: None,
             image: None,
         }
     }

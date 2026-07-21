@@ -221,6 +221,7 @@ mod tests {
             value: String::new(),
             observations: vec![],
             role: Role::Unset,
+            occupation: None,
             image: Some("entities/doe/portrait.png".into()),
         });
         io::write_case(&p, &cf).unwrap();

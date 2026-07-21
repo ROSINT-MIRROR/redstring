@@ -32,6 +32,7 @@ impl RedstringApp {
                 value: e.value.clone(),
                 observations: e.observations.clone(),
                 role: e.role,
+                occupation: e.occupation.clone(),
                 image: self.image_rec(&e.image)?,
             });
             let loc = n.location();
@@ -91,10 +92,7 @@ impl RedstringApp {
         for n in g.node_weights() {
             let e = n.payload();
             let loc = n.location();
-            parts.push(format!(
-                "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}|{}|{:?}",
-                e.slug, e.kind, e.label, e.value, e.observations, e.image, e.note, loc.x, loc.y, e.size, e.collapsed, e.role
-            ));
+            parts.push(node_fp_line(e, loc.x, loc.y));
         }
         for idx in g.edge_indices() {
             let Some((a, b)) = g.edge_endpoints(idx) else { continue };
@@ -277,6 +275,7 @@ impl RedstringApp {
                 value: er.value.clone(),
                 observations: er.observations.clone(),
                 role: er.role,
+                occupation: er.occupation.clone(),
                 note,
                 image: image_abs(&project, &er.image)?,
                 size: size_of(&cf.display, &er.slug),
@@ -521,9 +520,75 @@ fn dirty_state(case_open: bool, fp: &str, saved_fp: &str) -> bool {
     case_open && fp != saved_fp
 }
 
+fn node_fp_line(e: &Entity, x: f32, y: f32) -> String {
+    format!(
+        "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}|{}|{:?}|{:?}",
+        e.slug,
+        e.kind,
+        e.label,
+        e.value,
+        e.observations,
+        e.image,
+        e.note,
+        x,
+        y,
+        e.size,
+        e.collapsed,
+        e.role,
+        e.occupation
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::dirty_state;
+    use super::{dirty_state, node_fp_line};
+    use crate::model::{
+        DEFAULT_NODE_SIZE, Entity, EntityKind, Occupation, OccupationIcon, Role,
+    };
+
+    fn bare_person() -> Entity {
+        Entity {
+            slug: "p".into(),
+            kind: EntityKind::Person,
+            label: "P".into(),
+            value: String::new(),
+            observations: Vec::new(),
+            role: Role::Unset,
+            occupation: None,
+            note: String::new(),
+            image: None,
+            size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        }
+    }
+
+    #[test]
+    fn occupation_changes_node_fingerprint() {
+        let base = bare_person();
+        let mut judge = base.clone();
+        judge.occupation = Some(Occupation {
+            label: "Judge".into(),
+            icon: OccupationIcon::Scales,
+        });
+        assert_ne!(
+            node_fp_line(&base, 0.0, 0.0),
+            node_fp_line(&judge, 0.0, 0.0),
+            "setting an occupation must change the dirty fingerprint"
+        );
+
+        let mut lawyer = base.clone();
+        lawyer.occupation = Some(Occupation {
+            label: "Judge".into(),
+            icon: OccupationIcon::Briefcase,
+        });
+        assert_ne!(
+            node_fp_line(&judge, 0.0, 0.0),
+            node_fp_line(&lawyer, 0.0, 0.0),
+            "changing only the occupation icon must change the fingerprint"
+        );
+    }
 
     #[test]
     fn blank_start_is_never_dirty() {

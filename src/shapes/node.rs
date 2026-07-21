@@ -20,7 +20,7 @@ use egui_graphs::{DefaultNodeShape, DisplayNode, DrawContext, NodeProps};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
 use crate::error::Error;
-use crate::model::{Entity, KIND_META, ROLE_META, Role};
+use crate::model::{Entity, KIND_META, OCC_BADGE, OCCUPATION_ICONS, Occupation, ROLE_META, Role};
 
 
 
@@ -68,6 +68,7 @@ pub struct EntityNodeShape {
     name: String,
 
     role: Role,
+    occupation: Option<Occupation>,
 
     size: f32,
     hidden: bool,
@@ -82,6 +83,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: props.payload.label.clone(),
             role: props.payload.role,
+            occupation: props.payload.occupation.clone(),
             size: props.payload.size * props.payload.boost,
             hidden: props.payload.hidden,
             circle,
@@ -123,6 +125,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = state.payload.label.clone();
         self.role = state.payload.role;
+        self.occupation = state.payload.occupation.clone();
         self.size = state.payload.size * state.payload.boost;
         self.hidden = state.payload.hidden;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
@@ -232,6 +235,12 @@ impl EntityNodeShape {
             center + Vec2::new(r * 0.72, -r * 0.72),
             (r * 0.5).clamp(3.0, 40.0),
         );
+        self.occupation_badge(
+            ctx,
+            &mut res,
+            center + Vec2::new(-r * 0.72, r * 0.72),
+            (r * 0.5).clamp(3.0, 40.0),
+        );
 
         let mut job = egui::text::LayoutJob::simple(
             self.name.clone(),
@@ -283,6 +292,12 @@ impl EntityNodeShape {
             ctx,
             &mut res,
             rect.right_top(),
+            (rect.width().min(rect.height()) * 0.24).clamp(3.0, 40.0),
+        );
+        self.occupation_badge(
+            ctx,
+            &mut res,
+            rect.left_bottom(),
             (rect.width().min(rect.height()) * 0.24).clamp(3.0, 40.0),
         );
 
@@ -344,6 +359,34 @@ impl EntityNodeShape {
         let glyph = ctx.ctx.fonts_mut(|f| {
             f.layout_no_wrap(
                 meta.icon.to_owned(),
+                FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
+                fg,
+            )
+        });
+        res.push(TextShape::new(center - glyph.size() / 2.0, glyph, fg).into());
+    }
+
+    fn occupation_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
+        let Some(occ) = &self.occupation else {
+            return;
+        };
+        let bg = ctx.ctx.global_style().visuals.panel_fill;
+        res.push(
+            CircleShape {
+                center,
+                radius,
+                fill: OCC_BADGE,
+                stroke: Stroke::new((radius * 0.18).max(0.6), bg),
+            }
+            .into(),
+        );
+        if radius < 4.0 {
+            return;
+        }
+        let fg = badge_fg(OCC_BADGE);
+        let glyph = ctx.ctx.fonts_mut(|f| {
+            f.layout_no_wrap(
+                OCCUPATION_ICONS[occ.icon as usize].glyph.to_owned(),
                 FontId::new((radius * 1.35).min(MAX_FONT_PX), FontFamily::Proportional),
                 fg,
             )
