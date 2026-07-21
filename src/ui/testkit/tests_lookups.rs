@@ -428,7 +428,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "passes once dup-converge (convergence-by-value + slug-tracks-label) lands"]
     fn lookup_converges_despite_mismatched_label_slug() {
         let mut app = harness::app().unwrap();
         let dom = graph::add(&mut app, EntityKind::Domain, "Evil Corp Primary Site").unwrap();
