@@ -1,4 +1,4 @@
-use egui::{Context, Pos2, Rect, Vec2};
+use egui::{Color32, Context, Pos2, Rect, Vec2};
 
 use crate::error::Error;
 
@@ -31,6 +31,11 @@ pub fn badge_radius(half: f32) -> Result<f32, Error> {
 
 pub fn badge_radius_img(min_side: f32) -> Result<f32, Error> {
     Ok((min_side * IMG_BADGE_RADIUS_FRAC).clamp(BADGE_R_MIN, BADGE_R_MAX))
+}
+
+pub fn theme_shift(bg: Color32, dark: bool, mix: f32) -> Result<Color32, Error> {
+    let toward = if dark { Color32::WHITE } else { Color32::BLACK };
+    Ok(bg.lerp_to_gamma(toward, mix))
 }
 
 #[derive(Clone, Copy)]

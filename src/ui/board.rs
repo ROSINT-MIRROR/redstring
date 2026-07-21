@@ -8,7 +8,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META, Preset};
-use crate::shapes::{IMG_RADIUS, NODE_RADIUS, SourcedEdgeShape};
+use crate::shapes::{SourcedEdgeShape, base_radius};
 
 use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
@@ -210,11 +210,7 @@ impl RedstringApp {
             return Ok(None);
         };
         let e = node.payload();
-        let base = if e.image.is_some() {
-            IMG_RADIUS
-        } else {
-            NODE_RADIUS
-        };
+        let base = base_radius(e)?;
         let mf = meta(ui)?;
         let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
         let corner = center + Vec2::splat(base * e.size * e.boost * mf.zoom);
@@ -403,11 +399,7 @@ impl RedstringApp {
                 n.set_selected(false);
                 continue;
             }
-            let base = if e.image.is_some() {
-                IMG_RADIUS
-            } else {
-                NODE_RADIUS
-            };
+            let base = base_radius(e)?;
             let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
             let half = base * e.size * e.boost * mf.zoom;
             let hit = band.intersects(Rect::from_center_size(center, Vec2::splat(half * 2.0)));
@@ -429,11 +421,7 @@ impl RedstringApp {
             return Ok(());
         };
         let e = node.payload();
-        let base = if e.image.is_some() {
-            IMG_RADIUS
-        } else {
-            NODE_RADIUS
-        };
+        let base = base_radius(e)?;
         let boost = e.boost;
         let loc = node.location();
 

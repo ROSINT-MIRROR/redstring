@@ -5,7 +5,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::Camera;
-use crate::shapes::{IMG_RADIUS, NODE_RADIUS};
+use crate::shapes::base_radius;
 
 use super::app::RsGraph;
 use super::board::fit_box_to_board;
@@ -27,7 +27,7 @@ fn visible_set(g: &RsGraph) -> HashSet<NodeIndex> {
     set
 }
 
-fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Option<Rect> {
+fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Result<Option<Rect>, Error> {
     let mut min = Pos2::new(f32::INFINITY, f32::INFINITY);
     let mut max = Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
     let mut any = false;
@@ -36,12 +36,7 @@ fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Option<Rect> {
             continue;
         };
         let e = n.payload();
-        let base = if e.image.is_some() {
-            IMG_RADIUS
-        } else {
-            NODE_RADIUS
-        };
-        let half = base * e.size * e.boost;
+        let half = base_radius(e)? * e.size * e.boost;
         let loc = n.location();
         min.x = min.x.min(loc.x - half);
         min.y = min.y.min(loc.y - half);
@@ -50,9 +45,9 @@ fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Option<Rect> {
         any = true;
     }
     if !any {
-        return None;
+        return Ok(None);
     }
-    Some(Rect::from_min_max(min, max))
+    Ok(Some(Rect::from_min_max(min, max)))
 }
 
 pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>, Error> {
@@ -68,7 +63,7 @@ pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>
         return Ok(None);
     };
     let members = &comps[pick];
-    let Some(bbox) = cluster_bbox(g, members) else {
+    let Some(bbox) = cluster_bbox(g, members)? else {
         return Ok(None);
     };
     let cam = fit_box_to_board(bbox, board, CENTER_MARGIN, CENTER_MAX_ZOOM)?;
