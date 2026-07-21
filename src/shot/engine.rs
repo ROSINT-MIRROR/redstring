@@ -19,7 +19,7 @@ use crate::shapes::{
     IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, NODE_RADIUS, SourcedEdgeShape,
     label_box,
 };
-use crate::ui::{RsGraph, apply_visuals, build_graph};
+use crate::ui::{RsGraph, apply_visuals, board_color, build_graph};
 
 use super::png::render_png;
 
@@ -82,6 +82,7 @@ pub(super) struct Opts {
     pub(super) width: u32,
     pub(super) height: u32,
     no_layout: bool,
+    pub(super) dark: bool,
 }
 
 enum OutMode {
@@ -123,6 +124,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, Error> {
     let mut width = DEFAULT_WIDTH;
     let mut height = DEFAULT_HEIGHT;
     let mut no_layout = false;
+    let mut dark = true;
     let mut i = 0usize;
     loop {
         let Some(arg) = args.get(i) else { break };
@@ -137,6 +139,9 @@ fn parse_opts(args: &[String]) -> Result<Opts, Error> {
             i += 2;
         } else if arg == "--height" {
             height = parse_dim(arg_value(args, i)?, "height")?;
+            i += 2;
+        } else if arg == "--theme" {
+            dark = parse_theme(arg_value(args, i)?)?;
             i += 2;
         } else if arg == "--no-layout" {
             no_layout = true;
@@ -161,6 +166,19 @@ fn parse_opts(args: &[String]) -> Result<Opts, Error> {
         width,
         height,
         no_layout,
+        dark,
+    })
+}
+
+fn parse_theme(text: &str) -> Result<bool, Error> {
+    if text == "dark" {
+        return Ok(true);
+    }
+    if text == "light" {
+        return Ok(false);
+    }
+    Err(Error::ShotArgs {
+        what: format!("bad --theme '{text}': use 'light' or 'dark'"),
     })
 }
 
@@ -350,12 +368,17 @@ pub(super) fn run_frames(
     height: u32,
     cam: Camera,
     g: &mut RsGraph,
+    dark: bool,
 ) -> Result<RenderedFrame, Error> {
     let ctx = egui::Context::default();
     let mut fonts = egui::FontDefinitions::default();
     egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
     ctx.set_fonts(fonts);
-    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_theme(if dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    });
 
     let raw = egui::RawInput {
         screen_rect: Some(Rect::from_min_size(
@@ -463,9 +486,9 @@ struct EdgeGeom {
 }
 
 fn render_json(g: &mut RsGraph, cam: Camera, opts: &Opts) -> Result<String, Error> {
-    let frame = run_frames(opts.width, opts.height, cam, g)?;
+    let frame = run_frames(opts.width, opts.height, cam, g, opts.dark)?;
     let shape_count = frame.shapes.len();
-    let nodes = node_geoms(&frame.ctx, g, cam)?;
+    let nodes = node_geoms(&frame.ctx, g, cam, opts.dark)?;
     let edges = edge_geoms(g, cam);
     let snap = Snapshot {
         width: opts.width,
@@ -484,7 +507,12 @@ fn render_json(g: &mut RsGraph, cam: Camera, opts: &Opts) -> Result<String, Erro
     Ok(format!("geometry · {shape_count} egui shapes"))
 }
 
-fn node_geoms(ctx: &egui::Context, g: &RsGraph, cam: Camera) -> Result<Vec<NodeGeom>, Error> {
+fn node_geoms(
+    ctx: &egui::Context,
+    g: &RsGraph,
+    cam: Camera,
+    dark: bool,
+) -> Result<Vec<NodeGeom>, Error> {
     let mut out = Vec::new();
     for idx in g.g().node_indices() {
         let Some(n) = g.node(idx) else { continue };
@@ -510,7 +538,7 @@ fn node_geoms(ctx: &egui::Context, g: &RsGraph, cam: Camera) -> Result<Vec<NodeG
             radius
         };
         let lbox = label_box(anchor, center, half, gsz, gap, fpx)?;
-        let color = KIND_META[e.kind as usize].color;
+        let color = board_color(KIND_META[e.kind as usize].color, dark)?;
         out.push(NodeGeom {
             slug: e.slug.clone(),
             kind: KIND_META[e.kind as usize].label.to_owned(),
@@ -661,6 +689,70 @@ mod tests {
             assert!(lb[3].as_f64().unwrap() >= lb[1].as_f64().unwrap());
         }
         let _ = std::fs::remove_file(&out);
+    }
+
+    fn args_theme(out: &Path, theme: &str) -> Vec<String> {
+        vec![
+            "--shot".to_owned(),
+            fixture_case().display().to_string(),
+            "--out".to_owned(),
+            out.display().to_string(),
+            "--width".to_owned(),
+            "1000".to_owned(),
+            "--height".to_owned(),
+            "700".to_owned(),
+            "--theme".to_owned(),
+            theme.to_owned(),
+        ]
+    }
+
+    fn color_lum(c: &serde_json::Value) -> f64 {
+        let a = c.as_array().unwrap();
+        0.299 * a[0].as_f64().unwrap()
+            + 0.587 * a[1].as_f64().unwrap()
+            + 0.114 * a[2].as_f64().unwrap()
+    }
+
+    #[test]
+    fn light_theme_darkens_node_colors_in_json() {
+        let dark_out = tmp("theme_dark.json");
+        let light_out = tmp("theme_light.json");
+        let _ = std::fs::remove_file(&dark_out);
+        let _ = std::fs::remove_file(&light_out);
+        shoot(&args_theme(&dark_out, "dark")).unwrap();
+        shoot(&args_theme(&light_out, "light")).unwrap();
+        let dv: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&dark_out).unwrap()).unwrap();
+        let lv: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&light_out).unwrap()).unwrap();
+        let dnodes = dv["nodes"].as_array().unwrap();
+        let lnodes = lv["nodes"].as_array().unwrap();
+        assert_eq!(dnodes.len(), lnodes.len());
+        let mut compared = 0usize;
+        for (dn, ln) in dnodes.iter().zip(lnodes.iter()) {
+            assert_eq!(dn["slug"], ln["slug"]);
+            let dl = color_lum(&dn["color"]);
+            let ll = color_lum(&ln["color"]);
+            assert!(
+                ll < dl - 20.0,
+                "light theme must darken node {} color for legibility: dark lum {dl} vs light lum {ll}",
+                dn["slug"]
+            );
+            compared += 1;
+        }
+        assert!(compared >= 3, "sample case should carry >=3 nodes, compared {compared}");
+        let _ = std::fs::remove_file(&dark_out);
+        let _ = std::fs::remove_file(&light_out);
+    }
+
+    #[test]
+    fn bad_theme_value_is_rejected() {
+        let out = tmp("bad_theme.json");
+        let Err(err) = shoot(&args_theme(&out, "solarized")) else {
+            panic!("a bad --theme value must be rejected");
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("theme"), "error should mention the theme flag, got {msg}");
     }
 
     #[test]

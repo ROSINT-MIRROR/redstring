@@ -145,6 +145,7 @@ impl EntityNodeShape {
     }
 
     fn frame_color(&self, ctx: &DrawContext) -> Color32 {
+        let dark = ctx.ctx.global_style().visuals.dark_mode;
         let Some(c) = self.circle.color else {
             let style = if self.interacted() {
                 ctx.ctx.global_style().visuals.widgets.active
@@ -153,7 +154,14 @@ impl EntityNodeShape {
             };
             return style.fg_stroke.color;
         };
-        c
+        let Ok(col) = crate::ui::board_color(c, dark) else {
+            return c;
+        };
+        col
+    }
+
+    fn label_ink(&self, ctx: &DrawContext) -> Color32 {
+        badge_fg(ctx.ctx.global_style().visuals.panel_fill)
     }
 
     fn selection_ring(&self, ctx: &DrawContext) -> Option<Stroke> {
@@ -214,10 +222,11 @@ impl EntityNodeShape {
         if fpx < LABEL_MIN_PX {
             return res;
         }
+        let ink = self.label_ink(ctx);
         let mut job = egui::text::LayoutJob::simple(
             self.name.clone(),
             FontId::new(fpx, FontFamily::Monospace),
-            color,
+            ink,
             ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
         );
         job.halign = egui::Align::Center;
@@ -231,7 +240,7 @@ impl EntityNodeShape {
         };
         let label_pos = Pos2::new(center.x, box_rect.min.y + lpad);
         backdrop(&mut res, box_rect, bg);
-        res.push(TextShape::new(label_pos, label, color).into());
+        res.push(TextShape::new(label_pos, label, ink).into());
         res
     }
 
@@ -277,6 +286,7 @@ impl EntityNodeShape {
         if fpx < LABEL_MIN_PX {
             return res;
         }
+        let ink = self.label_ink(ctx);
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             (
                 f.layout_no_wrap(
@@ -290,7 +300,7 @@ impl EntityNodeShape {
                 f.layout(
                     self.name.clone(),
                     FontId::new(fpx, FontFamily::Monospace),
-                    color,
+                    ink,
                     ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
                 ),
             )
@@ -314,7 +324,7 @@ impl EntityNodeShape {
         let bg = ctx.ctx.global_style().visuals.panel_fill;
         backdrop(&mut res, box_rect, bg);
         res.push(TextShape::new(icon_pos, icon, color).into());
-        res.push(TextShape::new(name_pos, name, color).into());
+        res.push(TextShape::new(name_pos, name, ink).into());
         res
     }
 
@@ -503,6 +513,82 @@ mod tests {
         assert!(
             !hidden.iter().any(|t| t.as_str() == "Node Label"),
             "below the LOD threshold the node label must be omitted, got {hidden:?}"
+        );
+    }
+
+    fn node_label_color(theme: egui::Theme) -> Color32 {
+        let size = (LABEL_MIN_PX * 2.0) / LABEL_SIZE;
+        let ent = Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            value: String::new(),
+            observations: Vec::new(),
+            role: Role::Unset,
+            occupation: None,
+            note: String::new(),
+            image: None,
+            size,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        };
+        let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(ent);
+        let ctx = egui::Context::default();
+        ctx.set_theme(theme);
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        let mut found: Option<Color32> = None;
+        ctx.run(input, |c| {
+            let painter = c.debug_painter();
+            let style = SettingsStyle::default();
+            let meta = MetadataFrame::default();
+            let dctx = DrawContext {
+                ctx: c,
+                painter: &painter,
+                style: &style,
+                is_directed: true,
+                meta: &meta,
+            };
+            let shapes =
+                <EntityNodeShape as DisplayNode<Entity, Relation, Directed, DefaultIx>>::shapes(
+                    node.display_mut(),
+                    &dctx,
+                );
+            for s in &shapes {
+                if let Shape::Text(t) = s {
+                    if t.galley.text() == "Node Label" {
+                        found = Some(t.galley.job.sections[0].format.color);
+                    }
+                }
+            }
+        });
+        found.expect("the node label must render at this size")
+    }
+
+    fn luminance(c: Color32) -> f32 {
+        0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32
+    }
+
+    #[test]
+    fn label_ink_adapts_to_theme() {
+        let dark = node_label_color(egui::Theme::Dark);
+        let light = node_label_color(egui::Theme::Light);
+        assert!(
+            luminance(dark) > 150.0,
+            "dark-theme label ink must be light for legibility, got {dark:?} lum {}",
+            luminance(dark)
+        );
+        assert!(
+            luminance(light) < 110.0,
+            "light-theme label ink must be dark for legibility, got {light:?} lum {}",
+            luminance(light)
+        );
+        assert!(
+            luminance(dark) > luminance(light) + 60.0,
+            "label ink must invert between themes: dark {} vs light {}",
+            luminance(dark),
+            luminance(light)
         );
     }
 
