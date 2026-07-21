@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 use crate::error::Error;
 
+use super::engine::{norm_key, push_dedup};
 use super::{Extractor, Record, Records};
 
 #[derive(Deserialize)]
@@ -55,7 +56,7 @@ impl Extractor for Json {
         };
         let mut records: Records = Vec::new();
         for el in elements {
-            let record = build_record(el, &self.fields);
+            let record = build_record(el, &self.fields)?;
             if !record.is_empty() {
                 records.push(record);
             }
@@ -93,53 +94,53 @@ fn navigate<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_jso
     Some(cur)
 }
 
-fn build_record(el: &serde_json::Value, fields: &[(String, String)]) -> Record {
+fn build_record(el: &serde_json::Value, fields: &[(String, String)]) -> Result<Record, Error> {
     if fields.is_empty() {
         return flatten_object(el);
     }
     record_from_fields(el, fields)
 }
 
-fn record_from_fields(el: &serde_json::Value, fields: &[(String, String)]) -> Record {
+fn record_from_fields(el: &serde_json::Value, fields: &[(String, String)]) -> Result<Record, Error> {
     let mut record = Record::new();
     for (out, pointer) in fields {
-        let key = out.trim().to_lowercase();
+        let key = norm_key(out)?;
         if key.is_empty() {
             continue;
         }
         let Some(v) = navigate(el, pointer) else {
             continue;
         };
-        push_value(&mut record, &key, v);
+        push_value(&mut record, &key, v)?;
     }
-    record
+    Ok(record)
 }
 
-fn flatten_object(el: &serde_json::Value) -> Record {
+fn flatten_object(el: &serde_json::Value) -> Result<Record, Error> {
     let mut record = Record::new();
     let serde_json::Value::Object(obj) = el else {
-        return record;
+        return Ok(record);
     };
     for (k, v) in obj {
-        let key = k.trim().to_lowercase();
+        let key = norm_key(k)?;
         if key.is_empty() {
             continue;
         }
-        push_value(&mut record, &key, v);
+        push_value(&mut record, &key, v)?;
     }
-    record
+    Ok(record)
 }
 
-fn push_value(record: &mut Record, key: &str, value: &serde_json::Value) {
+fn push_value(record: &mut Record, key: &str, value: &serde_json::Value) -> Result<(), Error> {
     if let serde_json::Value::Array(items) = value {
         for item in items {
             let text = scalar_text(item);
-            push_field(record, key, &text);
+            push_dedup(record, key, &text)?;
         }
-        return;
+        return Ok(());
     }
     let text = scalar_text(value);
-    push_field(record, key, &text);
+    push_dedup(record, key, &text)
 }
 
 fn scalar_text(value: &serde_json::Value) -> String {
@@ -153,17 +154,6 @@ fn scalar_text(value: &serde_json::Value) -> String {
         return b.to_string();
     }
     String::new()
-}
-
-fn push_field(record: &mut Record, key: &str, val: &str) {
-    let val = val.trim();
-    if val.is_empty() {
-        return;
-    }
-    let entry = record.entry(key.to_owned()).or_default();
-    if !entry.iter().any(|e| e == val) {
-        entry.push(val.to_owned());
-    }
 }
 
 #[cfg(test)]

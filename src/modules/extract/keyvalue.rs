@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 use crate::error::Error;
 
+use super::engine::{norm_key, push_dedup};
 use super::{Extractor, Record, Records};
 
 #[derive(Deserialize)]
@@ -46,15 +47,12 @@ impl Extractor for KeyValue {
             let Some((k, v)) = line.split_once(self.sep.as_str()) else {
                 continue;
             };
-            let key = k.trim().to_lowercase();
+            let key = norm_key(k)?;
             let val = v.trim();
             if key.is_empty() || val.is_empty() {
                 continue;
             }
-            let entry = record.entry(key).or_default();
-            if !entry.iter().any(|e| e == val) {
-                entry.push(val.to_owned());
-            }
+            push_dedup(&mut record, &key, val)?;
         }
         Ok(vec![record])
     }
