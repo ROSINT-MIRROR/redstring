@@ -167,6 +167,7 @@ impl RedstringApp {
     pub fn settings_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let mut open = self.prefs_open;
         let mut changed = false;
+        let api_key_ids = self.registry.key_ids()?;
         egui::Window::new("settings")
             .open(&mut open)
             .collapsible(false)
@@ -199,7 +200,9 @@ impl RedstringApp {
                         ui.set_min_width(320.0);
                         match self.settings_tab {
                             SettingsTab::General => changed |= general_tab(ui, &mut self.prefs),
-                            SettingsTab::ApiKeys => changed |= api_keys_tab(ui, &mut self.prefs),
+                            SettingsTab::ApiKeys => {
+                                changed |= api_keys_tab(ui, &mut self.prefs, &api_key_ids)
+                            }
                             SettingsTab::Modules => modules_tab(ui, &self.registry),
                         }
                     });
@@ -394,12 +397,17 @@ const API_SERVICES: [(&str, &str, &str); 1] = [(
     egui_phosphor::regular::GLOBE_SIMPLE,
 )];
 
-fn api_keys_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
+fn api_keys_tab(
+    ui: &mut egui::Ui,
+    prefs: &mut crate::prefs::Prefs,
+    module_key_ids: &[String],
+) -> bool {
     let mut changed = false;
     ui.label(RichText::new("keys for lookup services — stored locally, never in the case").weak());
     ui.add_space(super::style::GAP_SM);
-    for (id, label, icon) in API_SERVICES {
-        let key = ensure_key(&mut prefs.api_keys, id);
+    for id in service_ids(module_key_ids) {
+        let (label, icon) = service_meta(&id);
+        let key = ensure_key(&mut prefs.api_keys, &id);
         ui.horizontal(|ui| {
             ui.label(format!("{icon} {label}"));
             changed |= ui
@@ -415,6 +423,28 @@ fn api_keys_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     changed
 }
 
+fn service_ids(module_key_ids: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (id, _, _) in API_SERVICES {
+        out.push(id.to_owned());
+    }
+    for id in module_key_ids {
+        if !out.contains(id) {
+            out.push(id.clone());
+        }
+    }
+    out
+}
+
+fn service_meta(id: &str) -> (&str, &'static str) {
+    for (sid, label, icon) in API_SERVICES {
+        if sid == id {
+            return (label, icon);
+        }
+    }
+    (id, egui_phosphor::regular::KEY)
+}
+
 
 fn ensure_key<'a>(keys: &'a mut Vec<(String, String)>, id: &str) -> &'a mut String {
     let pos = keys.iter().position(|(k, _)| k == id);
@@ -424,4 +454,59 @@ fn ensure_key<'a>(keys: &'a mut Vec<(String, String)>, id: &str) -> &'a mut Stri
         return &mut keys[last].1;
     };
     &mut keys[p].1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_archive_is_always_a_settings_key_slot() {
+        assert_eq!(service_ids(&[]), vec!["web_archive".to_owned()]);
+    }
+
+    #[test]
+    fn a_declared_module_key_gets_its_own_slot_after_web_archive() {
+        let ids = service_ids(&["dehashed".to_owned()]);
+        assert_eq!(ids, vec!["web_archive".to_owned(), "dehashed".to_owned()]);
+    }
+
+    #[test]
+    fn union_dedups_repeats_and_the_builtin_web_archive_key() {
+        let ids = service_ids(&[
+            "dehashed".to_owned(),
+            "dehashed".to_owned(),
+            "web_archive".to_owned(),
+            "shodan".to_owned(),
+        ]);
+        assert_eq!(
+            ids,
+            vec![
+                "web_archive".to_owned(),
+                "dehashed".to_owned(),
+                "shodan".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn known_service_keeps_its_label_derived_service_falls_back_to_id() {
+        let (wa_label, _) = service_meta("web_archive");
+        assert_eq!(wa_label, "Web Archive");
+        let (dh_label, dh_icon) = service_meta("dehashed");
+        assert_eq!(dh_label, "dehashed");
+        assert_eq!(dh_icon, egui_phosphor::regular::KEY);
+    }
+
+    #[test]
+    fn ensure_key_persists_a_value_under_the_service_id() {
+        let mut keys: Vec<(String, String)> = Vec::new();
+        {
+            let slot = ensure_key(&mut keys, "dehashed");
+            slot.push_str("secret");
+        }
+        let stored = ensure_key(&mut keys, "dehashed");
+        assert_eq!(stored, "secret");
+        assert_eq!(keys.len(), 1);
+    }
 }
