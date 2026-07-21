@@ -4,6 +4,7 @@ mod center;
 mod chrome;
 mod evidence;
 mod fold;
+mod graphalg;
 mod inspector;
 mod layout;
 mod links;

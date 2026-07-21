@@ -9,6 +9,7 @@ use crate::shapes::{IMG_RADIUS, NODE_RADIUS};
 
 use super::app::RsGraph;
 use super::board::{MAX_ZOOM, MIN_ZOOM};
+use super::graphalg;
 
 const CENTER_MARGIN: f32 = 0.85;
 const CENTER_MAX_ZOOM: f32 = 1.5;
@@ -31,49 +32,6 @@ fn visible_set(g: &RsGraph) -> HashSet<NodeIndex> {
         }
     }
     set
-}
-
-fn visible_components(g: &RsGraph, visible: &HashSet<NodeIndex>) -> Vec<Vec<NodeIndex>> {
-    let inner = g.g();
-    let mut starts: Vec<NodeIndex> = visible.iter().copied().collect();
-    starts.sort();
-    let mut seen: HashSet<NodeIndex> = HashSet::new();
-    let mut comps: Vec<Vec<NodeIndex>> = Vec::new();
-    for start in starts {
-        if seen.contains(&start) {
-            continue;
-        }
-        let mut members = Vec::new();
-        let mut stack = vec![start];
-        loop {
-            let Some(idx) = stack.pop() else {
-                break;
-            };
-            if !seen.insert(idx) {
-                continue;
-            }
-            members.push(idx);
-            for nb in inner.neighbors_undirected(idx) {
-                if visible.contains(&nb) && !seen.contains(&nb) {
-                    stack.push(nb);
-                }
-            }
-        }
-        comps.push(members);
-    }
-    comps
-}
-
-fn pick_biggest(comps: &[Vec<NodeIndex>]) -> Option<usize> {
-    let mut best: Option<usize> = None;
-    let mut best_len = 0usize;
-    for (i, comp) in comps.iter().enumerate() {
-        if comp.len() > best_len {
-            best_len = comp.len();
-            best = Some(i);
-        }
-    }
-    best
 }
 
 fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Option<Rect> {
@@ -112,8 +70,8 @@ pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>
     if visible.is_empty() {
         return Ok(None);
     }
-    let comps = visible_components(g, &visible);
-    let Some(pick) = pick_biggest(&comps) else {
+    let comps = graphalg::components(g, |n| visible.contains(&n))?;
+    let Some(pick) = graphalg::largest(&comps)? else {
         return Ok(None);
     };
     let members = &comps[pick];
