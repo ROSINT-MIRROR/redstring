@@ -13,7 +13,7 @@
     shapes: [
         (
             id: "candel",
-            extract: Ndjson,
+            extract: (id: "ndjson"),
             min_hits: 1,
             emit: [
                 Entity(from: "url", kind: "website", rel: "uses_account", label: Host),

@@ -70,6 +70,15 @@ pub enum Error {
     Clock {
         source: std::time::SystemTimeError,
     },
+
+    UnknownExtractor {
+        id: String,
+    },
+
+    BadExtractConfig {
+        id: String,
+        source: ron::Error,
+    },
 }
 
 impl std::error::Error for Error {}
@@ -133,6 +142,12 @@ impl std::fmt::Display for Error {
             }
             Self::Clock { source } => {
                 write!(f, "system clock is before the unix epoch: {source}")
+            }
+            Self::UnknownExtractor { id } => {
+                write!(f, "unknown extract strategy '{id}'")
+            }
+            Self::BadExtractConfig { id, source } => {
+                write!(f, "extract '{id}' config: {source}")
             }
         }
     }
