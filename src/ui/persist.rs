@@ -10,7 +10,7 @@ use petgraph::stable_graph::StableGraph;
 use crate::error::Error;
 use crate::model::{
     CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, KIND_META,
-    RELATION_META, Relation, RelationRec,
+    RELATION_META, Relation, RelationRec, now_unix,
 };
 use crate::project::{self, Project};
 
@@ -124,6 +124,7 @@ impl RedstringApp {
         self.write_all(&project, &cf)?;
         self.watch_current()?;
         self.saved_fp = self.fingerprint()?;
+        self.last_saved_at = Some(now_unix()?);
         self.status = format!(
             "saved {} entities / {} links → {}{}",
             cf.data.entities.len(),

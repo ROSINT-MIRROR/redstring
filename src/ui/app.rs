@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use eframe::App;
-use egui::{Color32, Margin, Pos2, Vec2};
+use egui::{Color32, Margin, Pos2, RichText, Vec2};
 use egui_graphs::Graph;
 use petgraph::Directed;
 use petgraph::graph::{DefaultIx, NodeIndex};
@@ -20,6 +20,7 @@ pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape,
 
 pub const OK_GREEN: Color32 = Color32::from_rgb(120, 200, 140);
 pub const ALARM_RED: Color32 = Color32::from_rgb(235, 80, 80);
+const DIRTY_AMBER: Color32 = Color32::from_rgb(235, 150, 70);
 
 pub const BOARD_META_ID: &str = "redstring_board";
 
@@ -73,6 +74,8 @@ pub struct RedstringApp {
     pub allow_close: bool,
 
     pub saved_fp: String,
+
+    pub last_saved_at: Option<i64>,
 
 
     pub size_by_degree: bool,
@@ -145,6 +148,7 @@ impl RedstringApp {
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
+            last_saved_at: None,
             size_by_degree: false,
             show_welcome: false,
             welcome_name: String::new(),
@@ -218,6 +222,35 @@ impl RedstringApp {
             };
             e.set_selected(false);
         }
+        Ok(())
+    }
+
+    fn save_chip(&self, ui: &mut egui::Ui) -> Result<(), Error> {
+        if self.dirty()? {
+            ui.separator();
+            ui.colored_label(
+                DIRTY_AMBER,
+                RichText::new(format!(
+                    "{} unsaved changes",
+                    egui_phosphor::regular::WARNING_CIRCLE
+                ))
+                .small(),
+            );
+            return Ok(());
+        }
+        let Some(ts) = self.last_saved_at else {
+            return Ok(());
+        };
+        ui.separator();
+        ui.colored_label(
+            OK_GREEN,
+            RichText::new(format!(
+                "{} saved {} UTC",
+                egui_phosphor::regular::CHECK,
+                hms_utc(ts)
+            ))
+            .small(),
+        );
         Ok(())
     }
 
@@ -364,6 +397,7 @@ impl RedstringApp {
                         |ui| -> Result<(), Error> {
                             self.zoom_bar(ui)?;
                             self.jobs_chip(ui)?;
+                            self.save_chip(ui)?;
                             Ok(())
                         },
                     )
@@ -388,5 +422,32 @@ impl App for RedstringApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let outcome = self.frame(ui);
         self.flag(outcome);
+    }
+}
+
+fn hms_utc(ts: i64) -> String {
+    let secs = ts.rem_euclid(86400);
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    format!("{h:02}:{m:02}:{s:02}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hms_utc;
+
+    #[test]
+    fn hms_utc_formats_time_of_day() {
+        assert_eq!(hms_utc(0), "00:00:00");
+        assert_eq!(hms_utc(3661), "01:01:01");
+        assert_eq!(hms_utc(86399), "23:59:59");
+        assert_eq!(hms_utc(86400), "00:00:00");
+        assert_eq!(hms_utc(1_700_000_000), "22:13:20");
+    }
+
+    #[test]
+    fn hms_utc_handles_pre_epoch() {
+        assert_eq!(hms_utc(-1), "23:59:59");
     }
 }
