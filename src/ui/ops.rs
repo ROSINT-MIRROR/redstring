@@ -26,6 +26,7 @@ impl RedstringApp {
             kind: SourceKind::Markdown,
             reference: "dossier.md#ownership".into(),
             excerpt: "Doe is sole signatory per incorporation docs.".into(),
+            ..Default::default()
         });
         self.g.add_edge_with_label(
             doe,

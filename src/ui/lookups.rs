@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -8,8 +7,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{
-    Author, EntityKind, Observation, Origin, RELATION_META, Relation, Source, SourceKind,
-    Verification, slugify,
+    Author, EntityKind, Observation, Origin, RELATION_META, Relation, Verification, slugify,
 };
 use crate::modules::{Fact, ModuleRun, ModuleStatus, ObsKind, RunInput, parse_obs_value};
 
@@ -267,7 +265,7 @@ impl RedstringApp {
             self.status = "lookup target no longer on the board — result dropped".into();
             return Ok(());
         };
-        let source = self.evidence_source(&run)?;
+        let source = super::evidence::evidence_source(&run)?;
         if run.shape_id.is_empty() {
             self.status = format!(
                 "{}: no known output shape — raw output archived, nothing parsed",
@@ -449,40 +447,6 @@ impl RedstringApp {
         };
         n.location()
     }
-
-    fn evidence_source(&self, run: &ModuleRun) -> Result<Source, Error> {
-        let Some(root) = run.project_root.as_ref() else {
-            return Ok(note_source(run));
-        };
-        if run.evidence_rel.is_empty() {
-            return Ok(note_source(run));
-        }
-        let abs = root.join(&run.evidence_rel);
-        let Some(dir) = abs.parent() else {
-            return Err(Error::NotAProject { path: abs.clone() });
-        };
-        std::fs::create_dir_all(dir).map_err(|source| Error::Io {
-            path: dir.to_path_buf(),
-            source,
-        })?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&abs)
-            .map_err(|source| Error::Io {
-                path: abs.clone(),
-                source,
-            })?;
-        file.write_all(run.raw.as_bytes()).map_err(|source| Error::Io {
-            path: abs.clone(),
-            source,
-        })?;
-        Ok(Source {
-            kind: SourceKind::Document,
-            reference: run.evidence_rel.clone(),
-            excerpt: clip(&run.raw, 280),
-        })
-    }
 }
 
 fn node_by_slug(g: &RsGraph, slug: &str) -> Option<NodeIndex> {
@@ -592,21 +556,6 @@ fn epoch_secs() -> Result<u64, Error> {
         .duration_since(UNIX_EPOCH)
         .map_err(|source| Error::Clock { source })?;
     Ok(d.as_secs())
-}
-
-fn clip(s: &str, n: usize) -> String {
-    s.chars().take(n).collect()
-}
-
-fn note_source(run: &ModuleRun) -> Source {
-    Source {
-        kind: SourceKind::Note,
-        reference: format!(
-            "{} on {} — raw output not persisted (case was unsaved)",
-            run.module_id, run.target_label
-        ),
-        excerpt: clip(&run.raw, 600),
-    }
 }
 
 #[cfg(test)]
@@ -761,11 +710,5 @@ mod tests {
             "a bad date degrades to Text, never dropped"
         );
         assert_eq!((set, skip), (3, 0));
-    }
-
-    #[test]
-    fn clip_caps_length() {
-        assert_eq!(clip("abcdef", 3), "abc");
-        assert_eq!(clip("ab", 9), "ab");
     }
 }

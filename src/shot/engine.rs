@@ -13,7 +13,7 @@ use petgraph::stable_graph::IndexType;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-use crate::model::{Camera, Entity, KIND_META, RELATION_META, Verification};
+use crate::model::{Camera, Entity, KIND_META, RELATION_META, VERIFICATION_META, Verification};
 use crate::project::{Project, read_case};
 use crate::shapes::{
     IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, NODE_RADIUS, SourcedEdgeShape,
@@ -619,18 +619,14 @@ fn status_name(v: Verification) -> &'static str {
         Verification::AnalystAsserted => "analyst_asserted",
         Verification::Corroborated => "corroborated",
         Verification::Rejected => "rejected",
+        Verification::DeniedByTarget => "denied_by_target",
+        Verification::NoPublicRecord => "no_public_record",
     }
 }
 
 fn edge_color(v: Verification) -> [u8; 4] {
-    let (r, g, b) = match v {
-        Verification::Rejected => (235, 80, 80),
-        Verification::Unreviewed => (235, 150, 70),
-        Verification::MachineSuggested => (230, 200, 90),
-        Verification::AnalystAsserted => (110, 190, 200),
-        Verification::Corroborated => (120, 200, 140),
-    };
-    [r, g, b, 255]
+    let c = VERIFICATION_META[v as usize].color;
+    [c.r(), c.g(), c.b(), 255]
 }
 
 #[cfg(test)]

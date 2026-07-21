@@ -99,6 +99,7 @@ mod tests {
                 kind: SourceKind::Document,
                 reference: "evidence/docs/onrc.pdf".into(),
                 excerpt: String::new(),
+                ..Default::default()
             }],
         });
         cf.data.relations.push(RelationRec {

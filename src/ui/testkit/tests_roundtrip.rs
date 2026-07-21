@@ -74,6 +74,11 @@ mod tests {
             kind: SourceKind::Url,
             reference: "https://registry.example/record".to_owned(),
             excerpt: "sole registrant".to_owned(),
+            sha256: Some("b".repeat(64)),
+            fetched_at: Some(1_700_000_000),
+            source_org: Some("crt.sh".to_owned()),
+            tier: crate::model::SourceTier::Secondary,
+            ..Default::default()
         });
         cf.data.relations.push(r);
 

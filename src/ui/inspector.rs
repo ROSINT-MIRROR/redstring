@@ -5,11 +5,12 @@ use crate::error::Error;
 use crate::model::{
     Author, CATEGORY_META, EntityKind, Facet, KIND_META, MAX_CASE_NAME, OCCUPATION_ICONS, ObsValue,
     Observation, Occupation, OccupationIcon, Origin, RELATION_META, ROLE_META, RelationKind, Role,
-    SOURCE_META, Source, ValueFormat, Verification, format_hint, pretty_key, slugify, status_color,
-    status_label,
+    SOURCE_META, Source, VERIFICATION_META, ValueFormat, Verification, format_hint, pretty_key,
+    slugify, status_color, status_label,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
+use super::evidence;
 use super::style;
 
 impl RedstringApp {
@@ -389,35 +390,7 @@ impl RedstringApp {
         style::section(ui, egui_phosphor::regular::LINK, "sources")?;
         let mut remove: Option<usize> = None;
         for (i, src) in r.sources.iter_mut().enumerate() {
-            ui.group(|ui| -> Result<(), Error> {
-                egui::ComboBox::from_id_salt(("src_kind", i))
-                    .selected_text(SOURCE_META[src.kind as usize].label)
-                    .show_ui(ui, |ui| {
-                        for m in &SOURCE_META {
-                            ui.selectable_value(&mut src.kind, m.kind, m.label);
-                        }
-                    });
-                ui.add(
-                    egui::TextEdit::singleline(&mut src.reference)
-                        .desired_width(f32::INFINITY)
-                        .hint_text(SOURCE_META[src.kind as usize].hint),
-                );
-                ui.add(
-                    egui::TextEdit::multiline(&mut src.excerpt)
-                        .hint_text("excerpt / quote (optional)")
-                        .desired_rows(2),
-                );
-                if style::danger_btn(
-                    ui,
-                    egui_phosphor::regular::TRASH,
-                    "remove source",
-                    "detach this source",
-                )? {
-                    remove = Some(i);
-                }
-                Ok(())
-            })
-            .inner?;
+            evidence::source_group(ui, i, src, &mut remove)?;
         }
         remove_marked(&mut r.sources, remove);
         Ok(())
@@ -446,6 +419,7 @@ impl RedstringApp {
             kind: self.ns_kind,
             reference: self.ns_ref.trim().to_owned(),
             excerpt: self.ns_excerpt.trim().to_owned(),
+            ..Default::default()
         };
         let Some(edge) = self.g.edge_mut(eidx) else { return };
         edge.payload_mut().sources.push(src);
@@ -531,21 +505,11 @@ fn observation_row(
 fn verification_combo(ui: &mut egui::Ui, id: usize, status: &mut Verification) -> Result<(), Error> {
     let cur_color = status_color(*status)?;
     let cur_label = status_label(*status)?;
-    let mut faces = Vec::new();
-    for s in [
-        Verification::Unreviewed,
-        Verification::MachineSuggested,
-        Verification::AnalystAsserted,
-        Verification::Corroborated,
-        Verification::Rejected,
-    ] {
-        faces.push((s, status_label(s)?, status_color(s)?));
-    }
     egui::ComboBox::from_id_salt(("obs_status", id))
         .selected_text(RichText::new(cur_label).color(cur_color).small())
         .show_ui(ui, |ui| {
-            for (s, l, c) in &faces {
-                ui.selectable_value(status, *s, RichText::new(*l).color(*c));
+            for m in &VERIFICATION_META {
+                ui.selectable_value(status, m.status, RichText::new(m.label).color(m.color));
             }
         });
     Ok(())

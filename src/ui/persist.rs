@@ -696,6 +696,36 @@ mod tests {
     }
 
     #[test]
+    fn edge_source_provenance_change_flips_dirty() {
+        use crate::model::{Source, SourceKind, SourceTier};
+        let mut base = relation(80, Verification::Unreviewed);
+        base.sources.push(Source {
+            kind: SourceKind::Document,
+            reference: "evidence/docs/whois.txt".into(),
+            ..Default::default()
+        });
+        let saved = edge_fp_line("a", "b", &base).unwrap();
+
+        let mut hashed = base.clone();
+        hashed.sources[0].sha256 = Some("deadbeef".repeat(8));
+        let after_hash = edge_fp_line("a", "b", &hashed).unwrap();
+        assert_ne!(saved, after_hash, "attaching a source sha256 must change the fingerprint");
+        assert!(
+            dirty_state(true, &after_hash, &saved),
+            "a source sha256 change must mark the case dirty"
+        );
+
+        let mut rated = base.clone();
+        rated.sources[0].tier = SourceTier::Primary;
+        let after_tier = edge_fp_line("a", "b", &rated).unwrap();
+        assert_ne!(saved, after_tier, "grading a source's tier must change the fingerprint");
+        assert!(
+            dirty_state(true, &after_tier, &saved),
+            "a source tier change must mark the case dirty"
+        );
+    }
+
+    #[test]
     fn camera_change_leaves_fingerprint_stable() {
         let mut d = CaseDisplay::default();
         d.positions.insert("p".into(), (4.0, 9.0));
