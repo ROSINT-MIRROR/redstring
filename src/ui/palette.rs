@@ -169,27 +169,7 @@ fn kind_row(
     let mut armed = false;
     let mut toggled = false;
     ui.horizontal(|ui| {
-        if has_presets {
-            let caret = if expanded {
-                egui_phosphor::regular::CARET_DOWN
-            } else {
-                egui_phosphor::regular::CARET_RIGHT
-            };
-            let c = ui.add(
-                egui::Button::new(RichText::new(caret).color(cat.color).size(16.0f32))
-                    .frame(false)
-                    .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
-            );
-            if c.clicked() {
-                toggled = true;
-            }
-        } else {
-            ui.add(
-                egui::Button::new("")
-                    .frame(false)
-                    .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
-            );
-        }
+        toggled = caret_gutter(ui, cat.color, has_presets, expanded);
         let resp = ui.add(
             egui::Button::selectable(
                 selected,
@@ -209,6 +189,22 @@ fn kind_row(
         }
     });
     (armed, toggled)
+}
+
+fn caret_gutter(ui: &mut egui::Ui, color: Color32, has_presets: bool, expanded: bool) -> bool {
+    let glyph = if !has_presets {
+        ""
+    } else if expanded {
+        egui_phosphor::regular::CARET_DOWN
+    } else {
+        egui_phosphor::regular::CARET_RIGHT
+    };
+    let resp = ui.add(
+        egui::Button::new(RichText::new(glyph).color(color).size(16.0f32))
+            .frame(false)
+            .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
+    );
+    has_presets && resp.clicked()
 }
 
 fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool) -> bool {
@@ -295,6 +291,57 @@ fn fuzzy(needle: &str, hay: &str) -> bool {
 mod tests {
     use super::*;
     use crate::model::EntityKind;
+
+    fn icon_left_with(step: impl Fn(&mut egui::Ui)) -> f32 {
+        let ctx = phosphor();
+        ctx.all_styles_mut(|s| {
+            s.spacing.button_padding = Vec2::new(8.0, 5.0);
+            s.spacing.item_spacing = Vec2::new(8.0, 6.0);
+        });
+        let mut icon_left = 0.0f32;
+        let input = egui::RawInput::default();
+        ctx.run(input, |ctx| {
+            egui::SidePanel::left("p").exact_width(200.0).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    step(ui);
+                    let icon = ui.add(
+                        egui::Button::new(RichText::new("X").size(24.0f32))
+                            .min_size(Vec2::new(ui.available_width(), 40.0f32)),
+                    );
+                    icon_left = icon.rect.min.x;
+                });
+            });
+        });
+        icon_left
+    }
+
+    #[test]
+    fn caret_gutter_reserves_constant_width() {
+        let color = CATEGORY_META[0].color;
+        let base = icon_left_with(|_ui| {});
+        let leaf = icon_left_with(|ui| {
+            caret_gutter(ui, color, false, false);
+        });
+        let collapsed = icon_left_with(|ui| {
+            caret_gutter(ui, color, true, false);
+        });
+        let expanded = icon_left_with(|ui| {
+            caret_gutter(ui, color, true, true);
+        });
+        assert_eq!(
+            leaf, collapsed,
+            "leaf and expandable kind rows must share one left edge: leaf {leaf} vs expandable {collapsed}"
+        );
+        assert_eq!(
+            collapsed, expanded,
+            "caret gutter width must not change with expand state: collapsed {collapsed} vs expanded {expanded}"
+        );
+        let width = leaf - base - 8.0f32;
+        assert!(
+            (width - CHEVRON_W).abs() < 0.5f32,
+            "reserved caret gutter width {width} must equal CHEVRON_W {CHEVRON_W}"
+        );
+    }
 
     #[test]
     fn fuzzy_is_subsequence_match() {
