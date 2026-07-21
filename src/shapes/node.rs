@@ -234,6 +234,7 @@ impl EntityNodeShape {
             tr: center + Vec2::new(badge_off, -badge_off),
             bl: center + Vec2::new(-badge_off, badge_off),
             tl: center + Vec2::new(-badge_off, -badge_off),
+            br: center + Vec2::new(badge_off, badge_off),
         };
         self.draw_facet_badges(ctx, &mut res, badge_r, &corners);
         self.collapsed_badge(ctx, &mut res, corners.tl, badge_r);
@@ -311,6 +312,7 @@ impl EntityNodeShape {
             tr: rect.right_top(),
             bl: rect.left_bottom(),
             tl: rect.left_top(),
+            br: rect.right_bottom(),
         };
         self.draw_facet_badges(ctx, &mut res, img_badge_r, &corners);
         self.collapsed_badge(ctx, &mut res, corners.tl, img_badge_r);
@@ -396,6 +398,7 @@ struct Corners {
     tr: Pos2,
     bl: Pos2,
     tl: Pos2,
+    br: Pos2,
 }
 
 impl Corners {
@@ -403,6 +406,7 @@ impl Corners {
         match corner {
             BadgeCorner::TopRight => self.tr,
             BadgeCorner::BottomLeft => self.bl,
+            BadgeCorner::BottomRight => self.br,
         }
     }
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::entity::{Entity, EntityKind};
-use super::facet::{occupation_of, set_occupation, set_role};
+use super::facet::{Facet, occupation_of, set_occupation, set_role, set_subtype};
 use super::observation::{Author, ObsValue, Observation, Origin, Verification};
 use super::occupation::{Occupation, OccupationIcon};
 
@@ -61,6 +61,7 @@ pub struct Preset {
     pub base_kind: EntityKind,
     pub role: Option<Role>,
     pub occupation: Option<(&'static str, OccupationIcon)>,
+    pub facet: Option<(Facet, u16)>,
     pub attr: Option<(&'static str, &'static str)>,
 }
 
@@ -70,6 +71,7 @@ const fn ps(
     base_kind: EntityKind,
     role: Option<Role>,
     occupation: Option<(&'static str, OccupationIcon)>,
+    facet: Option<(Facet, u16)>,
     attr: Option<(&'static str, &'static str)>,
 ) -> Preset {
     Preset {
@@ -78,68 +80,69 @@ const fn ps(
         base_kind,
         role,
         occupation,
+        facet,
         attr,
     }
 }
 
 #[rustfmt::skip]
 pub const PRESETS: [Preset; 56] = [
-    ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None, None),
-    ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None, None),
-    ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None, None),
-    ps("Witness", egui_phosphor::regular::EYE, EntityKind::Person, Some(Role::Witness), None, None),
-    ps("Source", egui_phosphor::regular::USER_SOUND, EntityKind::Person, Some(Role::Source), None, None),
-    ps("Judge", egui_phosphor::regular::SCALES, EntityKind::Person, None, Some(("Judge", OccupationIcon::Scales)), None),
-    ps("Journalist", egui_phosphor::regular::PEN_NIB, EntityKind::Person, None, Some(("Journalist", OccupationIcon::PenNib)), None),
-    ps("Lawyer", egui_phosphor::regular::BRIEFCASE, EntityKind::Person, None, Some(("Lawyer", OccupationIcon::Briefcase)), None),
-    ps("Police officer", egui_phosphor::regular::SHIELD_STAR, EntityKind::Person, None, Some(("Police officer", OccupationIcon::Shield)), None),
-    ps("Politician", egui_phosphor::regular::MICROPHONE_STAGE, EntityKind::Person, None, Some(("Politician", OccupationIcon::Microphone)), None),
-    ps("Company", egui_phosphor::regular::BUILDING_OFFICE, EntityKind::Organization, None, None, Some(("org_type", "Company"))),
-    ps("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, EntityKind::Organization, None, None, Some(("org_type", "Shell company"))),
-    ps("NGO", egui_phosphor::regular::HAND_HEART, EntityKind::Organization, None, None, Some(("org_type", "NGO"))),
-    ps("Government agency", egui_phosphor::regular::BANK, EntityKind::Organization, None, None, Some(("org_type", "Government agency"))),
-    ps("Registrar", egui_phosphor::regular::IDENTIFICATION_CARD, EntityKind::Organization, None, None, Some(("org_type", "registrar"))),
-    ps("Hosting provider", egui_phosphor::regular::HARD_DRIVES, EntityKind::Organization, None, None, Some(("org_type", "hosting"))),
-    ps("CPA network", egui_phosphor::regular::HANDSHAKE, EntityKind::Organization, None, None, Some(("org_type", "cpa_network"))),
-    ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some(("account_type", "Burner"))),
-    ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some(("account_type", "Sockpuppet"))),
-    ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, None, Some(("domain_type", "Parked"))),
-    ps("Typosquat", egui_phosphor::regular::WARNING, EntityKind::Domain, None, None, Some(("domain_type", "Typosquat"))),
-    ps("A", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, Some(("record_type", "A"))),
-    ps("AAAA", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, Some(("record_type", "AAAA"))),
-    ps("MX", egui_phosphor::regular::ENVELOPE, EntityKind::DnsRecord, None, None, Some(("record_type", "MX"))),
-    ps("TXT", egui_phosphor::regular::TEXT_T, EntityKind::DnsRecord, None, None, Some(("record_type", "TXT"))),
-    ps("SPF", egui_phosphor::regular::SHIELD_CHECK, EntityKind::DnsRecord, None, None, Some(("record_type", "SPF"))),
-    ps("NS", egui_phosphor::regular::HARD_DRIVES, EntityKind::DnsRecord, None, None, Some(("record_type", "NS"))),
-    ps("CNAME", egui_phosphor::regular::ARROW_BEND_UP_RIGHT, EntityKind::DnsRecord, None, None, Some(("record_type", "CNAME"))),
-    ps("Google Analytics", egui_phosphor::regular::GOOGLE_LOGO, EntityKind::TrackerId, None, None, Some(("vendor", "Google Analytics"))),
-    ps("Google Tag Manager", egui_phosphor::regular::GOOGLE_LOGO, EntityKind::TrackerId, None, None, Some(("vendor", "Google Tag Manager"))),
-    ps("Meta Pixel", egui_phosphor::regular::META_LOGO, EntityKind::TrackerId, None, None, Some(("vendor", "Meta"))),
-    ps("Microsoft Clarity", egui_phosphor::regular::EYE, EntityKind::TrackerId, None, None, Some(("vendor", "Microsoft"))),
-    ps("Yandex Metrica", egui_phosphor::regular::CHART_LINE, EntityKind::TrackerId, None, None, Some(("vendor", "Yandex"))),
-    ps("WordPress", egui_phosphor::regular::ARTICLE, EntityKind::Technology, None, None, Some(("vendor", "WordPress"))),
-    ps("WooCommerce", egui_phosphor::regular::SHOPPING_CART, EntityKind::Technology, None, None, Some(("vendor", "WooCommerce"))),
-    ps("nginx", egui_phosphor::regular::HARD_DRIVES, EntityKind::Technology, None, None, Some(("vendor", "nginx"))),
-    ps("Cloudflare", egui_phosphor::regular::CLOUD, EntityKind::Technology, None, None, Some(("vendor", "Cloudflare"))),
-    ps("PHP", egui_phosphor::regular::FILE_CODE, EntityKind::Technology, None, None, Some(("vendor", "PHP"))),
-    ps("React", egui_phosphor::regular::ATOM, EntityKind::Technology, None, None, Some(("vendor", "React"))),
-    ps("String", egui_phosphor::regular::TEXT_T, EntityKind::Parameter, None, None, Some(("datatype", "String"))),
-    ps("Integer", egui_phosphor::regular::HASH, EntityKind::Parameter, None, None, Some(("datatype", "Integer"))),
-    ps("Email", egui_phosphor::regular::ENVELOPE, EntityKind::Parameter, None, None, Some(("datatype", "Email"))),
-    ps("Phone", egui_phosphor::regular::PHONE, EntityKind::Parameter, None, None, Some(("datatype", "Phone"))),
-    ps("File", egui_phosphor::regular::FILE, EntityKind::Parameter, None, None, Some(("datatype", "File"))),
-    ps("JSON", egui_phosphor::regular::BRACKETS_CURLY, EntityKind::Parameter, None, None, Some(("datatype", "JSON"))),
-    ps("Boolean", egui_phosphor::regular::TOGGLE_LEFT, EntityKind::Parameter, None, None, Some(("datatype", "Boolean"))),
-    ps("Login", egui_phosphor::regular::SIGN_IN, EntityKind::Endpoint, None, None, Some(("purpose", "Login"))),
-    ps("Checkout", egui_phosphor::regular::SHOPPING_CART, EntityKind::Endpoint, None, None, Some(("purpose", "Checkout"))),
-    ps("Upload", egui_phosphor::regular::UPLOAD_SIMPLE, EntityKind::Endpoint, None, None, Some(("purpose", "Upload"))),
-    ps("Search", egui_phosphor::regular::MAGNIFYING_GLASS, EntityKind::Endpoint, None, None, Some(("purpose", "Search"))),
-    ps("API call", egui_phosphor::regular::WEBHOOKS_LOGO, EntityKind::Endpoint, None, None, Some(("purpose", "API call"))),
-    ps("WooCommerce store", egui_phosphor::regular::SHOPPING_CART, EntityKind::Website, None, None, Some(("site_type", "WooCommerce store"))),
-    ps("Cloaker", egui_phosphor::regular::EYE_SLASH, EntityKind::Website, None, None, Some(("site_type", "Cloaker"))),
-    ps("Landing page", egui_phosphor::regular::ROCKET_LAUNCH, EntityKind::Website, None, None, Some(("site_type", "Landing page"))),
-    ps("Storefront", egui_phosphor::regular::STOREFRONT, EntityKind::Website, None, None, Some(("site_type", "Storefront"))),
-    ps("Blog", egui_phosphor::regular::ARTICLE, EntityKind::Website, None, None, Some(("site_type", "Blog"))),
+    ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None, None, None),
+    ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None, None, None),
+    ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None, None, None),
+    ps("Witness", egui_phosphor::regular::EYE, EntityKind::Person, Some(Role::Witness), None, None, None),
+    ps("Source", egui_phosphor::regular::USER_SOUND, EntityKind::Person, Some(Role::Source), None, None, None),
+    ps("Judge", egui_phosphor::regular::SCALES, EntityKind::Person, None, Some(("Judge", OccupationIcon::Scales)), None, None),
+    ps("Journalist", egui_phosphor::regular::PEN_NIB, EntityKind::Person, None, Some(("Journalist", OccupationIcon::PenNib)), None, None),
+    ps("Lawyer", egui_phosphor::regular::BRIEFCASE, EntityKind::Person, None, Some(("Lawyer", OccupationIcon::Briefcase)), None, None),
+    ps("Police officer", egui_phosphor::regular::SHIELD_STAR, EntityKind::Person, None, Some(("Police officer", OccupationIcon::Shield)), None, None),
+    ps("Politician", egui_phosphor::regular::MICROPHONE_STAGE, EntityKind::Person, None, Some(("Politician", OccupationIcon::Microphone)), None, None),
+    ps("Company", egui_phosphor::regular::BUILDING_OFFICE, EntityKind::Organization, None, None, Some((Facet::OrgType, 0)), None),
+    ps("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, EntityKind::Organization, None, None, Some((Facet::OrgType, 1)), None),
+    ps("NGO", egui_phosphor::regular::HAND_HEART, EntityKind::Organization, None, None, Some((Facet::OrgType, 2)), None),
+    ps("Government agency", egui_phosphor::regular::BANK, EntityKind::Organization, None, None, Some((Facet::OrgType, 3)), None),
+    ps("Registrar", egui_phosphor::regular::IDENTIFICATION_CARD, EntityKind::Organization, None, None, Some((Facet::OrgType, 4)), None),
+    ps("Hosting provider", egui_phosphor::regular::HARD_DRIVES, EntityKind::Organization, None, None, Some((Facet::OrgType, 5)), None),
+    ps("CPA network", egui_phosphor::regular::HANDSHAKE, EntityKind::Organization, None, None, Some((Facet::OrgType, 6)), None),
+    ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 0)), None),
+    ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 1)), None),
+    ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, None, Some((Facet::DomainType, 0)), None),
+    ps("Typosquat", egui_phosphor::regular::WARNING, EntityKind::Domain, None, None, Some((Facet::DomainType, 1)), None),
+    ps("A", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "A"))),
+    ps("AAAA", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "AAAA"))),
+    ps("MX", egui_phosphor::regular::ENVELOPE, EntityKind::DnsRecord, None, None, None, Some(("record_type", "MX"))),
+    ps("TXT", egui_phosphor::regular::TEXT_T, EntityKind::DnsRecord, None, None, None, Some(("record_type", "TXT"))),
+    ps("SPF", egui_phosphor::regular::SHIELD_CHECK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "SPF"))),
+    ps("NS", egui_phosphor::regular::HARD_DRIVES, EntityKind::DnsRecord, None, None, None, Some(("record_type", "NS"))),
+    ps("CNAME", egui_phosphor::regular::ARROW_BEND_UP_RIGHT, EntityKind::DnsRecord, None, None, None, Some(("record_type", "CNAME"))),
+    ps("Google Analytics", egui_phosphor::regular::GOOGLE_LOGO, EntityKind::TrackerId, None, None, None, Some(("vendor", "Google Analytics"))),
+    ps("Google Tag Manager", egui_phosphor::regular::GOOGLE_LOGO, EntityKind::TrackerId, None, None, None, Some(("vendor", "Google Tag Manager"))),
+    ps("Meta Pixel", egui_phosphor::regular::META_LOGO, EntityKind::TrackerId, None, None, None, Some(("vendor", "Meta"))),
+    ps("Microsoft Clarity", egui_phosphor::regular::EYE, EntityKind::TrackerId, None, None, None, Some(("vendor", "Microsoft"))),
+    ps("Yandex Metrica", egui_phosphor::regular::CHART_LINE, EntityKind::TrackerId, None, None, None, Some(("vendor", "Yandex"))),
+    ps("WordPress", egui_phosphor::regular::ARTICLE, EntityKind::Technology, None, None, None, Some(("vendor", "WordPress"))),
+    ps("WooCommerce", egui_phosphor::regular::SHOPPING_CART, EntityKind::Technology, None, None, None, Some(("vendor", "WooCommerce"))),
+    ps("nginx", egui_phosphor::regular::HARD_DRIVES, EntityKind::Technology, None, None, None, Some(("vendor", "nginx"))),
+    ps("Cloudflare", egui_phosphor::regular::CLOUD, EntityKind::Technology, None, None, None, Some(("vendor", "Cloudflare"))),
+    ps("PHP", egui_phosphor::regular::FILE_CODE, EntityKind::Technology, None, None, None, Some(("vendor", "PHP"))),
+    ps("React", egui_phosphor::regular::ATOM, EntityKind::Technology, None, None, None, Some(("vendor", "React"))),
+    ps("String", egui_phosphor::regular::TEXT_T, EntityKind::Parameter, None, None, None, Some(("datatype", "String"))),
+    ps("Integer", egui_phosphor::regular::HASH, EntityKind::Parameter, None, None, None, Some(("datatype", "Integer"))),
+    ps("Email", egui_phosphor::regular::ENVELOPE, EntityKind::Parameter, None, None, None, Some(("datatype", "Email"))),
+    ps("Phone", egui_phosphor::regular::PHONE, EntityKind::Parameter, None, None, None, Some(("datatype", "Phone"))),
+    ps("File", egui_phosphor::regular::FILE, EntityKind::Parameter, None, None, None, Some(("datatype", "File"))),
+    ps("JSON", egui_phosphor::regular::BRACKETS_CURLY, EntityKind::Parameter, None, None, None, Some(("datatype", "JSON"))),
+    ps("Boolean", egui_phosphor::regular::TOGGLE_LEFT, EntityKind::Parameter, None, None, None, Some(("datatype", "Boolean"))),
+    ps("Login", egui_phosphor::regular::SIGN_IN, EntityKind::Endpoint, None, None, None, Some(("purpose", "Login"))),
+    ps("Checkout", egui_phosphor::regular::SHOPPING_CART, EntityKind::Endpoint, None, None, None, Some(("purpose", "Checkout"))),
+    ps("Upload", egui_phosphor::regular::UPLOAD_SIMPLE, EntityKind::Endpoint, None, None, None, Some(("purpose", "Upload"))),
+    ps("Search", egui_phosphor::regular::MAGNIFYING_GLASS, EntityKind::Endpoint, None, None, None, Some(("purpose", "Search"))),
+    ps("API call", egui_phosphor::regular::WEBHOOKS_LOGO, EntityKind::Endpoint, None, None, None, Some(("purpose", "API call"))),
+    ps("WooCommerce store", egui_phosphor::regular::SHOPPING_CART, EntityKind::Website, None, None, Some((Facet::SiteType, 0)), None),
+    ps("Cloaker", egui_phosphor::regular::EYE_SLASH, EntityKind::Website, None, None, Some((Facet::SiteType, 1)), None),
+    ps("Landing page", egui_phosphor::regular::ROCKET_LAUNCH, EntityKind::Website, None, None, Some((Facet::SiteType, 2)), None),
+    ps("Storefront", egui_phosphor::regular::STOREFRONT, EntityKind::Website, None, None, Some((Facet::SiteType, 3)), None),
+    ps("Blog", egui_phosphor::regular::ARTICLE, EntityKind::Website, None, None, Some((Facet::SiteType, 4)), None),
 ];
 
 pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<(), Error> {
@@ -156,6 +159,9 @@ pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<
                 }),
             )?;
         }
+    }
+    for (facet, index) in preset.facet.iter() {
+        set_subtype(&mut e.facets, *facet, Some(*index))?;
     }
     let Some((key, value)) = preset.attr else {
         return Ok(());
@@ -176,7 +182,9 @@ pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, KIND_META, OCCUPATION_ICONS, role_of};
+    use crate::model::{
+        DEFAULT_NODE_SIZE, Facet, KIND_META, OCCUPATION_ICONS, role_of, subtype_of, subtype_value,
+    };
 
     fn person(slug: &str) -> Entity {
         Entity {
@@ -237,12 +245,20 @@ mod tests {
         for p in &PRESETS {
             assert!((p.base_kind as usize) < KIND_META.len(), "{} base_kind out of range", p.label);
             assert!(
-                p.role.is_some() || p.occupation.is_some() || p.attr.is_some(),
+                p.role.is_some() || p.occupation.is_some() || p.facet.is_some() || p.attr.is_some(),
                 "{} sets no facet",
                 p.label
             );
             if let Some(r) = p.role {
                 assert!((r as usize) < ROLE_META.len(), "{} bad role index", p.label);
+            }
+            if let Some((facet, index)) = p.facet {
+                assert!(
+                    subtype_value(facet, index).unwrap().is_some(),
+                    "{} facet index {index} out of range for {facet:?}",
+                    p.label
+                );
+                assert_eq!(p.attr, None, "{} sets a subtype facet AND an attr", p.label);
             }
             if let Some((label, icon)) = p.occupation {
                 assert!(!label.is_empty(), "{} occupation label empty", p.label);
@@ -271,16 +287,40 @@ mod tests {
             ("WordPress", EntityKind::Technology, "vendor", "WordPress"),
             ("Boolean", EntityKind::Parameter, "datatype", "Boolean"),
             ("Checkout", EntityKind::Endpoint, "purpose", "Checkout"),
-            ("Cloaker", EntityKind::Website, "site_type", "Cloaker"),
-            ("Registrar", EntityKind::Organization, "org_type", "registrar"),
-            ("Hosting provider", EntityKind::Organization, "org_type", "hosting"),
-            ("CPA network", EntityKind::Organization, "org_type", "cpa_network"),
         ];
         for (label, base, key, value) in cases {
             let p = PRESETS.iter().find(|p| p.label == label).expect("preset present");
             assert_eq!(p.base_kind, base, "{label} base kind");
             assert_eq!(p.role, None, "{label} sets no role");
+            assert_eq!(p.facet, None, "{label} is a record-classification, not a kind subtype");
             assert_eq!(p.attr, Some((key, value)), "{label} attr");
+        }
+    }
+
+    #[test]
+    fn subtype_presets_set_typed_facet_not_free_text() {
+        let cases = [
+            ("Company", EntityKind::Organization, Facet::OrgType, 0u16),
+            ("Shell company", EntityKind::Organization, Facet::OrgType, 1),
+            ("Registrar", EntityKind::Organization, Facet::OrgType, 4),
+            ("Hosting provider", EntityKind::Organization, Facet::OrgType, 5),
+            ("CPA network", EntityKind::Organization, Facet::OrgType, 6),
+            ("Burner", EntityKind::SocialAccount, Facet::AccountType, 0),
+            ("Sockpuppet", EntityKind::SocialAccount, Facet::AccountType, 1),
+            ("Parked", EntityKind::Domain, Facet::DomainType, 0),
+            ("Typosquat", EntityKind::Domain, Facet::DomainType, 1),
+            ("WooCommerce store", EntityKind::Website, Facet::SiteType, 0),
+            ("Cloaker", EntityKind::Website, Facet::SiteType, 1),
+            ("Blog", EntityKind::Website, Facet::SiteType, 4),
+        ];
+        for (label, base, facet, index) in cases {
+            let p = PRESETS.iter().find(|p| p.label == label).expect("preset present");
+            assert_eq!(p.base_kind, base, "{label} base kind");
+            assert_eq!(p.role, None, "{label} sets no role");
+            assert_eq!(p.attr, None, "{label} no longer stamps a free-text attr");
+            assert_eq!(p.facet, Some((facet, index)), "{label} sets its typed subtype facet");
+            let v = subtype_value(facet, index).unwrap().expect("vocab row present");
+            assert_eq!(v.label, label, "{label} preset label matches its vocab value label");
         }
     }
 
@@ -360,18 +400,42 @@ mod tests {
     }
 
     #[test]
-    fn apply_preset_sets_org_type_for_org_presets() {
+    fn apply_preset_sets_org_type_facet_for_org_presets() {
         let mut e = person("acme");
         e.kind = EntityKind::Organization;
         let company = PRESETS.iter().find(|p| p.label == "Company").expect("company preset");
         apply_preset(&mut e, company, &Author::default()).unwrap();
         assert_eq!(role_of(&e.facets).unwrap(), Role::Unset, "org preset sets no role");
+        assert_eq!(
+            subtype_of(&e.facets, Facet::OrgType).unwrap(),
+            Some(0),
+            "Company sets the OrgType facet at its vocab index"
+        );
         assert!(
-            e.observations
-                .iter()
-                .any(|o| o.name == "org_type"
-                    && matches!(&o.value, ObsValue::Text(t) if t == "Company")),
-            "org_type observation missing"
+            !e.observations.iter().any(|o| o.name == "org_type"),
+            "org type is a typed facet now — no stray org_type observation"
+        );
+    }
+
+    #[test]
+    fn apply_preset_shell_company_sets_org_type_facet_not_observation() {
+        let mut e = person("acme");
+        e.kind = EntityKind::Organization;
+        let shell = PRESETS.iter().find(|p| p.label == "Shell company").expect("shell preset");
+        apply_preset(&mut e, shell, &Author::default()).unwrap();
+        assert_eq!(
+            subtype_of(&e.facets, Facet::OrgType).unwrap(),
+            Some(1),
+            "Shell company sets Facet::OrgType at index 1, not a free-text org_type observation"
+        );
+        assert!(e.observations.is_empty(), "no org_type observation is stamped");
+        let badge = crate::model::facet_badge(Facet::OrgType, &e.facets[&Facet::OrgType])
+            .unwrap()
+            .expect("shell company paints a subtype badge");
+        assert_eq!(
+            badge.glyph,
+            egui_phosphor::regular::CUBE_TRANSPARENT,
+            "shell company keeps its cube icon on the badge"
         );
     }
 

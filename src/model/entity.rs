@@ -169,19 +169,19 @@ const fn k(
 pub const KIND_META: [KindMeta; 65] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
-    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role, Facet::OrgType]),
     k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::LawFirm, "Law firm", egui_phosphor::regular::BRIEFCASE, Category::Organizations, (240, 190, 110), &["jurisdiction", "specialty"], &["lawyers", "attorneys", "legal", "counsel"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Bank, "Bank", egui_phosphor::regular::VAULT, Category::Organizations, (225, 155, 70), &["swift_bic", "jurisdiction", "regulator"], &["financial institution", "lender"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::MediaOutlet, "Media outlet", egui_phosphor::regular::BROADCAST, Category::Organizations, (255, 185, 125), &["country", "medium", "owner"], &["news", "press", "tv", "newspaper", "publication"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::CriminalOrg, "Criminal org", egui_phosphor::regular::SKULL, Category::Organizations, (180, 105, 45), &["territory", "activity", "active_since"], &["mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role]),
-    k(EntityKind::Domain, "Domain", egui_phosphor::regular::GLOBE, Category::Digital, (120, 210, 150), &["registrar", "registered_on", "expires", "registrant"], &["dns", "site name"], ValueFormat::Hostname, &[]),
+    k(EntityKind::Domain, "Domain", egui_phosphor::regular::GLOBE, Category::Digital, (120, 210, 150), &["registrar", "registered_on", "expires", "registrant"], &["dns", "site name"], ValueFormat::Hostname, &[Facet::DomainType]),
     k(EntityKind::IpAddress, "IP address", egui_phosphor::regular::NETWORK, Category::Digital, (90, 200, 200), &["asn", "isp", "geolocation"], &["ip", "host", "ipv4", "ipv6"], ValueFormat::Ip, &[]),
     k(EntityKind::Email, "Email", egui_phosphor::regular::ENVELOPE, Category::Digital, (110, 215, 185), &["holder", "provider", "first_seen"], &["mail", "inbox"], ValueFormat::Email, &[]),
     k(EntityKind::Phone, "Phone", egui_phosphor::regular::PHONE, Category::Digital, (135, 205, 165), &["country", "carrier", "holder"], &["mobile", "telephone", "number", "cell"], ValueFormat::Free, &[]),
-    k(EntityKind::SocialAccount, "Social account", egui_phosphor::regular::AT, Category::Digital, (80, 210, 170), &["platform", "handle", "holder", "created"], &["twitter", "facebook", "instagram", "telegram", "profile", "x"], ValueFormat::Free, &[]),
-    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Web, (175, 130, 225), &["platform", "cms", "title", "operator", "first_archived"], &["site", "url", "webpage", "web app", "webapp", "storefront"], ValueFormat::Url, &[]),
+    k(EntityKind::SocialAccount, "Social account", egui_phosphor::regular::AT, Category::Digital, (80, 210, 170), &["platform", "handle", "holder", "created"], &["twitter", "facebook", "instagram", "telegram", "profile", "x"], ValueFormat::Free, &[Facet::AccountType]),
+    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Web, (175, 130, 225), &["platform", "cms", "title", "operator", "first_archived"], &["site", "url", "webpage", "web app", "webapp", "storefront"], ValueFormat::Url, &[Facet::SiteType]),
     k(EntityKind::Server, "Server", egui_phosphor::regular::HARD_DRIVES, Category::Digital, (70, 185, 185), &["ip", "hosting_provider", "location"], &["host", "vps", "infrastructure", "machine"], ValueFormat::Hostname, &[]),
     k(EntityKind::Device, "Device", egui_phosphor::regular::DEVICE_MOBILE, Category::Digital, (105, 220, 205), &["type", "imei", "owner"], &["laptop", "computer", "hardware", "gadget"], ValueFormat::Free, &[]),
     k(EntityKind::CryptoWallet, "Crypto wallet", egui_phosphor::regular::CURRENCY_BTC, Category::Digital, (60, 195, 155), &["chain", "address", "custodian"], &["bitcoin", "btc", "eth", "blockchain", "crypto"], ValueFormat::Free, &[]),
@@ -472,7 +472,38 @@ mod tests {
                 "{:?}: role facet belongs to people and organizations only",
                 m.kind
             );
-            if !actor {
+            assert_eq!(
+                m.facets.contains(&Facet::OrgType),
+                m.kind == EntityKind::Organization,
+                "{:?}: OrgType is the Organization subtype only",
+                m.kind
+            );
+            assert_eq!(
+                m.facets.contains(&Facet::AccountType),
+                m.kind == EntityKind::SocialAccount,
+                "{:?}: AccountType is the SocialAccount subtype only",
+                m.kind
+            );
+            assert_eq!(
+                m.facets.contains(&Facet::DomainType),
+                m.kind == EntityKind::Domain,
+                "{:?}: DomainType is the Domain subtype only",
+                m.kind
+            );
+            assert_eq!(
+                m.facets.contains(&Facet::SiteType),
+                m.kind == EntityKind::Website,
+                "{:?}: SiteType is the Website subtype only",
+                m.kind
+            );
+            let subtype = matches!(
+                m.kind,
+                EntityKind::Organization
+                    | EntityKind::SocialAccount
+                    | EntityKind::Domain
+                    | EntityKind::Website
+            );
+            if !actor && !subtype {
                 assert!(m.facets.is_empty(), "{:?} must declare no facets at all", m.kind);
             }
         }
@@ -500,10 +531,8 @@ mod tests {
             assert!(!f.contains(&Facet::Occupation), "{kind:?} must not carry Occupation");
         }
         for kind in [
-            EntityKind::Domain,
             EntityKind::IpAddress,
             EntityKind::Email,
-            EntityKind::Website,
             EntityKind::WebPage,
             EntityKind::Secret,
             EntityKind::Money,
@@ -515,7 +544,19 @@ mod tests {
         ] {
             assert!(
                 KIND_META[kind as usize].facets.is_empty(),
-                "{kind:?} is not a person or org — it must declare no facets"
+                "{kind:?} is neither an actor nor a subtyped kind — it must declare no facets"
+            );
+        }
+
+        for (kind, facet) in [
+            (EntityKind::Organization, Facet::OrgType),
+            (EntityKind::SocialAccount, Facet::AccountType),
+            (EntityKind::Domain, Facet::DomainType),
+            (EntityKind::Website, Facet::SiteType),
+        ] {
+            assert!(
+                KIND_META[kind as usize].facets.contains(&facet),
+                "{kind:?} must declare its subtype facet {facet:?}"
             );
         }
     }
