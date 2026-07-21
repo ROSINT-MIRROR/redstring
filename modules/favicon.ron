@@ -1,0 +1,26 @@
+// builtin module spec — Shodan-style favicon hash (mmh3 of the base64'd icon).
+// The killer pivot for node-farm enumeration: sites serving the SAME favicon converge on ONE hash
+// node (value = the hash, upsert-by-slug), so a shared icon draws the red string between otherwise
+// unlinked domains. curl fetches <origin>/favicon.ico — the host is pulled from a bare domain or a
+// full URL alike; python3 computes mmh3.hash(base64.encodebytes(bytes)), Shodan's exact recipe.
+// GATED on mmh3: with it absent from PATH the module stays hidden (Missing), never fabricating a
+// hash. Install the module and expose an mmh3 on PATH to unhide it. Empty icon → no output → evidence.
+(
+    id: "favicon",
+    label: "favicon hash (mmh3)",
+    applies_to: ["domain", "website"],
+    bin: "sh",
+    requires: ["curl", "python3", "mmh3"],
+    args: ["-c", "v=\"{value}\"; case \"$v\" in http*) h=\"${v#*://}\"; h=\"${h%%/*}\";; *) h=\"$v\";; esac; curl -sL -A 'redstring' \"https://$h/favicon.ico\" | python3 -c 'import sys,base64,mmh3; d=sys.stdin.buffer.read(); print(mmh3.hash(base64.encodebytes(d))) if d else None'"],
+    timeout_secs: 20,
+    shapes: [
+        (
+            id: "mmh3",
+            extract: (id: "lines", config: (field: "hash")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "hash", kind: "favicon", rel: "related_to"),
+            ],
+        ),
+    ],
+)

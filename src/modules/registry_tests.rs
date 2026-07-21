@@ -402,6 +402,87 @@ OrgName:        Google LLC
     }
 
     #[test]
+    fn geocode_applies_to_location_and_address() {
+        let k = builtin("builtin:geocode").kinds().unwrap();
+        assert!(k.contains(&EntityKind::Location));
+        assert!(k.contains(&EntityKind::Address));
+    }
+
+    #[test]
+    fn geocode_json_emits_typed_coordinate_and_place() {
+        let spec = builtin("builtin:geocode");
+        let text = "{\"coord\":\"47.0245117,28.8322923\",\"display\":\"Chisinau, Moldova\"}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr {
+            key: "coordinates".into(),
+            value: "47.0245117,28.8322923".into(),
+            kind: ObsKind::Coord,
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "resolved_place".into(),
+            value: "Chisinau, Moldova".into(),
+            kind: ObsKind::Text,
+        }));
+    }
+
+    #[test]
+    fn geocode_renders_urlencoded_nominatim_pipeline() {
+        let spec = builtin("builtin:geocode");
+        let args = spec
+            .render_args("Baia Mare, Romania", "Baia Mare, Romania", "baia_mare_romania", &[])
+            .unwrap();
+        assert_eq!(args[0], "-c");
+        assert!(
+            args[1].contains("--data-urlencode 'q=Baia Mare, Romania'"),
+            "place name rides through data-urlencode: {}",
+            args[1]
+        );
+        assert!(args[1].contains("nominatim.openstreetmap.org/search?format=json&limit=1"));
+        assert!(args[1].contains("jq -c"));
+    }
+
+    #[test]
+    fn favicon_applies_to_domain_and_website_and_gates_on_mmh3() {
+        let spec = builtin("builtin:favicon");
+        let k = spec.kinds().unwrap();
+        assert!(k.contains(&EntityKind::Domain));
+        assert!(k.contains(&EntityKind::Website));
+        assert!(
+            spec.requires.contains(&"mmh3".to_owned()),
+            "favicon is gated on mmh3 so it stays hidden until mmh3 is on PATH"
+        );
+    }
+
+    #[test]
+    fn favicon_lines_emit_convergent_hash_pivot() {
+        let spec = builtin("builtin:favicon");
+        let text = "116323821\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Favicon,
+            label: "116323821".into(),
+            value: "116323821".into(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn favicon_renders_origin_normalizing_shell() {
+        let spec = builtin("builtin:favicon");
+        let args = spec
+            .render_args("https://evil.example/path", "evil.example", "evil_example", &[])
+            .unwrap();
+        assert_eq!(args[0], "-c");
+        assert!(args[1].contains("v=\"https://evil.example/path\""), "value substituted: {}", args[1]);
+        assert!(args[1].contains("/favicon.ico"));
+        assert!(args[1].contains("mmh3.hash(base64.encodebytes(d))"));
+    }
+
+    #[test]
     fn ipapi_json_emits_geo_asn_isp_and_reverse() {
         let spec = builtin("builtin:ipapi");
         let text = "{\"status\":\"success\",\"countryCode\":\"US\",\"region\":\"CA\",\"regionName\":\"California\",\"city\":\"Mountain View\",\"isp\":\"Google LLC\",\"org\":\"Google Public DNS\",\"as\":\"AS15169 Google LLC\",\"reverse\":\"dns.google\",\"query\":\"8.8.8.8\"}";

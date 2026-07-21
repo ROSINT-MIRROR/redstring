@@ -1,0 +1,26 @@
+// builtin module spec — Nominatim (OpenStreetMap) forward geocoder (KEYLESS, no API key).
+// Turns a Location/Address into real coordinates: one HTTPS GET returns a JSON array of matches;
+// jq folds the top match into a single object {coord: "lat,lon", display: name} so the json adapter
+// reads it at root (array: "") and the pair lands as a TYPED Coord observation — the map pin the
+// board can plot, not two loose numbers. Place names with spaces/commas ride through --data-urlencode;
+// a no-match query yields empty output and degrades to evidence, never a bogus point.
+(
+    id: "geocode",
+    label: "nominatim geocode",
+    applies_to: ["location", "address"],
+    bin: "sh",
+    requires: ["curl", "jq"],
+    args: ["-c", "curl -s -A 'redstring' -G --data-urlencode 'q={value}' 'https://nominatim.openstreetmap.org/search?format=json&limit=1' | jq -c 'if length>0 then {coord:\"\\(.[0].lat),\\(.[0].lon)\", display:.[0].display_name} else empty end'"],
+    timeout_secs: 20,
+    shapes: [
+        (
+            id: "nominatim",
+            extract: (id: "json", config: (array: "")),
+            min_hits: 1,
+            emit: [
+                Attr(from: "coord", key: "coordinates", kind: Coord),
+                Attr(from: "display", key: "resolved_place"),
+            ],
+        ),
+    ],
+)
