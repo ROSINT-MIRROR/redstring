@@ -20,7 +20,7 @@
                 Attr(from: "creation date", key: "registered_on"),
                 Attr(from: "registry expiry date", key: "expires"),
                 Attr(from: "dnssec", key: "dnssec"),
-                Entity(from: "registrar", kind: "company", rel: "registered_at"),
+                Entity(from: "registrar", kind: "organization", rel: "registered_at"),
                 Entity(from: "name server", kind: "server", rel: "resolves_to"),
             ],
         ),

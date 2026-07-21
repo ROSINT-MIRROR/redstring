@@ -55,10 +55,6 @@ pub enum EntityKind {
     Person,
     Alias,
     Organization,
-    Company,
-    ShellCompany,
-    Ngo,
-    GovernmentBody,
     PoliticalParty,
     Court,
     LawFirm,
@@ -243,14 +239,10 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 52] = [
+pub const KIND_META: [KindMeta; 48] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality", "occupation"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free),
-    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association"], ValueFormat::Free),
-    k(EntityKind::Company, "Company", egui_phosphor::regular::BUILDING_OFFICE, Category::Organizations, (250, 150, 60), &["reg_no", "jurisdiction", "incorporated", "status"], &["corporation", "business", "firm", "llc", "enterprise"], ValueFormat::Free),
-    k(EntityKind::ShellCompany, "Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, Category::Organizations, (205, 145, 100), &["reg_no", "jurisdiction", "incorporated", "registered_agent"], &["offshore", "front", "spv", "letterbox"], ValueFormat::Free),
-    k(EntityKind::Ngo, "NGO", egui_phosphor::regular::HAND_HEART, Category::Organizations, (255, 200, 145), &["reg_no", "jurisdiction", "founded", "stated_purpose"], &["nonprofit", "charity", "foundation"], ValueFormat::Free),
-    k(EntityKind::GovernmentBody, "Government body", egui_phosphor::regular::BANK, Category::Organizations, (210, 130, 55), &["country", "level", "remit"], &["agency", "ministry", "department", "state", "authority"], ValueFormat::Free),
+    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free),
     k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free),
     k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free),
     k(EntityKind::LawFirm, "Law firm", egui_phosphor::regular::BRIEFCASE, Category::Organizations, (240, 190, 110), &["jurisdiction", "specialty"], &["lawyers", "attorneys", "legal", "counsel"], ValueFormat::Free),
@@ -532,5 +524,22 @@ mod tests {
         }
         let cats: Vec<Category> = CATEGORY_META.iter().map(|m| m.category).collect();
         assert_eq!(seen, cats, "category order");
+    }
+
+    #[test]
+    fn collapsed_subtype_kinds_are_gone_but_searchable() {
+        for label in ["Company", "Shell company", "NGO", "Government body", "Government agency"] {
+            assert!(
+                !KIND_META.iter().any(|m| m.label == label),
+                "{label} must no longer be a base kind"
+            );
+        }
+        let org = &KIND_META[EntityKind::Organization as usize];
+        for term in ["company", "shell company", "ngo", "government agency", "offshore"] {
+            assert!(
+                org.aliases.contains(&term),
+                "Organization aliases must fold in '{term}' so search still finds it"
+            );
+        }
     }
 }

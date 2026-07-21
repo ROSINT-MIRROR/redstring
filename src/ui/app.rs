@@ -50,7 +50,7 @@ pub struct RedstringApp {
 
     pub palette_open: [bool; CATEGORY_META.len()],
 
-    pub presets_open: bool,
+    pub kind_expanded: [bool; KIND_META.len()],
 
     pub edge_drag: Option<NodeIndex>,
     pub right_press: Option<(Option<NodeIndex>, Pos2)>,
@@ -136,7 +136,7 @@ impl RedstringApp {
             ne_preset: None,
             kind_search: String::new(),
             palette_open: [true; CATEGORY_META.len()],
-            presets_open: true,
+            kind_expanded: [false; KIND_META.len()],
             edge_drag: None,
             right_press: None,
             pending_edge: None,

@@ -193,7 +193,7 @@ mod tests {
             data: (
                 entities: [
                     (slug: "doe", kind: Person, label: "J. Doe"),
-                    (slug: "shell", kind: ShellCompany, label: "Shell Co"),
+                    (slug: "shell", kind: Organization, label: "Shell Co"),
                 ],
                 relations: [
                     (from: "doe", to: "shell", kind: Controls),
@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(m.format, FORMAT_VERSION);
         assert_eq!(m.ontology.entity_kinds.len(), KIND_META.len());
         assert_eq!(m.ontology.relation_kinds.len(), RELATION_META.len());
-        assert!(m.ontology.entity_kinds.contains(&"ShellCompany".to_owned()));
+        assert!(m.ontology.entity_kinds.contains(&"CriminalOrg".to_owned()));
         assert!(m.ontology.relation_kinds.contains(&"LaunderedThrough".to_owned()));
 
         let long = "x".repeat(500);

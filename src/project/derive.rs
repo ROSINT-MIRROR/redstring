@@ -77,7 +77,7 @@ mod tests {
         });
         cf.data.entities.push(EntityRec {
             slug: "strada_sigur".into(),
-            kind: EntityKind::ShellCompany,
+            kind: EntityKind::Organization,
             label: "Strada Sigur SRL".into(),
             value: String::new(),
             observations: vec![],

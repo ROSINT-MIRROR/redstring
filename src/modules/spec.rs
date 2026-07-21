@@ -181,7 +181,8 @@ mod tests {
     fn slug_lookups_resolve_ontology() {
         assert_eq!(kind_by_slug("domain").unwrap(), Some(EntityKind::Domain));
         assert_eq!(kind_by_slug("ip_address").unwrap(), Some(EntityKind::IpAddress));
-        assert_eq!(kind_by_slug("shell_company").unwrap(), Some(EntityKind::ShellCompany));
+        assert_eq!(kind_by_slug("organization").unwrap(), Some(EntityKind::Organization));
+        assert_eq!(kind_by_slug("shell_company").unwrap(), None);
         assert_eq!(kind_by_slug("nope").unwrap(), None);
         assert_eq!(rel_by_slug("registered_at").unwrap(), Some(RelationKind::RegisteredAt));
         assert_eq!(rel_by_slug("resolves_to").unwrap(), Some(RelationKind::ResolvesTo));

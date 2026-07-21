@@ -46,54 +46,62 @@ pub const ROLE_META: [RoleMeta; 6] = [
 pub struct Preset {
     pub label: &'static str,
     pub icon: &'static str,
-    pub color: Color32,
     pub base_kind: EntityKind,
-    pub occupation: Option<&'static str>,
-    pub role: Role,
+    pub role: Option<Role>,
+    pub attr: Option<(&'static str, &'static str)>,
 }
 
 const fn ps(
     label: &'static str,
     icon: &'static str,
-    rgb: (u8, u8, u8),
     base_kind: EntityKind,
-    occupation: Option<&'static str>,
-    role: Role,
+    role: Option<Role>,
+    attr: Option<(&'static str, &'static str)>,
 ) -> Preset {
     Preset {
         label,
         icon,
-        color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
         base_kind,
-        occupation,
         role,
+        attr,
     }
 }
 
 #[rustfmt::skip]
-pub const PRESETS: [Preset; 9] = [
-    ps("Judge", egui_phosphor::regular::SCALES, (110, 120, 215), EntityKind::Person, Some("Judge"), Role::Unset),
-    ps("Journalist", egui_phosphor::regular::PEN_NIB, (120, 160, 240), EntityKind::Person, Some("Journalist"), Role::Unset),
-    ps("Lawyer", egui_phosphor::regular::BRIEFCASE, (90, 140, 220), EntityKind::Person, Some("Lawyer"), Role::Unset),
-    ps("Police officer", egui_phosphor::regular::SHIELD_STAR, (70, 135, 225), EntityKind::Person, Some("Police officer"), Role::Unset),
-    ps("Politician", egui_phosphor::regular::MICROPHONE_STAGE, (140, 150, 235), EntityKind::Person, Some("Politician"), Role::Unset),
-    ps("Suspect", egui_phosphor::regular::USER_FOCUS, (235, 165, 60), EntityKind::Person, None, Role::Suspect),
-    ps("Victim", egui_phosphor::regular::BANDAIDS, (95, 155, 240), EntityKind::Person, None, Role::Victim),
-    ps("Witness", egui_phosphor::regular::EYE, (90, 195, 165), EntityKind::Person, None, Role::Witness),
-    ps("Perpetrator", egui_phosphor::regular::HAND_FIST, (225, 70, 70), EntityKind::Person, None, Role::Perpetrator),
+pub const PRESETS: [Preset; 18] = [
+    ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None),
+    ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None),
+    ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None),
+    ps("Witness", egui_phosphor::regular::EYE, EntityKind::Person, Some(Role::Witness), None),
+    ps("Source", egui_phosphor::regular::USER_SOUND, EntityKind::Person, Some(Role::Source), None),
+    ps("Judge", egui_phosphor::regular::SCALES, EntityKind::Person, None, Some(("occupation", "Judge"))),
+    ps("Journalist", egui_phosphor::regular::PEN_NIB, EntityKind::Person, None, Some(("occupation", "Journalist"))),
+    ps("Lawyer", egui_phosphor::regular::BRIEFCASE, EntityKind::Person, None, Some(("occupation", "Lawyer"))),
+    ps("Police officer", egui_phosphor::regular::SHIELD_STAR, EntityKind::Person, None, Some(("occupation", "Police officer"))),
+    ps("Politician", egui_phosphor::regular::MICROPHONE_STAGE, EntityKind::Person, None, Some(("occupation", "Politician"))),
+    ps("Company", egui_phosphor::regular::BUILDING_OFFICE, EntityKind::Organization, None, Some(("org_type", "Company"))),
+    ps("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, EntityKind::Organization, None, Some(("org_type", "Shell company"))),
+    ps("NGO", egui_phosphor::regular::HAND_HEART, EntityKind::Organization, None, Some(("org_type", "NGO"))),
+    ps("Government agency", egui_phosphor::regular::BANK, EntityKind::Organization, None, Some(("org_type", "Government agency"))),
+    ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, Some(("account_type", "Burner"))),
+    ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, Some(("account_type", "Sockpuppet"))),
+    ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, Some(("domain_type", "Parked"))),
+    ps("Typosquat", egui_phosphor::regular::WARNING, EntityKind::Domain, None, Some(("domain_type", "Typosquat"))),
 ];
 
 pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<(), Error> {
-    e.role = preset.role;
-    let Some(occ) = preset.occupation else {
+    for r in preset.role.iter() {
+        e.role = *r;
+    }
+    let Some((key, value)) = preset.attr else {
         return Ok(());
     };
-    if e.observations.iter().any(|o| o.name == "occupation") {
+    if e.observations.iter().any(|o| o.name == key) {
         return Ok(());
     }
     e.observations.push(Observation::stamp(
-        "occupation".to_owned(),
-        ObsValue::Text(occ.to_owned()),
+        key.to_owned(),
+        ObsValue::Text(value.to_owned()),
         Origin::Manual,
         Verification::AnalystAsserted,
         author.clone(),
@@ -104,7 +112,7 @@ pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::DEFAULT_NODE_SIZE;
+    use crate::model::{DEFAULT_NODE_SIZE, KIND_META};
 
     fn person(slug: &str) -> Entity {
         Entity {
@@ -133,18 +141,42 @@ mod tests {
     }
 
     #[test]
-    fn presets_are_person_based_with_a_facet() {
+    fn presets_have_valid_base_kind_and_a_facet() {
         assert!(!PRESETS.is_empty());
         for p in &PRESETS {
-            assert_eq!(p.base_kind, EntityKind::Person, "{} is not Person-based", p.label);
+            assert!((p.base_kind as usize) < KIND_META.len(), "{} base_kind out of range", p.label);
             assert!(
-                p.occupation.is_some() || p.role != Role::Unset,
+                p.role.is_some() || p.attr.is_some(),
                 "{} sets no facet",
                 p.label
             );
-            assert!((p.role as usize) < ROLE_META.len(), "{} bad role index", p.label);
+            if let Some(r) = p.role {
+                assert!((r as usize) < ROLE_META.len(), "{} bad role index", p.label);
+            }
             assert!(!p.icon.is_empty(), "{} icon", p.label);
+            assert!(!p.label.is_empty(), "{} label", p.label);
         }
+    }
+
+    #[test]
+    fn presets_group_by_base_kind_contiguously() {
+        let mut seen: Vec<EntityKind> = Vec::new();
+        for p in &PRESETS {
+            if seen.last() != Some(&p.base_kind) {
+                assert!(!seen.contains(&p.base_kind), "{} breaks base-kind grouping", p.label);
+                seen.push(p.base_kind);
+            }
+        }
+        assert_eq!(
+            seen,
+            vec![
+                EntityKind::Person,
+                EntityKind::Organization,
+                EntityKind::SocialAccount,
+                EntityKind::Domain,
+            ],
+            "preset base-kind order pinned"
+        );
     }
 
     #[test]
@@ -167,11 +199,27 @@ mod tests {
         let mut e = person("y");
         let suspect = PRESETS
             .iter()
-            .find(|p| p.role == Role::Suspect)
+            .find(|p| p.role == Some(Role::Suspect))
             .expect("suspect preset");
         apply_preset(&mut e, suspect, &Author::default()).unwrap();
         assert_eq!(e.role, Role::Suspect);
-        assert!(e.observations.is_empty(), "role preset must not add an occupation");
+        assert!(e.observations.is_empty(), "role preset must not add an attr");
+    }
+
+    #[test]
+    fn apply_preset_sets_org_type_for_org_presets() {
+        let mut e = person("acme");
+        e.kind = EntityKind::Organization;
+        let company = PRESETS.iter().find(|p| p.label == "Company").expect("company preset");
+        apply_preset(&mut e, company, &Author::default()).unwrap();
+        assert_eq!(e.role, Role::Unset, "org preset sets no role");
+        assert!(
+            e.observations
+                .iter()
+                .any(|o| o.name == "org_type"
+                    && matches!(&o.value, ObsValue::Text(t) if t == "Company")),
+            "org_type observation missing"
+        );
     }
 
     #[test]
