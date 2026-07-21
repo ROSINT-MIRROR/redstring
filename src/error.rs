@@ -93,6 +93,10 @@ pub enum Error {
         what: String,
     },
 
+    PathTrace {
+        node: usize,
+    },
+
     #[cfg(test)]
     InvariantViolated {
         what: String,
@@ -177,6 +181,9 @@ impl std::fmt::Display for Error {
             }
             Self::ShotArgs { what } => write!(f, "--shot: {what}"),
             Self::Render { what } => write!(f, "offscreen render failed: {what}"),
+            Self::PathTrace { node } => {
+                write!(f, "path reconstruction hit a missing link at node {node}")
+            }
             #[cfg(test)]
             Self::InvariantViolated { what } => write!(f, "invariant violated: {what}"),
             #[cfg(test)]

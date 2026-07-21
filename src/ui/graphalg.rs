@@ -1,10 +1,77 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
-use petgraph::graph::NodeIndex;
+use petgraph::Direction;
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
 
 use crate::error::Error;
 
 use super::app::RsGraph;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PathHop {
+    pub from: NodeIndex,
+    pub to: NodeIndex,
+    pub edge: EdgeIndex,
+}
+
+pub fn path_between(
+    g: &RsGraph,
+    from: NodeIndex,
+    to: NodeIndex,
+) -> Result<Option<Vec<PathHop>>, Error> {
+    let inner = g.g();
+    if from == to {
+        return Ok(Some(Vec::new()));
+    }
+    let mut pred: HashMap<NodeIndex, (NodeIndex, EdgeIndex)> = HashMap::new();
+    let mut seen: HashSet<NodeIndex> = HashSet::new();
+    let mut queue: VecDeque<NodeIndex> = VecDeque::new();
+    seen.insert(from);
+    queue.push_back(from);
+    let mut reached = false;
+    loop {
+        let Some(cur) = queue.pop_front() else {
+            break;
+        };
+        for e in inner
+            .edges_directed(cur, Direction::Outgoing)
+            .chain(inner.edges_directed(cur, Direction::Incoming))
+        {
+            let other = if e.source() == cur { e.target() } else { e.source() };
+            if other == cur || !seen.insert(other) {
+                continue;
+            }
+            pred.insert(other, (cur, e.id()));
+            queue.push_back(other);
+            if other == to {
+                reached = true;
+                break;
+            }
+        }
+        if reached {
+            break;
+        }
+    }
+    if !reached {
+        return Ok(None);
+    }
+    let mut hops: Vec<PathHop> = Vec::new();
+    let mut cur = to;
+    while cur != from {
+        let Some(&(prev, edge)) = pred.get(&cur) else {
+            return Err(Error::PathTrace { node: cur.index() });
+        };
+        hops.push(PathHop {
+            from: prev,
+            to: cur,
+            edge,
+        });
+        cur = prev;
+    }
+    hops.reverse();
+    Ok(Some(hops))
+}
 
 pub fn components<F>(g: &RsGraph, allowed: F) -> Result<Vec<Vec<NodeIndex>>, Error>
 where
@@ -58,9 +125,9 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::super::app::RsGraph;
-    use super::{components, largest};
+    use super::{components, largest, path_between};
     use crate::model::{
-        Author, Origin, Relation, RelationKind, Verification,
+        Author, Origin, Relation, RelationKind, Source, Verification,
     };
     use crate::ui::testkit::nodes::person;
 
@@ -81,6 +148,21 @@ mod tests {
             .unwrap(),
             "controls".into(),
         );
+    }
+
+    fn link_sourced(g: &mut RsGraph, a: NodeIndex, b: NodeIndex) {
+        let mut r = Relation::stamp(
+            RelationKind::Controls,
+            Origin::Manual,
+            Verification::Unreviewed,
+            Author::default(),
+        )
+        .unwrap();
+        r.sources.push(Source {
+            reference: "notes/proof.md".to_owned(),
+            ..Default::default()
+        });
+        g.add_edge_with_label(a, b, r, "controls".into());
     }
 
     #[test]
@@ -163,5 +245,93 @@ mod tests {
         assert_eq!(comps.len(), 2);
         assert!(comps.iter().all(|comp| comp.len() == 1));
         assert!(!comps.iter().any(|comp| comp.contains(&b)));
+    }
+
+    #[test]
+    fn path_between_walks_a_chain_end_to_end() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        let d = spawn(&mut g, "d");
+        link(&mut g, a, b);
+        link(&mut g, b, c);
+        link(&mut g, c, d);
+        let hops = path_between(&g, a, d).unwrap().expect("a reaches d");
+        let seq: Vec<(NodeIndex, NodeIndex)> = hops.iter().map(|h| (h.from, h.to)).collect();
+        assert_eq!(seq, vec![(a, b), (b, c), (c, d)]);
+    }
+
+    #[test]
+    fn path_between_ignores_edge_direction() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        link(&mut g, a, b);
+        link(&mut g, b, c);
+        let hops = path_between(&g, c, a).unwrap().expect("undirected reach");
+        let seq: Vec<(NodeIndex, NodeIndex)> = hops.iter().map(|h| (h.from, h.to)).collect();
+        assert_eq!(seq, vec![(c, b), (b, a)]);
+    }
+
+    #[test]
+    fn path_between_takes_the_shortest_route_through_a_diamond() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        let d = spawn(&mut g, "d");
+        link(&mut g, a, b);
+        link(&mut g, a, c);
+        link(&mut g, b, d);
+        link(&mut g, c, d);
+        let hops = path_between(&g, a, d).unwrap().expect("a reaches d");
+        assert_eq!(hops.len(), 2, "diamond shortest path is two hops");
+        assert_eq!(hops[0].from, a);
+        assert_eq!(hops[1].to, d);
+        assert_eq!(hops[0].to, hops[1].from, "hops chain contiguously");
+    }
+
+    #[test]
+    fn path_between_returns_none_when_unreachable() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        let d = spawn(&mut g, "d");
+        link(&mut g, a, b);
+        link(&mut g, c, d);
+        assert!(path_between(&g, a, d).unwrap().is_none());
+    }
+
+    #[test]
+    fn path_between_to_self_is_trivial() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let hops = path_between(&g, a, a).unwrap().expect("self is reachable");
+        assert!(hops.is_empty(), "no hops needed to reach yourself");
+    }
+
+    #[test]
+    fn path_trail_flags_the_unsourced_hop() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        link(&mut g, a, b);
+        link_sourced(&mut g, b, c);
+        let hops = path_between(&g, a, c).unwrap().expect("a reaches c");
+        assert_eq!(hops.len(), 2);
+        let unsourced: Vec<bool> = hops
+            .iter()
+            .map(|h| g.edge(h.edge).expect("edge exists").payload().sources.is_empty())
+            .collect();
+        assert_eq!(unsourced, vec![true, false], "first hop unsourced, second sourced");
+        assert_eq!(
+            unsourced.iter().filter(|weak| **weak).count(),
+            1,
+            "exactly one weak link in the chain"
+        );
     }
 }

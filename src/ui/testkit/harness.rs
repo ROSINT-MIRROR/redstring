@@ -81,6 +81,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         band: None,
         panning: false,
         layout_anim: None,
+        active_path: None,
         ns_kind: SourceKind::Markdown,
         ns_ref: String::new(),
         ns_excerpt: String::new(),
