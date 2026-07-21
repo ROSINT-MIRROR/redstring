@@ -417,6 +417,8 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources,
+            valid_from: None,
+            valid_to: None,
             sealed: false,
             hidden: false,
         }

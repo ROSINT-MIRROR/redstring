@@ -159,6 +159,8 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: vec![],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         }
     }
@@ -202,6 +204,8 @@ mod tests {
                 excerpt: String::new(),
                 ..Default::default()
             }],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         });
         cf.data.relations.push(RelationRec {
@@ -214,6 +218,8 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: vec![],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         });
 

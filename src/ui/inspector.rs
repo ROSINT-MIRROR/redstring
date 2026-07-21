@@ -3,9 +3,10 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    Author, CATEGORY_META, DATE_PRECISION_META, EntityKind, KIND_META, MAX_CASE_NAME, ObsValue,
-    Observation, Origin, RELATION_META, RelationKind, SOURCE_META, Source, VERIFICATION_META,
-    ValueFormat, Verification, format_hint, pretty_key, slugify, status_color, status_label,
+    Author, CATEGORY_META, DATE_PRECISION_META, DateVal, EntityKind, KIND_META, MAX_CASE_NAME,
+    ObsValue, Observation, Origin, RELATION_META, RelationKind, SOURCE_META, Source,
+    VERIFICATION_META, ValueFormat, Verification, format_hint, pretty_key, slugify, status_color,
+    status_label,
 };
 use crate::modules::{ObsKind, parse_obs_value};
 
@@ -239,6 +240,22 @@ impl RedstringApp {
         })
         .inner?;
 
+        if style::action_btn(ui, egui_phosphor::regular::CALENDAR, "add date-range attribute")?
+            && !self.new_attr_key.trim().is_empty()
+        {
+            let key = slugify(&self.new_attr_key)?;
+            if !e.observations.iter().any(|o| o.name == key) {
+                e.observations.push(Observation::stamp(
+                    key,
+                    ObsValue::DateRange { start: None, end: None },
+                    Origin::Manual,
+                    Verification::AnalystAsserted,
+                    author.clone(),
+                )?);
+            }
+            self.new_attr_key.clear();
+        }
+
         style::section(ui, egui_phosphor::regular::NOTE_PENCIL, "note")?;
         ui.text_edit_multiline(&mut e.note);
         let kind_now = e.kind;
@@ -414,6 +431,31 @@ impl RedstringApp {
             "redact this relation from the Export bundle (.redstring.zip) and the generated artifacts (graph.md / case.json): the edge, its verb and its sources are dropped. any edge touching a sealed entity is dropped automatically. the on-disk case directory keeps the full data as your working copy.",
         );
 
+        style::section(ui, egui_phosphor::regular::CALENDAR, "valid during")?;
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.add_sized(
+                Vec2::new(40.0, ui.spacing().interact_size.y),
+                egui::Label::new(RichText::new("from").weak().small()),
+            );
+            opt_date_field(ui, ("edge_valid_from", eidx.index()), &mut r.valid_from, 110.0)?;
+            Ok(())
+        })
+        .inner?;
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.add_sized(
+                Vec2::new(40.0, ui.spacing().interact_size.y),
+                egui::Label::new(RichText::new("to").weak().small()),
+            );
+            opt_date_field(ui, ("edge_valid_to", eidx.index()), &mut r.valid_to, 110.0)?;
+            Ok(())
+        })
+        .inner?;
+        ui.label(
+            RichText::new("leave a side empty for an open-ended window")
+                .weak()
+                .small(),
+        );
+
         style::section(ui, egui_phosphor::regular::LINK, "sources")?;
         let mut remove: Option<usize> = None;
         for (i, src) in r.sources.iter_mut().enumerate() {
@@ -482,6 +524,11 @@ fn observation_row(
     o: &mut Observation,
     remove: &mut Option<usize>,
 ) -> Result<(), Error> {
+    let range_summary = if matches!(o.value, ObsValue::DateRange { .. }) {
+        o.value.text()?
+    } else {
+        String::new()
+    };
     ui.horizontal(|ui| -> Result<(), Error> {
         ui.add_sized(
             Vec2::new(90.0, ui.spacing().interact_size.y),
@@ -491,6 +538,12 @@ fn observation_row(
         match &mut o.value {
             ObsValue::Text(s) => {
                 ui.add(egui::TextEdit::singleline(s).desired_width(w).hint_text("value"));
+            }
+            ObsValue::DateRange { .. } => {
+                ui.add_sized(
+                    Vec2::new(w, ui.spacing().interact_size.y),
+                    egui::Label::new(RichText::new(range_summary.as_str()).small()).truncate(),
+                );
             }
             other => {
                 let is_date = matches!(other, ObsValue::Date(_));
@@ -514,6 +567,27 @@ fn observation_row(
         Ok(())
     })
     .inner?;
+
+    if let ObsValue::DateRange { start, end } = &mut o.value {
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.add_sized(
+                Vec2::new(40.0, ui.spacing().interact_size.y),
+                egui::Label::new(RichText::new("from").weak().small()),
+            );
+            opt_date_field(ui, ("obs_from", i), start, 100.0)?;
+            Ok(())
+        })
+        .inner?;
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.add_sized(
+                Vec2::new(40.0, ui.spacing().interact_size.y),
+                egui::Label::new(RichText::new("to").weak().small()),
+            );
+            opt_date_field(ui, ("obs_to", i), end, 100.0)?;
+            Ok(())
+        })
+        .inner?;
+    }
 
     ui.horizontal_wrapped(|ui| -> Result<(), Error> {
         verification_combo(ui, i, &mut o.status)?;
@@ -553,6 +627,51 @@ fn verification_combo(ui: &mut egui::Ui, id: usize, status: &mut Verification) -
 fn date_precision_combo(ui: &mut egui::Ui, id: usize, v: &mut ObsValue) {
     let ObsValue::Date(dv) = v else { return };
     egui::ComboBox::from_id_salt(("obs_prec", id))
+        .selected_text(RichText::new(DATE_PRECISION_META[dv.precision as usize].label).small())
+        .show_ui(ui, |ui| {
+            for m in &DATE_PRECISION_META {
+                ui.selectable_value(&mut dv.precision, m.precision, m.label);
+            }
+        });
+}
+
+
+fn date_slot_text(slot: Option<DateVal>) -> Result<String, Error> {
+    let Some(dv) = slot else {
+        return Ok(String::new());
+    };
+    ObsValue::Date(dv).text()
+}
+
+fn opt_date_field(
+    ui: &mut egui::Ui,
+    salt: (&'static str, usize),
+    slot: &mut Option<DateVal>,
+    width: f32,
+) -> Result<(), Error> {
+    let mut buf = date_slot_text(*slot)?;
+    let resp = ui.add(
+        egui::TextEdit::singleline(&mut buf)
+            .desired_width(width)
+            .hint_text("e.g. 2012"),
+    );
+    if resp.changed() {
+        if buf.trim().is_empty() {
+            *slot = None;
+        } else if let ObsValue::Date(dv) = parse_obs_value(ObsKind::Date, &buf)? {
+            *slot = Some(dv);
+        }
+    }
+    let Some(dv) = slot.as_mut() else {
+        return Ok(());
+    };
+    date_precision_combo_dv(ui, salt, dv);
+    Ok(())
+}
+
+
+fn date_precision_combo_dv(ui: &mut egui::Ui, salt: (&'static str, usize), dv: &mut DateVal) {
+    egui::ComboBox::from_id_salt(salt)
         .selected_text(RichText::new(DATE_PRECISION_META[dv.precision as usize].label).small())
         .show_ui(ui, |ui| {
             for m in &DATE_PRECISION_META {

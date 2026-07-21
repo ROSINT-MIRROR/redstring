@@ -69,6 +69,8 @@ fn edge_fp_line(from: &str, to: &str, r: &Relation) -> Result<String, Error> {
         author: r.author.clone(),
         created_at: r.created_at,
         sources: r.sources.clone(),
+        valid_from: r.valid_from,
+        valid_to: r.valid_to,
         sealed: r.sealed,
     };
     let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
@@ -87,7 +89,7 @@ mod tests {
         RsGraph, compute_fingerprint, display_fp, dirty_state, edge_fp_line, node_fp_line,
     };
     use crate::model::{
-        Author, Camera, CaseDisplay, Entity, EntityKind, Facet, FacetValue,
+        Author, Camera, CaseDisplay, DatePrecision, DateVal, Entity, EntityKind, Facet, FacetValue,
         Occupation, OccupationIcon, Origin, Relation, RelationKind, Verification,
     };
     use crate::ui::testkit::nodes;
@@ -115,6 +117,8 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: Vec::new(),
+            valid_from: None,
+            valid_to: None,
             sealed: false,
             hidden: false,
         }
@@ -210,6 +214,30 @@ mod tests {
             dirty_state(true, &after_tier, &saved),
             "a source tier change must mark the case dirty"
         );
+    }
+
+    #[test]
+    fn edge_validity_window_change_flips_dirty() {
+        let saved = edge_fp_line("a", "b", &relation(80, Verification::Unreviewed)).unwrap();
+        let mut windowed = relation(80, Verification::Unreviewed);
+        windowed.valid_from = Some(DateVal {
+            secs: 1_325_376_000,
+            precision: DatePrecision::Year,
+        });
+        let after = edge_fp_line("a", "b", &windowed).unwrap();
+        assert_ne!(saved, after, "setting a relation's valid_from must change the fingerprint");
+        assert!(
+            dirty_state(true, &after, &saved),
+            "editing an edge's validity window must mark the case dirty"
+        );
+
+        let mut moved = windowed.clone();
+        moved.valid_to = Some(DateVal {
+            secs: 1_356_998_400,
+            precision: DatePrecision::Year,
+        });
+        let after_to = edge_fp_line("a", "b", &moved).unwrap();
+        assert_ne!(after, after_to, "adding valid_to must further change the fingerprint");
     }
 
     #[test]

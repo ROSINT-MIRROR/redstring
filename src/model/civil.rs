@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::observation::DatePrecision;
+use super::observation::{DatePrecision, DateVal};
 
 pub fn fmt_civil_date(secs: i64, precision: DatePrecision) -> Result<String, Error> {
     let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
@@ -12,6 +12,20 @@ pub fn fmt_civil_date(secs: i64, precision: DatePrecision) -> Result<String, Err
         DatePrecision::Century => format!("{} c.", ordinal((y - 1).div_euclid(100) + 1)),
         DatePrecision::Circa => format!("~{y}"),
     })
+}
+
+pub fn fmt_civil_range(start: Option<DateVal>, end: Option<DateVal>) -> Result<String, Error> {
+    Ok(match (start, end) {
+        (None, None) => "…".to_owned(),
+        (s, e) => format!("{}–{}", range_bound(s)?, range_bound(e)?),
+    })
+}
+
+fn range_bound(v: Option<DateVal>) -> Result<String, Error> {
+    let Some(d) = v else {
+        return Ok("…".to_owned());
+    };
+    fmt_civil_date(d.secs, d.precision)
 }
 
 pub fn days_from_civil(y: i64, m: i64, d: i64) -> Result<i64, Error> {
@@ -115,5 +129,19 @@ mod tests {
     fn fnv1a_is_stable_and_distinguishes_inputs() {
         assert_eq!(fnv1a("jane_victim").unwrap(), fnv1a("jane_victim").unwrap());
         assert_ne!(fnv1a("a").unwrap(), fnv1a("b").unwrap());
+    }
+
+    fn dv(secs: i64, precision: DatePrecision) -> DateVal {
+        DateVal { secs, precision }
+    }
+
+    #[test]
+    fn fmt_civil_range_joins_bounds_and_handles_open_ends() {
+        let y2012 = dv(1_325_376_000, DatePrecision::Year);
+        let y2013 = dv(1_356_998_400, DatePrecision::Year);
+        assert_eq!(fmt_civil_range(Some(y2012), Some(y2013)).unwrap(), "2012–2013");
+        assert_eq!(fmt_civil_range(Some(y2012), None).unwrap(), "2012–…");
+        assert_eq!(fmt_civil_range(None, Some(y2013)).unwrap(), "…–2013");
+        assert_eq!(fmt_civil_range(None, None).unwrap(), "…");
     }
 }
