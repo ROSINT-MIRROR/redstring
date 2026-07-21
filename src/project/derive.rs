@@ -26,7 +26,7 @@ pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     Ok(())
 }
 
-const SEALED_LABEL: &str = "[sealed]";
+pub const SEALED_LABEL: &str = "[sealed]";
 
 pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
     let mut out = cf.clone();

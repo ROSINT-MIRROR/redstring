@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::model::{CaseFile, CaseMeta, FORMAT_VERSION};
 
 use super::derive::{redact, write_graph_md, write_json};
+use super::dossier::write_dossiers;
 use super::ignore::RsIgnore;
 use super::io::{read_case, write_case};
 use super::layout::{CASE_FILE, Project};
@@ -43,6 +44,7 @@ pub fn export(project: &Project) -> Result<(PathBuf, usize, usize), Error> {
     write_case(&temp, &public)?;
     write_json(&temp, &cf)?;
     write_graph_md(&temp, &cf)?;
+    write_dossiers(&temp, &cf)?;
     let n = zip_tree(&staging, &out, &ignore)?;
     let _cleanup = std::fs::remove_dir_all(&staging);
     Ok((out, n, sealed))
