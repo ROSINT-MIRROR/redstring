@@ -4,7 +4,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{Origin, RELATION_META, Relation, RelationKind, Verification};
-use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, NODE_RADIUS};
+use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, NODE_RADIUS, label_box};
 
 use super::app::{ALARM_RED, RedstringApp};
 use super::board::meta;
@@ -394,10 +394,10 @@ impl RedstringApp {
             return Ok(None);
         };
         let e = node.payload();
-        let base = if e.image.is_some() {
-            IMG_RADIUS
+        let (base, anchor) = if e.image.is_some() {
+            (IMG_RADIUS, LabelAnchor::Tile)
         } else {
-            NODE_RADIUS
+            (NODE_RADIUS, LabelAnchor::Disc)
         };
         let mf = meta(ui)?;
         let center = mf.canvas_to_screen_pos(node.location()) + rect.left_top().to_vec2();
@@ -413,11 +413,8 @@ impl RedstringApp {
         job.halign = egui::Align::Center;
         let galley = ui.ctx().fonts_mut(|f| f.layout_job(job));
         let gap = LABEL_GAP * vsize * mf.zoom;
-        let top_left = egui::Pos2::new(center.x - galley.size().x / 2.0, center.y + half + gap);
-        Ok(Some((
-            Rect::from_min_size(top_left, galley.size()).expand(4.0),
-            font_px,
-        )))
+        let zone = label_box(anchor, center, half, galley.size(), gap, font_px)?;
+        Ok(Some((zone, font_px)))
     }
 }
 
