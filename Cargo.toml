@@ -16,3 +16,13 @@ ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+# light install profile — inherits release (LLVM backend, no cranelift SIMD panic)
+# but opt-level 1 + fat codegen-units + no LTO = far faster to build than full release.
+# install with: cargo install --path . --profile fast --force
+[profile.fast]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 256
+incremental = true
