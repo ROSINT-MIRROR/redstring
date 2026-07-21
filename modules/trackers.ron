@@ -1,0 +1,28 @@
+// builtin module spec — analytics / tag tracker IDs embedded in a page's HTML.
+// Shared GTM containers and GA4 measurement IDs across otherwise-unrelated sites
+// are a prime node-farm convergence pivot: one operator, many front sites, one
+// tracker. curl fetches the delivered markup (one request, no crawl); grep pulls
+// Google Tag Manager (GTM-…), GA4 (G-…) and legacy Universal Analytics (UA-…-…)
+// IDs — case-sensitive on purpose: the IDs are uppercase and -i floods on
+// lowercase CSS classes like g-container. sort -u dedupes.
+// Each ID becomes a tracker node the site uses_tracker; the same ID on two sites
+// converges to one node and the red string appears.
+(
+    id: "trackers",
+    label: "page trackers",
+    applies_to: ["website", "web_page", "domain"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -sL --max-time 20 -A 'redstring' '{value}' | grep -oE 'GTM-[A-Z0-9]+|G-[A-Z0-9]{6,}|UA-[0-9]+-[0-9]+' | sort -u"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "trackers",
+            extract: (id: "lines", config: (field: "tracker")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "tracker", kind: "tracker_id", rel: "uses_tracker"),
+            ],
+        ),
+    ],
+)

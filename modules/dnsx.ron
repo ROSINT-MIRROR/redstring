@@ -2,8 +2,12 @@
 // A/AAAA fan out to IP nodes, NS/MX to infrastructure servers, CNAME to a
 // canonical domain — every record becomes its own pivotable node so shared
 // IPs / nameservers / CNAME targets converge the board.
-// dnsx -json already emits one flat object per host with string arrays
-// (a/aaaa/ns/mx/cname), so ndjson reads it directly — no jq needed.
+// -txt pulls TXT/SPF records too: each TXT becomes a dns_record node, and jq
+// scans the SPF policy for ip4: tokens — the origin IP an SPF record leaks past
+// a Cloudflare front — surfacing them as ip_address nodes that resolves_to and
+// so converge with any historical A record pointing at the same host.
+// dnsx -json emits one flat object per host with string arrays; jq adds the
+// derived spf_ip4 array and ndjson reads the lot directly.
 // Nameservers use resolves_to to converge with whois name-server nodes.
 (
     id: "dnsx",
@@ -11,7 +15,7 @@
     applies_to: ["domain", "server"],
     bin: "sh",
     requires: ["dnsx", "jq"],
-    args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -silent"],
+    args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -txt -silent | jq -c '. + {spf_ip4: [ (.txt // [])[] | scan(\"ip4:[0-9.]+\") | sub(\"^ip4:\";\"\") ]}'"],
     timeout_secs: 30,
     shapes: [
         (
@@ -24,6 +28,8 @@
                 Entity(from: "ns", kind: "server", rel: "resolves_to"),
                 Entity(from: "mx", kind: "server", rel: "points_to"),
                 Entity(from: "cname", kind: "domain", rel: "points_to"),
+                Entity(from: "txt", kind: "dns_record", rel: "has_dns_record"),
+                Entity(from: "spf_ip4", kind: "ip_address", rel: "resolves_to"),
             ],
         ),
     ],

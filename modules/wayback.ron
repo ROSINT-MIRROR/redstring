@@ -1,0 +1,27 @@
+// builtin module spec — Wayback Machine (web.archive.org) historical URL sweep.
+// The #1 forensic pivot for drop-catch / respawn timelines: every snapshotted
+// URL under the domain, straight off the public CDX index — no API key.
+// curl asks the CDX search API for the original-URL field only (fl=original),
+// collapses duplicate captures (collapse=urlkey) and caps at 200 rows so a
+// heavily-archived domain can't bury the board. Plain text out, one bare URL
+// per line — the lines adapter reads each as a web page the domain related_to;
+// shared URLs converge by slug upsert.
+(
+    id: "wayback",
+    label: "wayback URLs",
+    applies_to: ["domain", "website"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -s 'http://web.archive.org/cdx/search/cdx?url={value}*&fl=original&collapse=urlkey&limit=200'"],
+    timeout_secs: 60,
+    shapes: [
+        (
+            id: "wayback",
+            extract: (id: "lines", config: (field: "url")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "url", kind: "web_page", rel: "related_to"),
+            ],
+        ),
+    ],
+)

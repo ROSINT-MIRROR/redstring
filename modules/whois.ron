@@ -56,5 +56,25 @@
                 ]),
             ],
         ),
+        // ROTLD (.ro) — Romania's registry emits its own field names the ICANN
+        // shape misses (Registered On, Nameserver as one word, Referral URL), so
+        // .ro drop-catch dates were invisible. Keyed on those, "%" preamble
+        // skipped. Registrar org + nameservers converge with the icann shape via
+        // the same registered_at / resolves_to verbs; registered_on lands the
+        // drop-catch date. min_hits 3 clears .ro output yet stays above the 2 an
+        // ICANN reply scores here, so it never false-matches a .com — and icann,
+        // tried first, still wins every ICANN reply.
+        (
+            id: "rotld",
+            extract: (id: "keyvalue", config: (sep: ":", comments: "%")),
+            min_hits: 3,
+            emit: [
+                Attr(from: "registrar", key: "registrar"),
+                Attr(from: "registered on", key: "registered_on"),
+                Attr(from: "dnssec", key: "dnssec"),
+                Entity(from: "registrar", kind: "organization", rel: "registered_at"),
+                Entity(from: "nameserver", kind: "server", rel: "resolves_to"),
+            ],
+        ),
     ],
 )
