@@ -14,7 +14,7 @@ pub enum SettingsTab {
 }
 
 const TB_ICON: f32 = 18.0;
-const TB_TEXT: f32 = 10.0;
+const TB_TEXT: f32 = 12.0;
 const TB_GAP: f32 = 2.0;
 const TB_NAME: f32 = 16.0;
 const TB_PATH: f32 = 12.0;
@@ -123,10 +123,10 @@ impl RedstringApp {
                     }
                     ui.separator();
                     let layouts = [
-                        (egui_phosphor::regular::GRAPH, "Force", "organic — force-directed", LayoutKind::Force),
-                        (egui_phosphor::regular::TREE_STRUCTURE, "Tree", "hierarchy — roots on top", LayoutKind::Tree),
-                        (egui_phosphor::regular::CIRCLE_DASHED, "Circle", "everything on a ring", LayoutKind::Circle),
                         (egui_phosphor::regular::SQUARES_FOUR, "Grid", "block grid, grouped by kind", LayoutKind::Grid),
+                        (egui_phosphor::regular::CIRCLE_DASHED, "Circle", "everything on a ring", LayoutKind::Circle),
+                        (egui_phosphor::regular::TREE_STRUCTURE, "Tree", "hierarchy — roots on top", LayoutKind::Tree),
+                        (egui_phosphor::regular::GRAPH, "Force", "organic — force-directed", LayoutKind::Force),
                     ];
                     for (icon, name, hover, kind) in layouts {
                         if tb_button(ui, icon, name)
@@ -155,7 +155,6 @@ impl RedstringApp {
                     {
                         self.center_graph()?;
                     }
-                    ui.label(RichText::new("layout:").weak());
                     Ok(())
                 },
             )
@@ -301,7 +300,8 @@ impl RedstringApp {
                 ui.label("the case has unsaved changes");
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    save_quit = ui.button(RichText::new("💾 save & quit").strong()).clicked();
+                    let sq = format!("{} save & quit", egui_phosphor::regular::FLOPPY_DISK);
+                    save_quit = ui.button(RichText::new(sq).strong()).clicked();
                     discard = ui.button("quit without saving").clicked();
                     cancel = ui.button("cancel").clicked();
                 });
