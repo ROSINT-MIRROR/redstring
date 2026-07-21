@@ -18,8 +18,8 @@
             min_hits: 3,
             emit: [
                 Attr(from: "registrar", key: "registrar"),
-                Attr(from: "creation date", key: "registered_on"),
-                Attr(from: "registry expiry date", key: "expires"),
+                Attr(from: "creation date", key: "registered_on", kind: Date),
+                Attr(from: "registry expiry date", key: "expires", kind: Date),
                 Attr(from: "dnssec", key: "dnssec"),
                 Entity(from: "registrar", kind: "organization", rel: "registered_at"),
                 Entity(from: "name server", kind: "server", rel: "resolves_to"),
@@ -70,7 +70,7 @@
             min_hits: 3,
             emit: [
                 Attr(from: "registrar", key: "registrar"),
-                Attr(from: "registered on", key: "registered_on"),
+                Attr(from: "registered on", key: "registered_on", kind: Date),
                 Attr(from: "dnssec", key: "dnssec"),
                 Entity(from: "registrar", kind: "organization", rel: "registered_at"),
                 Entity(from: "nameserver", kind: "server", rel: "resolves_to"),

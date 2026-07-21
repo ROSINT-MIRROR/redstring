@@ -8,10 +8,10 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{
-    Author, EntityKind, ObsValue, Observation, Origin, RELATION_META, Relation, Source, SourceKind,
+    Author, EntityKind, Observation, Origin, RELATION_META, Relation, Source, SourceKind,
     Verification, slugify,
 };
-use crate::modules::{Fact, ModuleRun, ModuleStatus, RunInput};
+use crate::modules::{Fact, ModuleRun, ModuleStatus, ObsKind, RunInput, parse_obs_value};
 
 use super::app::{RedstringApp, RsGraph};
 use super::layout::LayoutAnim;
@@ -284,10 +284,11 @@ impl RedstringApp {
         let mut steps: Vec<(NodeIndex, Pos2, Pos2)> = Vec::new();
         for fact in &run.facts {
             match fact {
-                Fact::Attr { key, value } => {
+                Fact::Attr { key, value, kind } => {
                     self.apply_attr_fact(
                         tidx,
                         key,
+                        *kind,
                         value,
                         &run.module_id,
                         &mut attrs_set,
@@ -387,6 +388,7 @@ impl RedstringApp {
         &mut self,
         tidx: NodeIndex,
         key: &str,
+        kind: ObsKind,
         value: &str,
         module_id: &str,
         attrs_set: &mut usize,
@@ -399,6 +401,7 @@ impl RedstringApp {
         fill_obs(
             &mut node.payload_mut().observations,
             key,
+            kind,
             value,
             module_id,
             &author,
@@ -413,7 +416,7 @@ impl RedstringApp {
         label: &str,
         value: &str,
         kind: EntityKind,
-        attrs: &[(String, String)],
+        attrs: &[(String, String, ObsKind)],
         module_id: &str,
         origin: Pos2,
         base: usize,
@@ -434,8 +437,8 @@ impl RedstringApp {
         let e = node.payload_mut();
         let mut set = 0usize;
         let mut skip = 0usize;
-        for (k, v) in attrs {
-            fill_obs(&mut e.observations, k, v, module_id, &author, &mut set, &mut skip)?;
+        for (k, v, akind) in attrs {
+            fill_obs(&mut e.observations, k, *akind, v, module_id, &author, &mut set, &mut skip)?;
         }
         Ok(nidx)
     }
@@ -540,6 +543,7 @@ fn converge_or_create(
 fn fill_obs(
     observations: &mut Vec<Observation>,
     key: &str,
+    kind: ObsKind,
     value: &str,
     module_id: &str,
     author: &Author,
@@ -550,7 +554,7 @@ fn fill_obs(
     let Some(p) = pos else {
         observations.push(Observation::stamp(
             key.to_owned(),
-            ObsValue::Text(value.to_owned()),
+            parse_obs_value(kind, value)?,
             Origin::Lookup(module_id.to_owned()),
             Verification::MachineSuggested,
             author.clone(),
@@ -559,7 +563,7 @@ fn fill_obs(
         return Ok(());
     };
     if observations[p].value.text()?.trim().is_empty() {
-        observations[p].value = ObsValue::Text(value.to_owned());
+        observations[p].value = parse_obs_value(kind, value)?;
         observations[p].origin = Origin::Lookup(module_id.to_owned());
         observations[p].status = Verification::MachineSuggested;
         *set += 1;
@@ -611,7 +615,7 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, Entity, Role};
+    use crate::model::{DEFAULT_NODE_SIZE, Entity, ObsValue, Role};
 
     fn domain_node(slug: &str, label: &str, value: &str) -> Entity {
         Entity {
@@ -731,14 +735,32 @@ mod tests {
             .unwrap(),
         ];
         let (mut set, mut skip) = (0usize, 0usize);
-        fill_obs(&mut obs, "country", "US", "mod", &author, &mut set, &mut skip).unwrap();
-        fill_obs(&mut obs, "city", "Brisbane", "mod", &author, &mut set, &mut skip).unwrap();
-        fill_obs(&mut obs, "region", "QLD", "mod", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "country", ObsKind::Text, "US", "mod", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "city", ObsKind::Text, "Brisbane", "mod", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "region", ObsKind::Text, "QLD", "mod", &author, &mut set, &mut skip).unwrap();
         assert_eq!(obs[0].value.text().unwrap(), "AU", "existing value untouched");
         assert_eq!(obs[1].value.text().unwrap(), "Brisbane", "empty filled");
         assert_eq!(obs[2].name, "region", "missing appended");
         assert_eq!(obs[2].value.text().unwrap(), "QLD");
         assert_eq!((set, skip), (2, 1));
+    }
+
+    #[test]
+    fn fill_obs_parses_declared_kind_and_degrades() {
+        let author = Author::default();
+        let mut obs = Vec::new();
+        let (mut set, mut skip) = (0usize, 0usize);
+        fill_obs(&mut obs, "expires", ObsKind::Date, "2000-01-01T00:00:00Z", "whois", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "revenue", ObsKind::Number, "180199672", "propublica", &author, &mut set, &mut skip).unwrap();
+        fill_obs(&mut obs, "when", ObsKind::Date, "sometime last spring", "m", &author, &mut set, &mut skip).unwrap();
+        assert_eq!(obs[0].value, ObsValue::Date(946_684_800), "a parseable date stamps a typed Date");
+        assert_eq!(obs[1].value, ObsValue::Number(180199672.0), "revenue stamps a typed Number");
+        assert_eq!(
+            obs[2].value,
+            ObsValue::Text("sometime last spring".to_owned()),
+            "a bad date degrades to Text, never dropped"
+        );
+        assert_eq!((set, skip), (3, 0));
     }
 
     #[test]

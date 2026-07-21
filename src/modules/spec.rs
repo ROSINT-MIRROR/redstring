@@ -51,11 +51,65 @@ fn default_config() -> ron::Value {
 }
 
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum ObsKind {
+    #[default]
+    Text,
+    Number,
+    Date,
+    Coord,
+    Bool,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct AttrRule {
+    pub var: String,
+    pub key: String,
+    pub kind: ObsKind,
+}
+
+impl<'de> serde::Deserialize<'de> for AttrRule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct AttrVisitor;
+        impl<'de> serde::de::Visitor<'de> for AttrVisitor {
+            type Value = AttrRule;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a (var, key) or (var, key, kind) attribute tuple")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let Some(var) = seq.next_element::<String>()? else {
+                    return Err(serde::de::Error::invalid_length(0, &self));
+                };
+                let Some(key) = seq.next_element::<String>()? else {
+                    return Err(serde::de::Error::invalid_length(1, &self));
+                };
+                let Some(kind) = seq.next_element::<ObsKind>()? else {
+                    return Ok(AttrRule { var, key, kind: ObsKind::Text });
+                };
+                Ok(AttrRule { var, key, kind })
+            }
+        }
+        deserializer.deserialize_tuple(3, AttrVisitor)
+    }
+}
+
+
 #[derive(Clone, Debug, Deserialize)]
 pub enum EmitRule {
     Attr {
         from: String,
         key: String,
+        #[serde(default)]
+        kind: ObsKind,
     },
     Entity {
         from: String,
@@ -65,7 +119,7 @@ pub enum EmitRule {
         outbound: bool,
 
         #[serde(default)]
-        attrs: Vec<(String, String)>,
+        attrs: Vec<AttrRule>,
 
         #[serde(default)]
         label: LabelMode,
@@ -221,5 +275,32 @@ mod tests {
             .render_args("93.184.216.34", "evil.example", "evil_example", &[])
             .unwrap();
         assert_eq!(args, vec!["93.184.216.34"]);
+    }
+
+    #[test]
+    fn attr_rules_accept_two_and_three_tuples() {
+        let rules: Vec<AttrRule> =
+            ron::from_str(r#"[("country", "country_code"), ("expires", "expiry", Date)]"#).unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].var, "country");
+        assert_eq!(rules[0].key, "country_code");
+        assert_eq!(rules[0].kind, ObsKind::Text, "an omitted kind defaults to Text");
+        assert_eq!(rules[1].var, "expires");
+        assert_eq!(rules[1].key, "expiry");
+        assert_eq!(rules[1].kind, ObsKind::Date);
+    }
+
+    #[test]
+    fn attr_emit_rule_kind_defaults_to_text() {
+        let untyped: EmitRule = ron::from_str(r#"Attr(from: "x", key: "y")"#).unwrap();
+        let EmitRule::Attr { kind, .. } = untyped else {
+            panic!("expected an Attr rule");
+        };
+        assert_eq!(kind, ObsKind::Text);
+        let typed: EmitRule = ron::from_str(r#"Attr(from: "x", key: "y", kind: Number)"#).unwrap();
+        let EmitRule::Attr { kind, .. } = typed else {
+            panic!("expected an Attr rule");
+        };
+        assert_eq!(kind, ObsKind::Number);
     }
 }
