@@ -10,9 +10,9 @@ use super::style;
 
 const SEARCH_TEXT: f32 = 19.0;
 
-const CHEVRON_W: f32 = 30.0;
+const CHEVRON_W: f32 = 20.0;
 
-const PRESET_INDENT: f32 = 34.0;
+const PRESET_STEP: f32 = 24.0;
 
 impl RedstringApp {
     pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
@@ -211,7 +211,8 @@ fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool)
     let color = preset_color(p);
     let mut armed = false;
     ui.horizontal(|ui| {
-        ui.add_space(PRESET_INDENT);
+        let indent = CHEVRON_W + ui.spacing().item_spacing.x + PRESET_STEP;
+        ui.add_space(indent);
         let resp = ui.add(
             egui::Button::selectable(
                 selected,
@@ -340,6 +341,38 @@ mod tests {
         assert!(
             (width - CHEVRON_W).abs() < 0.5f32,
             "reserved caret gutter width {width} must equal CHEVRON_W {CHEVRON_W}"
+        );
+        assert!(
+            CHEVRON_W < 24.0f32,
+            "caret gutter must stay small so base kinds sit flush-left: CHEVRON_W {CHEVRON_W}"
+        );
+    }
+
+    #[test]
+    fn preset_icon_sits_right_of_base_kind_icon() {
+        let color = CATEGORY_META[0].color;
+        let kind_icon = icon_left_with(|ui| {
+            caret_gutter(ui, color, true, false);
+        });
+        let leaf_icon = icon_left_with(|ui| {
+            caret_gutter(ui, color, false, false);
+        });
+        assert_eq!(
+            kind_icon, leaf_icon,
+            "expandable and leaf base kinds must share the base-kind icon x: {kind_icon} vs {leaf_icon}"
+        );
+        let indent = CHEVRON_W + 8.0f32 + PRESET_STEP;
+        let preset_icon = icon_left_with(|ui| {
+            ui.add_space(indent);
+        });
+        let step = preset_icon - kind_icon;
+        assert!(
+            step >= 22.0f32,
+            "preset icon must sit clearly right of the base-kind icon: preset {preset_icon} vs base {kind_icon} (step {step})"
+        );
+        assert!(
+            (step - PRESET_STEP).abs() < 0.5f32,
+            "preset step {step} must equal PRESET_STEP {PRESET_STEP}"
         );
     }
 
