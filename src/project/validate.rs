@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use crate::error::Error;
-use crate::model::{CaseFile, SOURCE_META};
+use crate::model::{CaseFile, Origin, RELATION_META, SOURCE_META};
 
 use super::ignore::RsIgnore;
 use super::io;
@@ -38,6 +38,47 @@ pub fn validate(project: &Project) -> Result<Vec<String>, Error> {
     }
 
     Ok(findings)
+}
+
+pub fn source_findings(project: &Project) -> Result<Vec<String>, Error> {
+    let cf = io::read_case(project)?;
+    let mut findings: Vec<String> = Vec::new();
+    source_lints(&cf, &mut findings);
+    Ok(findings)
+}
+
+fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) {
+    for r in &cf.data.relations {
+        let verb = RELATION_META[r.kind as usize].label;
+        let n = r.sources.len();
+        if n == 0 {
+            findings.push(format!(
+                "edge {} --{verb}--> {} has no source (unproven assertion)",
+                r.from, r.to
+            ));
+        } else if n == 1 {
+            findings.push(format!(
+                "edge {} --{verb}--> {} has a single source (needs corroboration)",
+                r.from, r.to
+            ));
+        }
+    }
+    for e in &cf.data.entities {
+        for o in &e.observations {
+            if !o.sources.is_empty() {
+                continue;
+            }
+            let claim = match &o.origin {
+                Origin::Manual => "manual",
+                Origin::Inference => "inferred",
+                Origin::Lookup(_) | Origin::Import(_) => continue,
+            };
+            findings.push(format!(
+                "observation '{}' on {} has no source (uncited {claim} claim)",
+                o.name, e.slug
+            ));
+        }
+    }
 }
 
 
@@ -103,8 +144,8 @@ fn check_path(
 mod tests {
     use super::*;
     use crate::model::{
-        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Source,
-        SourceKind, Verification,
+        Author, CaseMeta, EntityKind, EntityRec, ObsValue, Observation, Origin, RelationKind,
+        RelationRec, Source, SourceKind, Verification,
     };
 
     fn project(name: &str) -> Project {
@@ -124,6 +165,48 @@ mod tests {
             facets: Default::default(),
             image: None,
         }
+    }
+
+    fn rel(from: &str, to: &str, sources: Vec<Source>) -> RelationRec {
+        RelationRec {
+            from: from.into(),
+            to: to.into(),
+            kind: RelationKind::Paid,
+            origin: Origin::Manual,
+            status: Verification::Unreviewed,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources,
+        }
+    }
+
+    fn src() -> Source {
+        Source {
+            kind: SourceKind::Url,
+            reference: "https://example.com/receipt".into(),
+            excerpt: String::new(),
+            ..Default::default()
+        }
+    }
+
+    fn obs(name: &str, origin: Origin, sources: Vec<Source>) -> Observation {
+        let mut o = Observation::stamp(
+            name.into(),
+            ObsValue::Text("x".into()),
+            origin,
+            Verification::AnalystAsserted,
+            Author::default(),
+        )
+        .unwrap();
+        o.sources = sources;
+        o
+    }
+
+    fn full_check(p: &Project) -> Vec<String> {
+        let mut findings = validate(p).unwrap();
+        findings.extend(source_findings(p).unwrap());
+        findings
     }
 
     #[test]
@@ -190,6 +273,74 @@ mod tests {
         cf.data.entities.push(doe);
         io::write_case(&p, &cf).unwrap();
         assert!(validate(&p).unwrap().is_empty());
+        std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    #[test]
+    fn sourcing_lints_flag_unsourced_single_and_uncited_obs() {
+        let p = project("sourcing");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("sourcing").unwrap();
+        let mut a = rec("a");
+        a.observations = vec![
+            obs("dob", Origin::Manual, vec![]),
+            obs("alias", Origin::Inference, vec![]),
+            obs("email", Origin::Lookup("holehe".into()), vec![]),
+            obs("phone", Origin::Manual, vec![src()]),
+        ];
+        cf.data.entities.push(a);
+        cf.data.entities.push(rec("b"));
+        cf.data.entities.push(rec("c"));
+        cf.data.entities.push(rec("d"));
+        cf.data.relations.push(rel("a", "b", vec![]));
+        cf.data.relations.push(rel("a", "c", vec![src()]));
+        cf.data.relations.push(rel("a", "d", vec![src(), src()]));
+        io::write_case(&p, &cf).unwrap();
+
+        let findings = full_check(&p);
+        let joined = findings.join("\n");
+        assert!(
+            joined.contains("edge a --paid--> b has no source (unproven assertion)"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("edge a --paid--> c has a single source (needs corroboration)"),
+            "{joined}"
+        );
+        assert!(!joined.contains("--paid--> d"), "well-sourced edge must stay silent: {joined}");
+        assert!(
+            joined.contains("observation 'dob' on a has no source (uncited manual claim)"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("observation 'alias' on a has no source (uncited inferred claim)"),
+            "{joined}"
+        );
+        assert!(!joined.contains("'email'"), "lookup-origin obs is auto-sourced: {joined}");
+        assert!(!joined.contains("'phone'"), "a sourced obs must stay silent: {joined}");
+        assert_eq!(findings.len(), 4, "exactly the four sourcing findings: {joined}");
+        std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    #[test]
+    fn fully_sourced_case_stays_clean() {
+        let p = project("fullysourced");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("fully sourced").unwrap();
+        let mut a = rec("a");
+        a.observations = vec![
+            obs("dob", Origin::Manual, vec![src()]),
+            obs("email", Origin::Lookup("holehe".into()), vec![]),
+        ];
+        cf.data.entities.push(a);
+        cf.data.entities.push(rec("b"));
+        cf.data.relations.push(rel("a", "b", vec![src(), src()]));
+        io::write_case(&p, &cf).unwrap();
+
+        assert!(
+            full_check(&p).is_empty(),
+            "a fully-sourced case must produce zero findings (exit 0)"
+        );
         std::fs::remove_dir_all(p.root).unwrap();
     }
 }
