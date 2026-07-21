@@ -242,6 +242,9 @@ pub struct Entity {
 
     #[serde(default)]
     pub value: String,
+
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
     #[serde(default)]
     pub observations: Vec<Observation>,
     #[serde(default)]
@@ -272,6 +275,10 @@ fn default_node_size() -> f32 {
 
 fn default_boost() -> f32 {
     1.0
+}
+
+fn sealed_is_false(sealed: &bool) -> bool {
+    !*sealed
 }
 
 pub fn slugify(s: &str) -> Result<String, Error> {
@@ -351,6 +358,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: String::new(),
+            sealed: false,
             observations: Vec::new(),
             role: Role::Unset,
             occupation: None,
@@ -393,6 +401,7 @@ mod tests {
             kind: EntityKind::Domain,
             label: "the suspicious site evil.example".into(),
             value: String::new(),
+            sealed: false,
             observations: Vec::new(),
             role: Role::Unset,
             occupation: None,

@@ -14,6 +14,7 @@ pub fn entity_rec(kind: EntityKind, label: &str, value: &str) -> Result<EntityRe
         kind,
         label: label.to_owned(),
         value: value.to_owned(),
+        sealed: false,
         observations: Vec::new(),
         role: Role::Unset,
         occupation: None,

@@ -348,6 +348,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "N".into(),
             value: String::new(),
+            sealed: false,
             observations: Vec::new(),
             role: Role::Unset,
             occupation: None,

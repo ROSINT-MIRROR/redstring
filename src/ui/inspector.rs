@@ -152,6 +152,18 @@ impl RedstringApp {
             }
         }
 
+        ui.add_space(style::GAP);
+        ui.checkbox(
+            &mut e.sealed,
+            format!(
+                "{} sealed — redact from public exports",
+                egui_phosphor::regular::EYE_SLASH
+            ),
+        )
+        .on_hover_text(
+            "hide this entity from the derived public artifacts (graph.md / case.json): label, value, note and observations are masked and its id anonymized. the on-disk case files keep the data.",
+        );
+
         style::section(ui, egui_phosphor::regular::IMAGE, "image")?;
         ui.horizontal(|ui| -> Result<(), Error> {
             if style::action_btn(ui, egui_phosphor::regular::IMAGE, "pick image…")?

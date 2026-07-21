@@ -69,6 +69,10 @@ fn tier_is_unrated(tier: &SourceTier) -> bool {
     *tier == SourceTier::Unrated
 }
 
+fn sealed_is_false(sealed: &bool) -> bool {
+    !*sealed
+}
+
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct Source {
     pub kind: SourceKind,
@@ -93,6 +97,9 @@ pub struct Source {
 
     #[serde(default, skip_serializing_if = "tier_is_unrated")]
     pub tier: SourceTier,
+
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
 }
 
 #[cfg(test)]
@@ -144,10 +151,12 @@ mod tests {
             archive_url: Some("https://web.archive.org/web/x".to_owned()),
             ots: Some("evidence/x.ots".to_owned()),
             tier: SourceTier::Primary,
+            sealed: true,
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: Source = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back, "a fully-populated source must survive save→load through JSON");
+        assert!(back.sealed, "a sealed source stays sealed across the round-trip");
         let ron_s = ron::ser::to_string(&s).unwrap();
         let ron_back: Source = ron::from_str(&ron_s).unwrap();
         assert_eq!(s, ron_back, "and through RON");
@@ -165,5 +174,6 @@ mod tests {
         assert!(!json.contains("tier"), "Unrated tier must not bloat the line: {json}");
         assert!(!json.contains("fetched_at"), "unset fetched_at must not appear: {json}");
         assert!(!json.contains("archive_url"), "unset archive_url must not appear: {json}");
+        assert!(!json.contains("sealed"), "unsealed source must stay byte-identical: {json}");
     }
 }

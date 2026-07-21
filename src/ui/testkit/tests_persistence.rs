@@ -69,6 +69,40 @@ mod tests {
     }
 
     #[test]
+    fn sealing_a_node_flips_dirty_and_round_trips_through_disk() {
+        let (td, project) = harness::temp_project().unwrap();
+        let root = project.root.clone();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project);
+        let doe =
+            graph::add_valued(&mut app, EntityKind::Person, "Jane Victim", "jane@x.example").unwrap();
+        harness::save(&mut app).unwrap();
+        assert!(!app.dirty().unwrap(), "a freshly saved case is clean");
+
+        app.g.node_mut(doe).unwrap().payload_mut().sealed = true;
+        assert!(app.dirty().unwrap(), "toggling sealed must mark the case dirty");
+
+        harness::save(&mut app).unwrap();
+        let head_path = Project::open(&root)
+            .unwrap()
+            .entity_dir("jane_victim")
+            .unwrap()
+            .join("entity.ron");
+        let head = String::from_utf8(read_bytes(head_path)).unwrap();
+        assert!(head.contains("sealed"), "the sealed flag must persist to entity.ron: {head}");
+
+        let mut app2 = harness::app().unwrap();
+        app2.project = Some(Project::open(&root).unwrap());
+        harness::load(&mut app2).unwrap();
+        let idx = graph::node_by_slug(&app2, "jane_victim").unwrap().unwrap();
+        assert!(
+            app2.g.g().node_weight(idx).unwrap().payload().sealed,
+            "sealed must round-trip through save→load"
+        );
+        drop(td);
+    }
+
+    #[test]
     fn validate_stays_clean_across_a_mutation_sequence() {
         let (td, project) = harness::temp_project().unwrap();
         let root = project.root.clone();
