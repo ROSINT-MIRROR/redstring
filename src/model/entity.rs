@@ -7,6 +7,7 @@ use super::facet::Facet;
 use super::observation::Observation;
 use super::occupation::Occupation;
 use super::role::Role;
+use super::value::{ValueFormat, validate_value};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
@@ -118,107 +119,11 @@ pub enum EntityKind {
     TrackerId,
     Product,
     Favicon,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ValueFormat {
-    Free,
-    Ip,
-    Hostname,
-    Email,
-    Url,
-}
-
-
-pub fn format_hint(format: ValueFormat) -> Result<&'static str, Error> {
-    Ok(match format {
-        ValueFormat::Free => "free text",
-        ValueFormat::Ip => "IP address",
-        ValueFormat::Hostname => "hostname",
-        ValueFormat::Email => "email address",
-        ValueFormat::Url => "http(s) URL",
-    })
-}
-
-
-pub fn validate_value(format: ValueFormat, s: &str) -> Result<bool, Error> {
-    let s = s.trim();
-    Ok(match format {
-        ValueFormat::Free => true,
-        ValueFormat::Ip => s.parse::<std::net::IpAddr>().is_ok(),
-        ValueFormat::Hostname => is_hostname(s),
-        ValueFormat::Email => is_email(s),
-        ValueFormat::Url => is_url(s),
-    })
-}
-
-fn is_hostname(s: &str) -> bool {
-    let s = s.to_lowercase();
-    if s.is_empty() || s.len() > 253 || s.contains(' ') {
-        return false;
-    }
-    let labels: Vec<&str> = s.split('.').collect();
-    let Some(last) = labels.last() else {
-        return false;
-    };
-    if !last.chars().any(|c| c.is_ascii_alphabetic()) {
-        return false;
-    }
-    labels.iter().all(|l| {
-        !l.is_empty()
-            && l.len() <= 63
-            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-            && !l.starts_with('-')
-            && !l.ends_with('-')
-    })
-}
-
-fn is_email(s: &str) -> bool {
-    if s.contains(' ') {
-        return false;
-    }
-    let Some((local, domain)) = s.split_once('@') else {
-        return false;
-    };
-    !local.is_empty() && !domain.contains('@') && is_hostname(domain)
-}
-
-fn strip_scheme(s: &str) -> Option<&str> {
-    let Some(r) = s.strip_prefix("https://") else {
-        return s.strip_prefix("http://");
-    };
-    Some(r)
-}
-
-fn is_url(s: &str) -> bool {
-    let Some(rest) = strip_scheme(s) else {
-        return false;
-    };
-    let Some(host) = rest.split(['/', '?', '#']).next() else {
-        return false;
-    };
-    let Some(host) = host.split(':').next() else {
-        return false;
-    };
-    !rest.contains(' ') && (is_hostname(host) || host.parse::<std::net::IpAddr>().is_ok())
-}
-
-
-pub fn url_host(s: &str) -> Result<Option<String>, Error> {
-    let Some(rest) = strip_scheme(s.trim()) else {
-        return Ok(None);
-    };
-    let Some(host) = rest.split(['/', '?', '#']).next() else {
-        return Ok(None);
-    };
-    let Some(host) = host.split(':').next() else {
-        return Ok(None);
-    };
-    let host = host.trim_start_matches("www.");
-    if host.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(host.to_lowercase()))
+    Claim,
+    CareInstitution,
+    Statute,
+    Offense,
+    EmailMessage,
 }
 
 pub struct KindMeta {
@@ -261,7 +166,7 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 60] = [
+pub const KIND_META: [KindMeta; 65] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role]),
@@ -322,6 +227,11 @@ pub const KIND_META: [KindMeta; 60] = [
     k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free, &[]),
     k(EntityKind::Product, "Product", egui_phosphor::regular::PILL, Category::Commerce, (224, 128, 168), &["brand", "claimed_cure", "category", "price", "currency", "registry_status"], &["supplement", "drug", "medicine", "sku", "pill", "remedy"], ValueFormat::Free, &[]),
     k(EntityKind::Favicon, "Favicon", egui_phosphor::regular::IMAGE, Category::Digital, (120, 210, 205), &["mmh3_hash", "sha256", "source_url"], &["favicon", "icon", "favicon-hash"], ValueFormat::Free, &[]),
+    k(EntityKind::Claim, "Claim", egui_phosphor::regular::SEAL_QUESTION, Category::Documents, (185, 180, 205), &["statement", "status", "verdict", "confidence"], &["claim", "assertion", "allegation", "finding"], ValueFormat::Free, &[]),
+    k(EntityKind::CareInstitution, "Care institution", egui_phosphor::regular::FIRST_AID, Category::Organizations, (245, 150, 110), &["operator", "oversight_body", "capacity", "license_no", "accreditation"], &["orphanage", "placement center", "shelter", "care home", "children's home", "group home"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Statute, "Statute", egui_phosphor::regular::SCROLL, Category::Documents, (205, 195, 175), &["jurisdiction", "citation", "year"], &["law", "statute", "regulation", "treaty", "sofa", "legal instrument"], ValueFormat::Free, &[]),
+    k(EntityKind::Offense, "Offense", egui_phosphor::regular::PROHIBIT, Category::Documents, (210, 160, 160), &["category", "severity", "statute_ref"], &["offense", "charge", "crime", "count"], ValueFormat::Free, &[]),
+    k(EntityKind::EmailMessage, "Email message", egui_phosphor::regular::ENVELOPE_SIMPLE, Category::Documents, (190, 195, 190), &["from", "to", "subject", "sent_date", "bates_id"], &["email message", "correspondence", "message", "memo"], ValueFormat::Free, &[]),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -477,32 +387,6 @@ mod tests {
     }
 
     #[test]
-    fn value_validators_accept_and_reject() {
-        assert!(validate_value(ValueFormat::Ip, "1.1.1.1").unwrap());
-        assert!(validate_value(ValueFormat::Ip, "2606:4700::1111").unwrap());
-        assert!(!validate_value(ValueFormat::Ip, "1.1.1.999").unwrap());
-        assert!(!validate_value(ValueFormat::Ip, "evil.example").unwrap());
-
-        assert!(validate_value(ValueFormat::Hostname, "evil.example").unwrap());
-        assert!(validate_value(ValueFormat::Hostname, "NS1.GOOGLE.COM").unwrap());
-        assert!(!validate_value(ValueFormat::Hostname, "1.1.1.1").unwrap());
-        assert!(!validate_value(ValueFormat::Hostname, "-bad.example").unwrap());
-        assert!(!validate_value(ValueFormat::Hostname, "two words.com").unwrap());
-        assert!(!validate_value(ValueFormat::Hostname, "").unwrap());
-
-        assert!(validate_value(ValueFormat::Email, "a@b.example").unwrap());
-        assert!(!validate_value(ValueFormat::Email, "a@b@c.example").unwrap());
-        assert!(!validate_value(ValueFormat::Email, "nope").unwrap());
-
-        assert!(validate_value(ValueFormat::Url, "https://evil.example/x?y#z").unwrap());
-        assert!(validate_value(ValueFormat::Url, "http://1.1.1.1:8080/p").unwrap());
-        assert!(!validate_value(ValueFormat::Url, "ftp://evil.example").unwrap());
-        assert!(!validate_value(ValueFormat::Url, "evil.example").unwrap());
-
-        assert!(validate_value(ValueFormat::Free, "anything at all").unwrap());
-    }
-
-    #[test]
     fn module_value_prefers_value_falls_back_to_label() {
         let mut e = Entity {
             slug: "x".into(),
@@ -525,15 +409,6 @@ mod tests {
         e.value = String::new();
         e.label = "evil.example".into();
         assert_eq!(e.module_value().unwrap(), Some("evil.example".to_owned()), "valid label adopted");
-    }
-
-    #[test]
-    fn url_host_strips_scheme_path_port_and_www() {
-        assert_eq!(url_host("https://github.com/torvalds").unwrap(), Some("github.com".to_owned()));
-        assert_eq!(url_host("https://www.Reddit.com/user/x").unwrap(), Some("reddit.com".to_owned()));
-        assert_eq!(url_host("http://host.example:8080/p?q#f").unwrap(), Some("host.example".to_owned()));
-        assert_eq!(url_host("not a url").unwrap(), None);
-        assert_eq!(url_host("ftp://x.example").unwrap(), None);
     }
 
     #[test]
@@ -748,5 +623,43 @@ mod tests {
             CATEGORY_META.iter().any(|c| c.category == Category::Commerce),
             "Commerce category must own a CATEGORY_META row"
         );
+    }
+
+    #[test]
+    fn wave2_crime_kinds_resolve_by_slug_and_carry_expected_facets() {
+        use crate::model::Facet;
+        let by_slug =
+            |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("claim"), Some(EntityKind::Claim));
+        assert_eq!(by_slug("care_institution"), Some(EntityKind::CareInstitution));
+        assert_eq!(by_slug("statute"), Some(EntityKind::Statute));
+        assert_eq!(by_slug("offense"), Some(EntityKind::Offense));
+        assert_eq!(by_slug("email_message"), Some(EntityKind::EmailMessage));
+
+        assert_eq!(
+            KIND_META[EntityKind::CareInstitution as usize].category,
+            Category::Organizations
+        );
+        assert!(
+            KIND_META[EntityKind::CareInstitution as usize].facets.contains(&Facet::Role),
+            "a care institution is an org-like actor — it can be a suspect/perpetrator"
+        );
+        assert!(
+            !KIND_META[EntityKind::CareInstitution as usize].facets.contains(&Facet::Occupation),
+            "an institution is not an individual — no occupation facet"
+        );
+        for kind in
+            [EntityKind::Claim, EntityKind::Statute, EntityKind::Offense, EntityKind::EmailMessage]
+        {
+            assert!(
+                KIND_META[kind as usize].facets.is_empty(),
+                "{kind:?} is an analysis/legal/evidence artifact, not an actor — no facets"
+            );
+            assert_eq!(
+                KIND_META[kind as usize].value_format,
+                ValueFormat::Free,
+                "{kind:?} value is free text"
+            );
+        }
     }
 }
