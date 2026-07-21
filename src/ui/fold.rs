@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use egui::Rect;
-use petgraph::Direction::Outgoing;
+use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
@@ -10,21 +10,62 @@ use super::app::{RedstringApp, RsGraph};
 
 fn derive_hidden(g: &RsGraph) -> HashSet<NodeIndex> {
     let inner = g.g();
-    let mut hidden = HashSet::new();
-    for idx in inner.node_indices() {
-        let Some(n) = inner.node_weight(idx) else {
-            continue;
+    let all: Vec<NodeIndex> = inner.node_indices().collect();
+
+    let roots: Vec<NodeIndex> = all
+        .iter()
+        .copied()
+        .filter(|idx| inner.neighbors_directed(*idx, Incoming).next().is_none())
+        .collect();
+
+    let mut reachable = HashSet::new();
+    let mut stack = roots.clone();
+    loop {
+        let Some(idx) = stack.pop() else {
+            break;
         };
-        if !n.payload().collapsed {
+        if !reachable.insert(idx) {
             continue;
         }
         for child in inner.neighbors_directed(idx, Outgoing) {
-            if child != idx {
-                hidden.insert(child);
+            if !reachable.contains(&child) {
+                stack.push(child);
             }
         }
     }
-    hidden
+
+    let mut seeds = roots;
+    for idx in &all {
+        if !reachable.contains(idx) {
+            seeds.push(*idx);
+        }
+    }
+
+    let mut visible = HashSet::new();
+    let mut stack = seeds;
+    loop {
+        let Some(idx) = stack.pop() else {
+            break;
+        };
+        if !visible.insert(idx) {
+            continue;
+        }
+        let Some(n) = inner.node_weight(idx) else {
+            continue;
+        };
+        if n.payload().collapsed {
+            continue;
+        }
+        for child in inner.neighbors_directed(idx, Outgoing) {
+            if !visible.contains(&child) {
+                stack.push(child);
+            }
+        }
+    }
+
+    all.into_iter()
+        .filter(|idx| !visible.contains(idx))
+        .collect()
 }
 
 fn fold_target(double: bool, over: Option<NodeIndex>) -> Option<NodeIndex> {
@@ -193,6 +234,9 @@ impl RedstringApp {
             self.expand_subtree(idx)?;
         }
         let acted = collapse_all || expand_all;
+        if acted {
+            ui.ctx().request_repaint();
+        }
         let elsewhere = area.response.clicked_elsewhere();
         if menu_should_close(escape, elsewhere, acted, just_opened) {
             self.node_menu = None;
@@ -274,15 +318,37 @@ mod tests {
     }
 
     #[test]
-    fn double_click_over_node_targets_that_node_and_toggles_one_level() {
-        let (mut g, ids) = chain();
+    fn fold_target_needs_double_click_over_a_node() {
+        let (_g, ids) = chain();
         assert_eq!(fold_target(true, Some(ids[0])), Some(ids[0]));
         assert_eq!(fold_target(true, None), None);
         assert_eq!(fold_target(false, Some(ids[0])), None);
+    }
+
+    #[test]
+    fn single_collapse_hides_transitive_subtree() {
+        let (mut g, ids) = chain();
         set_collapsed(&mut g, ids[0], true);
-        assert_eq!(hidden_slugs(&g), vec!["b".to_string()]);
+        assert_eq!(
+            hidden_slugs(&g),
+            vec!["b".to_string(), "c".to_string(), "d".to_string()]
+        );
         set_collapsed(&mut g, ids[0], false);
         assert!(hidden_slugs(&g).is_empty());
+    }
+
+    #[test]
+    fn multi_parent_node_stays_visible_via_other_parent() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = g.add_node_with_label_and_location(node("a"), "a".into(), Pos2::ZERO);
+        let b = g.add_node_with_label_and_location(node("b"), "b".into(), Pos2::ZERO);
+        let c = g.add_node_with_label_and_location(node("c"), "c".into(), Pos2::ZERO);
+        let d = g.add_node_with_label_and_location(node("d"), "d".into(), Pos2::ZERO);
+        link(&mut g, a, b);
+        link(&mut g, b, c);
+        link(&mut g, d, c);
+        set_collapsed(&mut g, a, true);
+        assert_eq!(hidden_slugs(&g), vec!["b".to_string()]);
     }
 
     #[test]
@@ -295,11 +361,14 @@ mod tests {
     }
 
     #[test]
-    fn nested_collapse_stays_folded_on_parent_expand() {
+    fn nested_collapse_partial_expand_leaves_deeper_hidden() {
         let (mut g, ids) = chain();
         set_collapsed(&mut g, ids[0], true);
         set_collapsed(&mut g, ids[2], true);
-        assert_eq!(hidden_slugs(&g), vec!["b".to_string(), "d".to_string()]);
+        assert_eq!(
+            hidden_slugs(&g),
+            vec!["b".to_string(), "c".to_string(), "d".to_string()]
+        );
         set_collapsed(&mut g, ids[0], false);
         assert_eq!(hidden_slugs(&g), vec!["d".to_string()]);
     }
@@ -323,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn subtree_from_leaf_is_single_node_and_cycles_terminate() {
+    fn two_cycle_collapse_keeps_anchor_visible_and_terminates() {
         let mut g: RsGraph = Graph::from(&StableGraph::default());
         let a = g.add_node_with_label_and_location(node("a"), "a".into(), Pos2::ZERO);
         let b = g.add_node_with_label_and_location(node("b"), "b".into(), Pos2::ZERO);
@@ -331,6 +400,16 @@ mod tests {
         link(&mut g, b, a);
         assert_eq!(collect_subtree(&g, b).len(), 2);
         set_collapsed(&mut g, a, true);
-        assert_eq!(hidden_slugs(&g), vec!["b".to_string()]);
+        assert!(!hidden_slugs(&g).contains(&"a".to_string()));
+    }
+
+    #[test]
+    fn no_collapse_hides_nothing_including_rootless_cycle() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = g.add_node_with_label_and_location(node("a"), "a".into(), Pos2::ZERO);
+        let b = g.add_node_with_label_and_location(node("b"), "b".into(), Pos2::ZERO);
+        link(&mut g, a, b);
+        link(&mut g, b, a);
+        assert!(hidden_slugs(&g).is_empty());
     }
 }
