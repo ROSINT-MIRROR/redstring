@@ -16,6 +16,7 @@ mod ops;
 mod palette;
 mod pathview;
 mod persist;
+mod search;
 mod style;
 #[cfg(test)]
 pub mod testkit;
