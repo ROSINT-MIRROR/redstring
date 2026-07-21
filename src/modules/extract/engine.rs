@@ -3,8 +3,11 @@ use std::collections::BTreeMap;
 use crate::error::Error;
 
 use super::super::spec::{EmitRule, Shape};
+use super::json::Json;
 use super::keyvalue::KeyValue;
+use super::lines::Lines;
 use super::ndjson::Ndjson;
+use super::regex::RegexExtract;
 
 pub type Record = BTreeMap<String, Vec<String>>;
 pub type Records = Vec<Record>;
@@ -17,6 +20,9 @@ pub fn extractor(id: &str, config: &ron::Value) -> Result<Box<dyn Extractor>, Er
     match id {
         "keyvalue" => Ok(Box::new(KeyValue::from_config(config)?)),
         "ndjson" => Ok(Box::new(Ndjson::from_config(config)?)),
+        "lines" => Ok(Box::new(Lines::from_config(config)?)),
+        "regex" => Ok(Box::new(RegexExtract::from_config(config)?)),
+        "json" => Ok(Box::new(Json::from_config(config)?)),
         other => Err(Error::UnknownExtractor {
             id: other.to_owned(),
         }),
@@ -64,6 +70,11 @@ mod tests {
     fn known_ids_resolve_and_unknown_errors() {
         assert!(extractor("keyvalue", &kv_config()).is_ok());
         assert!(extractor("ndjson", &ron::Value::Unit).is_ok());
+        assert!(extractor("lines", &ron::Value::Unit).is_ok());
+        let regex_cfg = ron::from_str::<ron::Value>("(pattern: \"x\")").unwrap();
+        assert!(extractor("regex", &regex_cfg).is_ok());
+        let json_cfg = ron::from_str::<ron::Value>("(array: \"data\")").unwrap();
+        assert!(extractor("json", &json_cfg).is_ok());
         assert!(matches!(
             extractor("nope", &ron::Value::Unit),
             Err(Error::UnknownExtractor { .. })

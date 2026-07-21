@@ -11,6 +11,8 @@ egui_graphs = "0.30.0"
 # decode entity images (mugshots/logos) → egui textures; formats match the picker filter
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 petgraph = { version = "0.8.3", features = ["serde-1"] }
+# real regex for the content-extract adapter — tracker ids / emails / hashes out of raw HTML
+regex = "1"
 rfd = "0.17.2"
 ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }
