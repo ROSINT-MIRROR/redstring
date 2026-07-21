@@ -4,7 +4,7 @@ use egui::epaint::{CircleShape, RectShape, TextShape};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, StrokeKind};
 use egui_graphs::DrawContext;
 
-use egui_phosphor::regular::PLUS;
+use egui_phosphor::regular::{LOCK, PLUS};
 
 use crate::error::Error;
 use crate::model::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge};
@@ -12,6 +12,7 @@ use crate::model::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge};
 use super::label::{MAX_FONT_PX, theme_shift};
 
 const COLLAPSE_BADGE: Color32 = Color32::from_rgb(72, 96, 132);
+const SEALED_BADGE: Color32 = Color32::from_rgb(70, 72, 84);
 
 const BACKDROP_MIX: f32 = 0.14;
 const BACKDROP_LINE_MIX: f32 = 0.34;
@@ -63,6 +64,20 @@ pub fn collapsed_badge(
         return Ok(());
     }
     glyph_badge(ctx, res, center, radius, COLLAPSE_BADGE, PLUS);
+    Ok(())
+}
+
+pub fn sealed_badge(
+    sealed: bool,
+    ctx: &DrawContext,
+    res: &mut Vec<Shape>,
+    center: Pos2,
+    radius: f32,
+) -> Result<(), Error> {
+    if !sealed {
+        return Ok(());
+    }
+    glyph_badge(ctx, res, center, radius, SEALED_BADGE, LOCK);
     Ok(())
 }
 

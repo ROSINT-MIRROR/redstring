@@ -13,7 +13,7 @@ use egui::{Align, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, 
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
-use egui_phosphor::regular::{PAPERCLIP, WARNING};
+use egui_phosphor::regular::{LOCK, PAPERCLIP, WARNING};
 
 use crate::error::Error;
 use crate::model::{
@@ -43,8 +43,11 @@ const EDGE_BACKDROP_DARKEN: f32 = 0.17;
 const EDGE_WARN_MULT: f32 = 1.4;
 
 const EDGE_LABEL_WARN_PRIORITY: f32 = 1000.0;
+const EDGE_LABEL_SEALED_PRIORITY: f32 = 750.0;
 const EDGE_LABEL_HOT_PRIORITY: f32 = 500.0;
 const EDGE_LABEL_VERB_PRIORITY: f32 = 0.0;
+
+const SEALED_LINE_DIM: f32 = 0.6;
 
 thread_local! {
     static SHOT_LABELS: Cell<bool> = const { Cell::new(false) };
@@ -61,6 +64,7 @@ pub struct SourcedEdgeShape {
     source_count: usize,
     tier: SourceTier,
     status: Verification,
+    sealed: bool,
     selected: bool,
     order: usize,
     hidden: bool,
@@ -74,6 +78,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
             source_count: props.payload.sources.len(),
             tier: strongest_tier(&props.payload.sources),
             status: props.payload.status,
+            sealed: props.payload.sealed,
             selected: props.selected,
             order: props.order,
             hidden: props.payload.hidden,
@@ -115,11 +120,12 @@ where
             .is_some_and(|p| dist_point_segment(p, a, b) <= HOVER_PX);
         let hot = self.selected || hovered;
         let mult = if hot { HOT_MULT } else { 1.0 };
-        let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(WIDTH) * mult, color);
+        let line_color = if self.sealed { mute_edge(color) } else { color };
+        let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(WIDTH) * mult, line_color);
 
         let mut res = Vec::new();
         if hot {
-            let halo = Stroke::new(stroke.width * GLOW_MULT, color.gamma_multiply(0.25));
+            let halo = Stroke::new(stroke.width * GLOW_MULT, line_color.gamma_multiply(0.25));
             res.push(Shape::line_segment([a, b], halo));
         }
         if self.sourced {
@@ -142,7 +148,7 @@ where
             ctx.meta.canvas_to_screen_pos(t1),
             ctx.meta.canvas_to_screen_pos(t2),
         ];
-        res.push(Shape::convex_polygon(tip, color, Stroke::NONE));
+        res.push(Shape::convex_polygon(tip, line_color, Stroke::NONE));
 
         let mid = a + (b - a) * 0.5;
         res.extend(self.label_shapes(ctx, mid, hot, color, dark));
@@ -156,6 +162,7 @@ where
         self.source_count = state.payload.sources.len();
         self.tier = strongest_tier(&state.payload.sources);
         self.status = state.payload.status;
+        self.sealed = state.payload.sealed;
         self.selected = state.selected;
         self.order = state.order;
         self.hidden = state.payload.hidden;
@@ -200,6 +207,7 @@ impl SourcedEdgeShape {
             self.kind,
             hot,
             shot_labels_flag(),
+            self.sealed,
         ) else {
             return Vec::new();
         };
@@ -238,7 +246,7 @@ impl SourcedEdgeShape {
         let sz = galley.size();
         let pad = (fpx * EDGE_LABEL_PAD_FRAC).max(EDGE_LABEL_PAD_MIN);
         let box_rect = Rect::from_center_size(mid, sz + Vec2::splat(pad * 2.0));
-        let (priority, force) = edge_label_claim(parts.warn, hot);
+        let (priority, force) = edge_label_claim(parts.warn, hot, parts.sealed);
         let Ok(draw) = claim_edge_label(ctx.ctx, box_rect, priority, force) else {
             return Vec::new();
         };
@@ -258,6 +266,7 @@ struct LabelParts {
     verb: String,
     tail: String,
     warn: bool,
+    sealed: bool,
 }
 
 fn edge_label_parts(
@@ -266,34 +275,44 @@ fn edge_label_parts(
     kind: RelationKind,
     hot: bool,
     always: bool,
+    sealed: bool,
 ) -> Option<LabelParts> {
-    let verb = RELATION_META[kind as usize].label.to_owned();
+    let base = RELATION_META[kind as usize].label;
+    let verb = if sealed { format!("{base}  {LOCK}") } else { base.to_owned() };
     if !sourced {
         return Some(LabelParts {
             verb,
             tail: format!("  {WARNING} 0 src"),
             warn: true,
+            sealed,
         });
     }
-    if !hot && !always {
+    if !hot && !always && !sealed {
         return None;
     }
     Some(LabelParts {
         verb,
         tail: format!("  {PAPERCLIP} {count}"),
         warn: false,
+        sealed,
     })
 }
 
-fn edge_label_claim(warn: bool, hot: bool) -> (f32, bool) {
+fn edge_label_claim(warn: bool, hot: bool, sealed: bool) -> (f32, bool) {
     let priority = if warn {
         EDGE_LABEL_WARN_PRIORITY
+    } else if sealed {
+        EDGE_LABEL_SEALED_PRIORITY
     } else if hot {
         EDGE_LABEL_HOT_PRIORITY
     } else {
         EDGE_LABEL_VERB_PRIORITY
     };
-    (priority, warn || hot)
+    (priority, warn || hot || sealed)
+}
+
+fn mute_edge(c: Color32) -> Color32 {
+    c.gamma_multiply(SEALED_LINE_DIM)
 }
 
 #[cfg(test)]
@@ -303,8 +322,9 @@ fn edge_label_text(
     kind: RelationKind,
     hot: bool,
     always: bool,
+    sealed: bool,
 ) -> Option<String> {
-    let parts = edge_label_parts(sourced, count, kind, hot, always)?;
+    let parts = edge_label_parts(sourced, count, kind, hot, always, sealed)?;
     Some(format!("{}{}", parts.verb, parts.tail))
 }
 
@@ -498,20 +518,20 @@ mod tests {
         let controls = RELATION_META[RelationKind::Controls as usize].label;
         let financed = RELATION_META[RelationKind::Financed as usize].label;
 
-        let un = edge_label_text(false, 0, RelationKind::Controls, false, false).unwrap();
+        let un = edge_label_text(false, 0, RelationKind::Controls, false, false, false).unwrap();
         assert!(un.contains(WARNING), "unsourced label must carry the warning glyph");
         assert!(un.contains(controls), "unsourced label must name the verb");
 
         assert!(
-            edge_label_text(true, 7, RelationKind::Financed, false, false).is_none(),
+            edge_label_text(true, 7, RelationKind::Financed, false, false, false).is_none(),
             "a sourced edge at rest with labels off must not draw a label"
         );
 
-        let hot = edge_label_text(true, 7, RelationKind::Financed, true, false).unwrap();
+        let hot = edge_label_text(true, 7, RelationKind::Financed, true, false, false).unwrap();
         assert!(hot.contains('7'), "a hot sourced label must show the source count");
         assert!(hot.contains(financed), "a sourced label must name the verb");
 
-        let always = edge_label_text(true, 7, RelationKind::Financed, false, true).unwrap();
+        let always = edge_label_text(true, 7, RelationKind::Financed, false, true, false).unwrap();
         assert!(
             always.contains(financed) && always.contains('7'),
             "always-label mode must render a sourced verb + count even at rest, got {always}"
@@ -583,7 +603,7 @@ mod tests {
 
     #[test]
     fn edge_label_priority_wiring() {
-        let (warn_priority, warn_force) = edge_label_claim(true, false);
+        let (warn_priority, warn_force) = edge_label_claim(true, false, false);
         assert!(
             warn_force,
             "an unsourced-edge warning must be force-drawn so it can never be hidden in a pile-up"
@@ -593,14 +613,14 @@ mod tests {
             "warning priority must outrank the largest node label (max size 12) so a colliding node label yields"
         );
 
-        let (hot_priority, hot_force) = edge_label_claim(false, true);
+        let (hot_priority, hot_force) = edge_label_claim(false, true, false);
         assert!(hot_force, "a hovered or selected edge label must be force-drawn");
         assert!(
             hot_priority > 12.0,
             "hot-edge priority must outrank node labels so the focused label is not buried"
         );
 
-        let (verb_priority, verb_force) = edge_label_claim(false, false);
+        let (verb_priority, verb_force) = edge_label_claim(false, false, false);
         assert!(
             !verb_force,
             "a sourced verb at rest must be gated, not forced, so it can drop out of a dense knot"
@@ -689,6 +709,80 @@ mod tests {
         assert_ne!(
             prim, unr,
             "a primary-sourced badge must be tinted apart from an all-unrated one"
+        );
+    }
+
+    fn sealed(mut r: Relation) -> Relation {
+        r.sealed = true;
+        r
+    }
+
+    #[test]
+    fn sealed_edge_shows_lock_and_forces_label_at_rest() {
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
+        let controls = RELATION_META[RelationKind::Controls as usize].label;
+        let texts = text_shapes(&edge_shapes(sealed(rel(
+            RelationKind::Controls,
+            vec![src_tier(SourceTier::Primary)],
+        ))));
+        assert!(
+            texts.iter().any(|t| t.contains(LOCK)),
+            "a sealed edge must render the lock glyph, got {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.contains(controls)),
+            "a sealed sourced edge must force its label on even at rest so the lock is visible, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn unsealed_sourced_edge_has_no_lock() {
+        SourcedEdgeShape::set_shot_labels(true).unwrap();
+        let texts = text_shapes(&edge_shapes(rel(
+            RelationKind::Controls,
+            vec![src_tier(SourceTier::Primary)],
+        )));
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
+        assert!(
+            !texts.iter().any(|t| t.contains(LOCK)),
+            "an unsealed edge must never render the lock glyph, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn sealed_unsourced_edge_keeps_the_warning_and_adds_lock() {
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
+        let texts = text_shapes(&edge_shapes(sealed(rel(RelationKind::Controls, Vec::new()))));
+        assert!(
+            texts.iter().any(|t| t.contains(WARNING)),
+            "a sealed UNSOURCED edge must still read as unsourced (warning glyph kept), got {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.contains(LOCK)),
+            "a sealed unsourced edge must also carry the lock, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn sealed_edge_label_is_forced_and_outranks_node_labels() {
+        let (priority, force) = edge_label_claim(false, false, true);
+        assert!(
+            force,
+            "a sealed sourced edge at rest must force its label so the redaction cue is never hidden"
+        );
+        assert!(
+            priority > 12.0,
+            "sealed-edge priority must outrank the largest node label so the lock is not buried"
+        );
+    }
+
+    #[test]
+    fn mute_edge_recedes_the_line() {
+        let base = Color32::from_rgb(200, 160, 120);
+        let muted = mute_edge(base);
+        assert!(
+            muted.a() < base.a(),
+            "a sealed edge line must lose alpha so it visually recedes: {muted:?} vs {base:?}"
         );
     }
 }
