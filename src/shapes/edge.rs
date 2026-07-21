@@ -476,6 +476,7 @@ mod tests {
             kind: SourceKind::Note,
             reference: "n".into(),
             excerpt: String::new(),
+            ..Default::default()
         }];
         SourcedEdgeShape::set_shot_labels(true).unwrap();
         let texts = text_shapes(&edge_shapes(rel(RelationKind::Controls, src)));
