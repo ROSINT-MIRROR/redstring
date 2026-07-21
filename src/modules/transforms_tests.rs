@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod transforms_tests {
     use super::*;
-    use crate::model::RelationKind;
-    use crate::modules::emit::{Fact, emit};
+    use crate::model::{ObsValue, RelationKind};
+    use crate::modules::emit::{Fact, emit, parse_obs_value};
     use crate::modules::extract::sniff;
     use crate::modules::ObsKind;
 
@@ -179,5 +179,147 @@ mod transforms_tests {
             "the file observation is substituted, project-relative, with no flag before it"
         );
         assert!(!args[1].contains("--extract"), "signature scan only — never carves files");
+    }
+
+    #[test]
+    fn subfinder_lines_fan_out_to_related_domains() {
+        let spec = builtin("builtin:subfinder");
+        let text = "api.example.com\nmail.example.com\nvpn.example.com\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "subfinder");
+        let facts = emit(shape, &records).unwrap();
+        let domains = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Domain, .. }))
+            .count();
+        assert_eq!(domains, 3, "one domain node per discovered subdomain line");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "api.example.com".into(),
+            value: "api.example.com".into(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn gau_lines_become_related_web_pages() {
+        let spec = builtin("builtin:gau");
+        let text = "https://example.com/\nhttps://example.com/login?next=/admin\nhttps://cdn.example.com/app.js\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "gau");
+        let facts = emit(shape, &records).unwrap();
+        let pages = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::WebPage, .. }))
+            .count();
+        assert_eq!(pages, 3, "one web page per historical URL");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::WebPage,
+            label: "https://example.com/login?next=/admin".into(),
+            value: "https://example.com/login?next=/admin".into(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn candel_ndjson_hits_use_website_accounts_labeled_by_host() {
+        let spec = builtin("builtin:candel");
+        let text = "{\"slug\":\"github\",\"url\":\"https://github.com/torvalds\"}\n{\"slug\":\"reddit\",\"url\":\"https://www.reddit.com/user/torvalds\"}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "candel");
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Website,
+            label: "github.com".into(),
+            value: "https://github.com/torvalds".into(),
+            rel: RelationKind::UsesAccount,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        assert!(
+            facts.contains(&Fact::Entity {
+                kind: EntityKind::Website,
+                label: "reddit.com".into(),
+                value: "https://www.reddit.com/user/torvalds".into(),
+                rel: RelationKind::UsesAccount,
+                outbound: true,
+                attrs: Vec::new(),
+            }),
+            "the account host drops the www prefix while the full url stays the value"
+        );
+    }
+
+    #[test]
+    fn asnmap_ndjson_lifts_org_country_and_first_netblock() {
+        let spec = builtin("builtin:asnmap");
+        let text = "{\"timestamp\":\"2023-03-23T21:22:56Z\",\"input\":\"AS15169\",\"as_number\":\"AS15169\",\"as_name\":\"GOOGLE\",\"as_country\":\"US\",\"as_range\":[\"8.8.4.0/24\",\"8.8.8.0/24\"]}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "asnmap");
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr {
+            key: "as_org".into(),
+            value: "GOOGLE".into(),
+            kind: ObsKind::Text,
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "country".into(),
+            value: "US".into(),
+            kind: ObsKind::Text,
+        }));
+        assert!(
+            facts.contains(&Fact::Attr {
+                key: "netblock".into(),
+                value: "8.8.4.0/24".into(),
+                kind: ObsKind::Text,
+            }),
+            "the announced range array lands as an observation, first cidr wins"
+        );
+    }
+
+    #[test]
+    fn exiftool_gps_emits_a_typed_coordinate_and_keeps_string_metadata() {
+        let spec = builtin("builtin:exiftool");
+        let text = "[{\"SourceFile\":\"evidence/docs/geo.jpg\",\"Artist\":\"Jane Doe\",\"CreateDate\":\"2021:06:15 12:30:00\",\"Model\":\"Canon EOS\",\"GPSPosition\":\"40.741895 -73.989308\"}]";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "exiftool");
+        let facts = emit(shape, &records).unwrap();
+        assert!(
+            facts.contains(&Fact::Attr {
+                key: "coordinates".into(),
+                value: "40.741895 -73.989308".into(),
+                kind: ObsKind::Coord,
+            }),
+            "GPS rides the source node as a typed Coord, not an untyped location entity"
+        );
+        assert!(
+            facts.contains(&Fact::Entity {
+                kind: EntityKind::Location,
+                label: "40.741895 -73.989308".into(),
+                value: "40.741895 -73.989308".into(),
+                rel: RelationKind::LocatedAt,
+                outbound: true,
+                attrs: Vec::new(),
+            }),
+            "the same -n coordinate also anchors a located_at pin, now a clean sluggable value"
+        );
+        assert_eq!(
+            parse_obs_value(ObsKind::Coord, "40.741895 -73.989308").unwrap(),
+            ObsValue::Coord { lat: 40.741895, lon: -73.989308 },
+            "exiftool -n renders a signed decimal pair that parses to a real point"
+        );
+        assert!(facts.contains(&Fact::Attr {
+            key: "author".into(),
+            value: "Jane Doe".into(),
+            kind: ObsKind::Text,
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "device_model".into(),
+            value: "Canon EOS".into(),
+            kind: ObsKind::Text,
+        }));
     }
 }
