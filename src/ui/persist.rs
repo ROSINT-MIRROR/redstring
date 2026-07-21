@@ -116,7 +116,8 @@ impl RedstringApp {
     }
 
     pub fn dirty(&self) -> Result<bool, Error> {
-        Ok(self.fingerprint()? != self.saved_fp)
+        let fp = self.fingerprint()?;
+        Ok(dirty_state(self.project.is_some(), &fp, &self.saved_fp))
     }
 
     fn save_to_project(&mut self, ui: &egui::Ui) -> Result<(), Error> {
@@ -493,4 +494,26 @@ fn seed_dir(d: rfd::FileDialog, current: Option<&Project>) -> rfd::FileDialog {
         return d;
     };
     d.set_directory(parent)
+}
+
+fn dirty_state(case_open: bool, fp: &str, saved_fp: &str) -> bool {
+    case_open && fp != saved_fp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dirty_state;
+
+    #[test]
+    fn blank_start_is_never_dirty() {
+        assert!(!dirty_state(false, "untitled case|false", ""));
+        assert!(!dirty_state(false, "untitled case|false", "untitled case|false"));
+        assert!(!dirty_state(false, "person built but unsaved", "anything else"));
+    }
+
+    #[test]
+    fn open_case_dirties_only_on_divergence() {
+        assert!(dirty_state(true, "edited fingerprint", "saved fingerprint"));
+        assert!(!dirty_state(true, "same fingerprint", "same fingerprint"));
+    }
 }
