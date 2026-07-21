@@ -624,4 +624,71 @@ OrgName:        Google LLC
         assert_eq!(n, 3, "one tracker node per id line");
         assert!(facts.contains(&Fact::Entity { kind: EntityKind::TrackerId, label: "GTM-KJZD388".into(), value: "GTM-KJZD388".into(), rel: RelationKind::UsesTracker, outbound: true, attrs: Vec::new() }));
     }
+
+    #[test]
+    fn transforms4_apply_to_declared_kinds() {
+        assert!(builtin("builtin:propublica").kinds().unwrap().contains(&EntityKind::Organization));
+        let pdf = builtin("builtin:pdfforensics").kinds().unwrap();
+        assert!(pdf.contains(&EntityKind::Document));
+        assert!(pdf.contains(&EntityKind::CourtRecord));
+        assert!(pdf.contains(&EntityKind::Photo));
+        assert!(pdf.contains(&EntityKind::Video));
+        let fh = builtin("builtin:filehash").kinds().unwrap();
+        assert!(fh.contains(&EntityKind::Document));
+        assert!(fh.contains(&EntityKind::Dataset));
+    }
+
+    #[test]
+    fn propublica_json_nested_pointers_emit_financials_and_location() {
+        let spec = builtin("builtin:propublica");
+        let text = "{\"organization\":{\"ein\":200049703,\"name\":\"Wikimedia Foundation Org\",\"ntee_code\":\"B60\",\"state\":\"CA\",\"city\":\"San Francisco\"},\"filings_with_data\":[{\"tax_prd_yr\":2023,\"totrevenue\":180199672,\"totfuncexpns\":168305333,\"totassetsend\":274123369}]}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr { key: "legal_name".into(), value: "Wikimedia Foundation Org".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "B60".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "revenue".into(), value: "180199672".into() }), "array-index pointer filings_with_data.0.totrevenue");
+        assert!(facts.contains(&Fact::Attr { key: "total_expenses".into(), value: "168305333".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "total_assets".into(), value: "274123369".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "fiscal_year".into(), value: "2023".into() }));
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "San Francisco".into(), value: "San Francisco".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "CA".into())] }));
+    }
+
+    #[test]
+    fn propublica_missing_990_leaves_financial_figures_absent() {
+        let spec = builtin("builtin:propublica");
+        let text = "{\"organization\":{\"ein\":263416850,\"name\":\"Everyday Heroes Like You Inc\",\"ntee_code\":\"P58\",\"state\":\"AZ\",\"city\":\"Scottsdale\"},\"filings_with_data\":[]}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "P58".into() }));
+        assert!(!facts.iter().any(|f| matches!(f, Fact::Attr { key, .. } if key == "revenue")), "empty filings_with_data yields no revenue observation");
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "Scottsdale".into(), value: "Scottsdale".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "AZ".into())] }));
+    }
+
+    #[test]
+    fn pdfforensics_keyvalue_flags_mislabeled_media_and_embeds() {
+        let spec = builtin("builtin:pdfforensics");
+        let text = "magic_type: ISO Media, MP4 v2 [ISO 14496-14]\nembedded_count: 2\nanomaly: pdf extension but libmagic sees: ISO Media, MP4 v2 [ISO 14496-14]\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr { key: "magic_type".into(), value: "ISO Media, MP4 v2 [ISO 14496-14]".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "embedded_count".into(), value: "2".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "anomaly".into(), value: "pdf extension but libmagic sees: ISO Media, MP4 v2 [ISO 14496-14]".into() }), "first-colon split keeps the colon inside the anomaly note");
+    }
+
+    #[test]
+    fn filehash_regex_lifts_sha256_digest() {
+        let spec = builtin("builtin:filehash");
+        let text = "df257009b71f175a22e3023f79908078345cdef341f1b4fe58811dcc8ebb8c0c  evidence/docs/real.pdf\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr { key: "sha256".into(), value: "df257009b71f175a22e3023f79908078345cdef341f1b4fe58811dcc8ebb8c0c".into() }));
+    }
+
+    #[test]
+    fn filehash_renders_sha256sum_over_project_relative_file() {
+        let spec = builtin("builtin:filehash");
+        let args = spec.render_args("", "real.pdf", "real_pdf", &[("file".into(), "evidence/docs/real.pdf".into())]).unwrap();
+        assert_eq!(args[0], "-c");
+        assert_eq!(args[1], "sha256sum \"evidence/docs/real.pdf\"");
+    }
 }
