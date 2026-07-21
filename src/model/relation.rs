@@ -85,6 +85,23 @@ pub enum RelationKind {
     MentionedIn,
     AppearedIn,
     RelatedTo,
+    Serves,
+    LinksTo,
+    HasEndpoint,
+    AcceptsParam,
+    Runs,
+    HostedOn,
+    InAsn,
+    UsesTracker,
+    PresentsCert,
+    Covers,
+    HasDnsRecord,
+    PointsTo,
+    RegisteredVia,
+    RegisteredTo,
+    Loads,
+    Leaks,
+    RedirectsTo,
 }
 
 pub struct RelMeta {
@@ -102,7 +119,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 78] = [
+pub const RELATION_META: [RelMeta; 95] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -181,6 +198,23 @@ pub const RELATION_META: [RelMeta; 78] = [
     r(RelationKind::MentionedIn, "mentioned in", "info"),
     r(RelationKind::AppearedIn, "appeared in", "info"),
     r(RelationKind::RelatedTo, "related to", "fallback"),
+    r(RelationKind::Serves, "serves", "web/infra"),
+    r(RelationKind::LinksTo, "links to", "web/infra"),
+    r(RelationKind::HasEndpoint, "has endpoint", "web/infra"),
+    r(RelationKind::AcceptsParam, "accepts parameter", "web/infra"),
+    r(RelationKind::Runs, "runs", "web/infra"),
+    r(RelationKind::HostedOn, "hosted on", "web/infra"),
+    r(RelationKind::InAsn, "in ASN", "web/infra"),
+    r(RelationKind::UsesTracker, "uses tracker", "web/infra"),
+    r(RelationKind::PresentsCert, "presents certificate", "web/infra"),
+    r(RelationKind::Covers, "covers", "web/infra"),
+    r(RelationKind::HasDnsRecord, "has DNS record", "web/infra"),
+    r(RelationKind::PointsTo, "points to", "web/infra"),
+    r(RelationKind::RegisteredVia, "registered via", "web/infra"),
+    r(RelationKind::RegisteredTo, "registered to", "web/infra"),
+    r(RelationKind::Loads, "loads", "web/infra"),
+    r(RelationKind::Leaks, "leaks", "web/infra"),
+    r(RelationKind::RedirectsTo, "redirects to", "web/infra"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -249,6 +283,34 @@ mod tests {
                 seen_cats.push(m.category);
             }
         }
-        assert_eq!(seen_cats.len(), 10, "expected the 10 verb families");
+        assert_eq!(seen_cats.len(), 11, "expected the 11 verb families");
+    }
+
+    #[test]
+    fn web_infra_relations_present_and_grouped() {
+        for k in [
+            RelationKind::Serves,
+            RelationKind::LinksTo,
+            RelationKind::HasEndpoint,
+            RelationKind::AcceptsParam,
+            RelationKind::Runs,
+            RelationKind::HostedOn,
+            RelationKind::InAsn,
+            RelationKind::UsesTracker,
+            RelationKind::PresentsCert,
+            RelationKind::Covers,
+            RelationKind::HasDnsRecord,
+            RelationKind::PointsTo,
+            RelationKind::RegisteredVia,
+            RelationKind::RegisteredTo,
+            RelationKind::Loads,
+            RelationKind::Leaks,
+            RelationKind::RedirectsTo,
+        ] {
+            let m = &RELATION_META[k as usize];
+            assert_eq!(m.kind, k, "RELATION_META index skewed for {k:?}");
+            assert_eq!(m.category, "web/infra", "{k:?} must join the web/infra family");
+            assert!(!m.label.is_empty(), "{k:?} label");
+        }
     }
 }
