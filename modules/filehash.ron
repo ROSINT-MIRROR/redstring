@@ -1,0 +1,25 @@
+// builtin module spec — sha256 integrity anchor for evidence files (KEYLESS).
+// Every investigation in the kit mandates "hash everything, cite by hash not URL." {attr:file} is
+// the entity's project-relative file observation, resolved because lookups run with cwd = the
+// project root. `sha256sum` prints "<64-hex>  <name>"; the regex adapter lifts the 64-hex digest
+// into a sha256 observation on the file node. This is an INTERIM observation-level hash — a later
+// evidence-model pass promotes sha256 to a first-class Source field; nothing here touches Source.
+(
+    id: "filehash",
+    label: "sha256 file hash",
+    applies_to: ["document", "photo", "video", "dataset"],
+    bin: "sh",
+    requires: ["sha256sum"],
+    args: ["-c", "sha256sum \"{attr:file}\""],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "filehash",
+            extract: (id: "regex", config: (pattern: "(?<sha256>[a-f0-9]{64})")),
+            min_hits: 1,
+            emit: [
+                Attr(from: "sha256", key: "sha256"),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,49 @@
+// builtin module spec — ProPublica Nonprofit Explorer: US 501(c) financials by EIN (KEYLESS).
+// Convention: the Organization node's VALUE is its EIN — with or without the dash, the API
+// strips it (26-3416850 and 263416850 return the same record). One HTTPS GET returns a JSON
+// object holding `organization` (IRS Business Master File registration) and `filings_with_data`
+// (parsed Form 990 rows, newest first). The json adapter reads the ROOT object as ONE record
+// (array: "") and pulls dot-path pointers — organization.* for identity/classification,
+// filings_with_data.0.* for the latest filing's figures (array index 0 = most recent). An org
+// that never filed, or a missing year, leaves filings_with_data empty so the revenue/expense
+// pointers simply vanish — the "990 missing" state a real case cares about, degraded to absence
+// not garbage. City becomes a location node (located_at) so nonprofits sharing a city converge;
+// the two-letter state rides along as that location's region observation.
+(
+    id: "propublica",
+    label: "ProPublica nonprofit 990",
+    applies_to: ["organization"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -s 'https://projects.propublica.org/nonprofits/api/v2/organizations/{value}.json'"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "propublica",
+            extract: (id: "json", config: (array: "", fields: [
+                ("legal_name", "organization.name"),
+                ("ntee", "organization.ntee_code"),
+                ("state", "organization.state"),
+                ("city", "organization.city"),
+                ("revenue", "filings_with_data.0.totrevenue"),
+                ("expenses", "filings_with_data.0.totfuncexpns"),
+                ("assets", "filings_with_data.0.totassetsend"),
+                ("fiscal_year", "filings_with_data.0.tax_prd_yr"),
+            ])),
+            min_hits: 1,
+            emit: [
+                Attr(from: "legal_name", key: "legal_name"),
+                Attr(from: "ntee", key: "ntee"),
+                Attr(from: "state", key: "state"),
+                Attr(from: "city", key: "city"),
+                Attr(from: "revenue", key: "revenue"),
+                Attr(from: "expenses", key: "total_expenses"),
+                Attr(from: "assets", key: "total_assets"),
+                Attr(from: "fiscal_year", key: "fiscal_year"),
+                Entity(from: "city", kind: "location", rel: "located_at", attrs: [
+                    ("state", "region"),
+                ]),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,64 @@
+// builtin module spec — PDF/media forensics: libmagic true-type vs extension + embedded files.
+// The signature move behind a real case: DOJ ".pdf" files that are actually mp4/heic, plus PDFs
+// carrying embedded/active content. The SECOND file-consuming module (after exiftool) — {attr:file}
+// is the entity's project-relative file observation, resolved because lookups run with cwd = the
+// project root. `file -b` reports the libmagic TRUE type (a ".pdf" that is really "ISO Media, MP4
+// ..." is the tell); `pdfdetach -list` counts embedded attachments (their own vector for exfil /
+// active content); `pdfinfo` yields the page count on a genuine PDF and errors harmlessly on a
+// mislabeled one, leaving pages absent. The script prints a keyvalue block; the keyvalue adapter
+// splits on the FIRST ':' only, so magic strings and the anomaly note keep their own colons.
+// `anomaly` is set when the extension's expected libmagic token is missing from the true type —
+// the extension/content mismatch that flags a mislabeled file. A trailing `exit 0` is mandatory:
+// the runner only parses stdout when the process exits 0, and a clean file (no anomaly line) would
+// otherwise leave a bare test as the last command and exit non-zero.
+(
+    id: "pdfforensics",
+    label: "PDF/media forensics",
+    applies_to: ["document", "court_record", "photo", "video"],
+    bin: "sh",
+    requires: ["file", "pdfinfo", "pdfdetach"],
+    args: ["-c", r#"f="{attr:file}"
+mt=$(file -b "$f" 2>/dev/null)
+ext=$(printf '%s' "$f" | awk -F. 'NF>1{print tolower($NF)}')
+ec=$(pdfdetach -list "$f" 2>/dev/null | grep -oE '^[0-9]+ embedded files' | grep -oE '^[0-9]+')
+[ -z "$ec" ] && ec=0
+pg=$(pdfinfo "$f" 2>/dev/null | awk -F: '/^Pages:/{gsub(/ /,"",$2); print $2}')
+want=
+case "$ext" in
+  pdf) want=PDF ;;
+  jpg|jpeg) want=JPEG ;;
+  png) want=PNG ;;
+  gif) want=GIF ;;
+  mp4|m4v) want=MP4 ;;
+  mov) want=QuickTime ;;
+  heic|heif) want=HEIF ;;
+  tif|tiff) want=TIFF ;;
+esac
+anom=
+if [ -n "$want" ]; then
+  case "$mt" in
+    *"$want"*) : ;;
+    *) anom="$ext extension but libmagic sees: $mt" ;;
+  esac
+fi
+printf 'magic_type: %s\n' "$mt"
+printf 'embedded_count: %s\n' "$ec"
+[ -n "$pg" ] && printf 'pages: %s\n' "$pg"
+[ -n "$anom" ] && printf 'anomaly: %s\n' "$anom"
+exit 0
+"#],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "pdfforensics",
+            extract: (id: "keyvalue", config: (sep: ":")),
+            min_hits: 1,
+            emit: [
+                Attr(from: "magic_type", key: "magic_type"),
+                Attr(from: "embedded_count", key: "embedded_count"),
+                Attr(from: "pages", key: "pages"),
+                Attr(from: "anomaly", key: "anomaly"),
+            ],
+        ),
+    ],
+)
