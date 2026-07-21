@@ -79,6 +79,11 @@ pub enum Error {
         id: String,
         source: ron::Error,
     },
+
+    BadRegex {
+        pattern: String,
+        source: regex::Error,
+    },
 }
 
 impl std::error::Error for Error {}
@@ -148,6 +153,9 @@ impl std::fmt::Display for Error {
             }
             Self::BadExtractConfig { id, source } => {
                 write!(f, "extract '{id}' config: {source}")
+            }
+            Self::BadRegex { pattern, source } => {
+                write!(f, "bad regex '{pattern}': {source}")
             }
         }
     }
