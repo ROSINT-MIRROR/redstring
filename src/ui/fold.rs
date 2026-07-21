@@ -6,6 +6,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 
 use super::app::{RedstringApp, RsGraph};
+use super::graphalg;
 
 fn collapsed_set(g: &RsGraph) -> HashSet<NodeIndex> {
     let inner = g.g();
@@ -21,65 +22,16 @@ fn collapsed_set(g: &RsGraph) -> HashSet<NodeIndex> {
     out
 }
 
-fn undirected_components(g: &RsGraph) -> Vec<Vec<NodeIndex>> {
-    let inner = g.g();
-    let mut seen: HashSet<NodeIndex> = HashSet::new();
-    let mut comps: Vec<Vec<NodeIndex>> = Vec::new();
-    for start in inner.node_indices() {
-        if seen.contains(&start) {
-            continue;
-        }
-        let mut members = Vec::new();
-        let mut stack = vec![start];
-        loop {
-            let Some(idx) = stack.pop() else {
-                break;
-            };
-            if !seen.insert(idx) {
-                continue;
-            }
-            members.push(idx);
-            for nb in inner.neighbors_undirected(idx) {
-                if !seen.contains(&nb) {
-                    stack.push(nb);
-                }
-            }
-        }
-        comps.push(members);
-    }
-    comps
-}
-
-fn subcomponents(
+fn subcomps_of(
     g: &RsGraph,
     members: &[NodeIndex],
     collapsed: &HashSet<NodeIndex>,
 ) -> Vec<Vec<NodeIndex>> {
-    let inner = g.g();
-    let mut seen: HashSet<NodeIndex> = HashSet::new();
-    let mut subs: Vec<Vec<NodeIndex>> = Vec::new();
-    for &start in members {
-        if collapsed.contains(&start) || seen.contains(&start) {
-            continue;
-        }
-        let mut sub_members = Vec::new();
-        let mut stack = vec![start];
-        loop {
-            let Some(idx) = stack.pop() else {
-                break;
-            };
-            if !seen.insert(idx) {
-                continue;
-            }
-            sub_members.push(idx);
-            for nb in inner.neighbors_undirected(idx) {
-                if !collapsed.contains(&nb) && !seen.contains(&nb) {
-                    stack.push(nb);
-                }
-            }
-        }
-        subs.push(sub_members);
-    }
+    let member_set: HashSet<NodeIndex> = members.iter().copied().collect();
+    let Ok(subs) = graphalg::components(g, |n| member_set.contains(&n) && !collapsed.contains(&n))
+    else {
+        return Vec::new();
+    };
     subs
 }
 
@@ -109,12 +61,15 @@ fn hidden_for(g: &RsGraph, collapsed: &HashSet<NodeIndex>) -> HashSet<NodeIndex>
     if collapsed.is_empty() {
         return hidden;
     }
-    for members in undirected_components(g) {
+    let Ok(comps) = graphalg::components(g, |_| true) else {
+        return hidden;
+    };
+    for members in comps {
         let has_k = members.iter().any(|idx| collapsed.contains(idx));
         if !has_k {
             continue;
         }
-        let subs = subcomponents(g, &members, collapsed);
+        let subs = subcomps_of(g, &members, collapsed);
         let board = pick_board(&subs);
         for (sid, sub_members) in subs.iter().enumerate() {
             if Some(sid) == board {
@@ -218,7 +173,10 @@ fn log_components(g: &RsGraph, collapsed: &HashSet<NodeIndex>, op: &str, root: &
     if !crate::log::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
-    for members in undirected_components(g) {
+    let Ok(comps) = graphalg::components(g, |_| true) else {
+        return;
+    };
+    for members in comps {
         let has_k = members.iter().any(|idx| collapsed.contains(idx));
         if !has_k {
             crate::dlog_debug!(
@@ -228,7 +186,7 @@ fn log_components(g: &RsGraph, collapsed: &HashSet<NodeIndex>, op: &str, root: &
             );
             continue;
         }
-        let subs = subcomponents(g, &members, collapsed);
+        let subs = subcomps_of(g, &members, collapsed);
         let board = pick_board(&subs);
         let mut would_hide = 0usize;
         for (sid, m) in subs.iter().enumerate() {
