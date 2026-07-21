@@ -54,10 +54,10 @@ pub const ROLE_META: [RoleMeta; 15] = [
     rm(Role::Impersonated, "impersonated", egui_phosphor::regular::MASK_HAPPY, (216, 138, 178)),
     rm(Role::Associate, "associate", egui_phosphor::regular::HANDSHAKE, (150, 170, 195)),
     rm(Role::Enabler, "enabler", egui_phosphor::regular::PLUGS_CONNECTED, (205, 165, 95)),
-    rm(Role::Broker, "broker", egui_phosphor::regular::SWAP, (200, 140, 110)),
+    rm(Role::Broker, "broker", egui_phosphor::regular::SWAP, (150, 110, 60)),
     rm(Role::Facilitator, "facilitator", egui_phosphor::regular::FLOW_ARROW, (150, 185, 130)),
     rm(Role::Patron, "patron", egui_phosphor::regular::CROWN, (120, 85, 200)),
-    rm(Role::Frontman, "frontman", egui_phosphor::regular::SUNGLASSES, (190, 145, 200)),
+    rm(Role::Frontman, "frontman", egui_phosphor::regular::SUNGLASSES, (65, 95, 210)),
     rm(Role::Informant, "informant (tipster)", egui_phosphor::regular::EAR, (55, 165, 205)),
     rm(Role::Whistleblower, "whistleblower", egui_phosphor::regular::MEGAPHONE, (220, 70, 160)),
 ];
@@ -270,7 +270,7 @@ mod tests {
             for b in ROLE_META.iter().skip(i + 1) {
                 let d = color_dist(a.color, b.color);
                 assert!(
-                    d > 25.0,
+                    d > 40.0,
                     "roles {:?}/{:?} badge colors are too close to tell apart on the board: {d:.1} \
                      (rgb {:?} vs {:?})",
                     a.role,
