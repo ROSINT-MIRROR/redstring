@@ -16,6 +16,7 @@ pub enum Category {
     Documents,
     Events,
     Other,
+    Web,
 }
 
 pub struct CategoryMeta {
@@ -39,7 +40,7 @@ const fn c(
     }
 }
 
-pub const CATEGORY_META: [CategoryMeta; 8] = [
+pub const CATEGORY_META: [CategoryMeta; 9] = [
     c(Category::People, "People", egui_phosphor::regular::USERS_THREE, (100, 170, 255)),
     c(Category::Organizations, "Organizations", egui_phosphor::regular::BUILDINGS, (255, 170, 80)),
     c(Category::Digital, "Digital", egui_phosphor::regular::GLOBE, (100, 210, 175)),
@@ -48,6 +49,7 @@ pub const CATEGORY_META: [CategoryMeta; 8] = [
     c(Category::Documents, "Documents", egui_phosphor::regular::FILE_TEXT, (195, 195, 200)),
     c(Category::Events, "Events", egui_phosphor::regular::CALENDAR, (250, 125, 125)),
     c(Category::Other, "Other", egui_phosphor::regular::QUESTION, (170, 170, 170)),
+    c(Category::Web, "Web", egui_phosphor::regular::GLOBE_HEMISPHERE_WEST, (175, 125, 235)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -100,6 +102,16 @@ pub enum EntityKind {
     Payment,
     Travel,
     Other,
+    WebPage,
+    Endpoint,
+    Parameter,
+    Technology,
+    Script,
+    Secret,
+    TlsCertificate,
+    DnsRecord,
+    Asn,
+    TrackerId,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -239,7 +251,7 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 48] = [
+pub const KIND_META: [KindMeta; 58] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality", "occupation"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free),
@@ -254,7 +266,7 @@ pub const KIND_META: [KindMeta; 48] = [
     k(EntityKind::Email, "Email", egui_phosphor::regular::ENVELOPE, Category::Digital, (110, 215, 185), &["holder", "provider", "first_seen"], &["mail", "inbox"], ValueFormat::Email),
     k(EntityKind::Phone, "Phone", egui_phosphor::regular::PHONE, Category::Digital, (135, 205, 165), &["country", "carrier", "holder"], &["mobile", "telephone", "number", "cell"], ValueFormat::Free),
     k(EntityKind::SocialAccount, "Social account", egui_phosphor::regular::AT, Category::Digital, (80, 210, 170), &["platform", "handle", "holder", "created"], &["twitter", "facebook", "instagram", "telegram", "profile", "x"], ValueFormat::Free),
-    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Digital, (145, 220, 140), &["url", "operator", "first_archived"], &["site", "url", "webpage"], ValueFormat::Url),
+    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Web, (175, 130, 225), &["platform", "cms", "title", "operator", "first_archived"], &["site", "url", "webpage", "web app", "webapp", "storefront"], ValueFormat::Url),
     k(EntityKind::Server, "Server", egui_phosphor::regular::HARD_DRIVES, Category::Digital, (70, 185, 185), &["ip", "hosting_provider", "location"], &["host", "vps", "infrastructure", "machine"], ValueFormat::Hostname),
     k(EntityKind::Device, "Device", egui_phosphor::regular::DEVICE_MOBILE, Category::Digital, (105, 220, 205), &["type", "imei", "owner"], &["laptop", "computer", "hardware", "gadget"], ValueFormat::Free),
     k(EntityKind::CryptoWallet, "Crypto wallet", egui_phosphor::regular::CURRENCY_BTC, Category::Digital, (60, 195, 155), &["chain", "address", "custodian"], &["bitcoin", "btc", "eth", "blockchain", "crypto"], ValueFormat::Free),
@@ -288,6 +300,16 @@ pub const KIND_META: [KindMeta; 48] = [
     k(EntityKind::Payment, "Payment", egui_phosphor::regular::CURRENCY_CIRCLE_DOLLAR, Category::Events, (255, 110, 140), &["date", "amount", "currency", "method"], &["payout", "fee", "bribe", "kickback"], ValueFormat::Free),
     k(EntityKind::Travel, "Travel", egui_phosphor::regular::SUITCASE_ROLLING, Category::Events, (230, 125, 105), &["date", "from", "to", "traveler", "purpose"], &["trip", "flight", "journey", "visit"], ValueFormat::Free),
     k(EntityKind::Other, "Other", egui_phosphor::regular::QUESTION, Category::Other, (170, 170, 170), &[], &["misc", "unknown", "custom"], ValueFormat::Free),
+    k(EntityKind::WebPage, "Web page", egui_phosphor::regular::FILE_HTML, Category::Web, (165, 140, 235), &["path", "status_code", "title"], &["url", "page", "path", "route"], ValueFormat::Url),
+    k(EntityKind::Endpoint, "Endpoint", egui_phosphor::regular::WEBHOOKS_LOGO, Category::Web, (190, 125, 220), &["method", "path", "content_type"], &["route", "api endpoint", "form action", "api"], ValueFormat::Url),
+    k(EntityKind::Parameter, "Parameter", egui_phosphor::regular::SLIDERS_HORIZONTAL, Category::Web, (150, 145, 240), &["datatype", "location", "required"], &["param", "field", "post param", "query param", "input"], ValueFormat::Free),
+    k(EntityKind::Technology, "Technology", egui_phosphor::regular::STACK, Category::Web, (200, 140, 210), &["category", "version", "vendor"], &["stack", "tech", "cms", "framework", "library"], ValueFormat::Free),
+    k(EntityKind::Script, "Script", egui_phosphor::regular::FILE_JS, Category::Web, (160, 120, 230), &["sha256", "inline"], &["js", "javascript", "resource", "asset"], ValueFormat::Url),
+    k(EntityKind::Secret, "Secret", egui_phosphor::regular::KEY, Category::Web, (205, 120, 205), &["secret_kind", "context"], &["api key", "token", "credential", "jwt", "key"], ValueFormat::Free),
+    k(EntityKind::TlsCertificate, "TLS certificate", egui_phosphor::regular::CERTIFICATE, Category::Digital, (95, 195, 175), &["sha256", "issuer", "subject", "not_after", "sans"], &["cert", "ssl", "x509", "certificate"], ValueFormat::Free),
+    k(EntityKind::DnsRecord, "DNS record", egui_phosphor::regular::ADDRESS_BOOK, Category::Digital, (80, 200, 190), &["record_type", "name", "value", "ttl"], &["dns", "a record", "mx", "spf", "txt", "ns"], ValueFormat::Free),
+    k(EntityKind::Asn, "ASN", egui_phosphor::regular::SHARE_NETWORK, Category::Digital, (70, 190, 200), &["asn", "as_org", "country"], &["autonomous system", "as number", "netblock", "asn"], ValueFormat::Free),
+    k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -514,16 +536,76 @@ mod tests {
             assert!(!m.label.is_empty(), "{:?} label", m.kind);
             assert!(!m.icon.is_empty(), "{:?} icon", m.kind);
             assert!(m.attrs.len() <= 6, "{:?} attr budget", m.kind);
+            assert!(
+                CATEGORY_META.iter().any(|c| c.category == m.category),
+                "{:?} carries a category absent from CATEGORY_META",
+                m.kind
+            );
         }
-        let mut seen: Vec<Category> = Vec::new();
-        for m in &KIND_META {
-            if seen.last() != Some(&m.category) {
-                assert!(!seen.contains(&m.category), "grouping broken at {:?}", m.kind);
-                seen.push(m.category);
-            }
+        for c in &CATEGORY_META {
+            assert!(
+                KIND_META.iter().any(|m| m.category == c.category),
+                "category {} owns no kinds and would render an empty header",
+                c.label
+            );
         }
-        let cats: Vec<Category> = CATEGORY_META.iter().map(|m| m.category).collect();
-        assert_eq!(seen, cats, "category order");
+    }
+
+    #[test]
+    fn web_and_infra_additions_present() {
+        let web: Vec<EntityKind> = [
+            EntityKind::Website,
+            EntityKind::WebPage,
+            EntityKind::Endpoint,
+            EntityKind::Parameter,
+            EntityKind::Technology,
+            EntityKind::Script,
+            EntityKind::Secret,
+        ]
+        .into_iter()
+        .collect();
+        for kind in &web {
+            assert_eq!(
+                KIND_META[*kind as usize].category,
+                Category::Web,
+                "{kind:?} must sit in the Web category"
+            );
+        }
+        assert!(
+            KIND_META.iter().filter(|m| m.category == Category::Web).count() >= 7,
+            "Web category underpopulated"
+        );
+
+        for kind in [
+            EntityKind::TlsCertificate,
+            EntityKind::DnsRecord,
+            EntityKind::Asn,
+            EntityKind::TrackerId,
+        ] {
+            assert_eq!(
+                KIND_META[kind as usize].category,
+                Category::Digital,
+                "{kind:?} belongs with Domain/IP in the infrastructure category"
+            );
+        }
+
+        for kind in [
+            EntityKind::WebPage,
+            EntityKind::Endpoint,
+            EntityKind::Parameter,
+            EntityKind::Technology,
+            EntityKind::Script,
+            EntityKind::Secret,
+            EntityKind::TlsCertificate,
+            EntityKind::DnsRecord,
+            EntityKind::Asn,
+            EntityKind::TrackerId,
+        ] {
+            let m = &KIND_META[kind as usize];
+            assert!(!m.icon.is_empty(), "{kind:?} needs a real icon");
+            assert!(!m.aliases.is_empty(), "{kind:?} needs search aliases");
+            assert_eq!(m.kind, kind, "KIND_META index skewed for {kind:?}");
+        }
     }
 
     #[test]

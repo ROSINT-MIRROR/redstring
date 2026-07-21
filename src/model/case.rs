@@ -221,6 +221,12 @@ mod tests {
         assert_eq!(m.ontology.relation_kinds.len(), RELATION_META.len());
         assert!(m.ontology.entity_kinds.contains(&"CriminalOrg".to_owned()));
         assert!(m.ontology.relation_kinds.contains(&"LaunderedThrough".to_owned()));
+        for kind in ["WebPage", "Endpoint", "Parameter", "Technology", "TlsCertificate", "DnsRecord", "Asn", "TrackerId"] {
+            assert!(m.ontology.entity_kinds.contains(&kind.to_owned()), "ontology missing {kind}");
+        }
+        for rel in ["Serves", "HasEndpoint", "PresentsCert", "InAsn", "UsesTracker", "Leaks"] {
+            assert!(m.ontology.relation_kinds.contains(&rel.to_owned()), "ontology missing {rel}");
+        }
 
         let long = "x".repeat(500);
         assert_eq!(CaseMeta::stamped(&long).unwrap().name.chars().count(), MAX_CASE_NAME);
