@@ -2,17 +2,21 @@
 // The FIRST file-consuming module: {attr:file} is the entity's project-relative file
 // observation (e.g. evidence/docs/x.jpg), resolved because lookups run with cwd = the
 // project root. exiftool -json returns a one-element array; the json adapter reads it
-// (array: "") and lowercases keys. -c "%.6f" renders GPS as decimal degrees.
-// GPS coalesces into ONE location node keyed by the composite GPSPosition (present
-// whenever lat+lon exist). Author varies by container — Artist (EXIF), Creator (XMP),
-// Author (PDF) — so all three map to the author observation; absent keys are skipped.
+// (array: "") and lowercases keys. -n disables print conversion, so the composite
+// GPSPosition comes back as a signed decimal "lat lon" pair (not "lat N, lon W", which
+// no coordinate parser could read). That one value lands TWICE: a TYPED Coord
+// observation on the source node — geocode's convention, a point the board can plot —
+// and a located_at location node keyed by the coordinate, so photos shot at the same
+// spot converge on one pin. Dates/model/author are plain strings, so -n leaves them
+// untouched. Author varies by container — Artist (EXIF), Creator (XMP), Author (PDF) —
+// so all three map to the author observation; absent keys are skipped.
 (
     id: "exiftool",
     label: "exiftool metadata",
     applies_to: ["photo", "document", "video"],
     bin: "exiftool",
-    requires: ["exiftool"],
-    args: ["-json", "-c", "%.6f", "{attr:file}"],
+    requires: [],
+    args: ["-json", "-n", "{attr:file}"],
     timeout_secs: 30,
     shapes: [
         (
@@ -25,6 +29,7 @@
                 Attr(from: "creator", key: "author"),
                 Attr(from: "createdate", key: "created_at"),
                 Attr(from: "model", key: "device_model"),
+                Attr(from: "gpsposition", key: "coordinates", kind: Coord),
                 Entity(from: "gpsposition", kind: "location", rel: "located_at"),
             ],
         ),
