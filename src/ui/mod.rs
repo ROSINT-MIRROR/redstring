@@ -3,6 +3,7 @@ mod board;
 mod center;
 mod chrome;
 mod evidence;
+mod facet_ui;
 mod fold;
 mod graphalg;
 mod inspector;

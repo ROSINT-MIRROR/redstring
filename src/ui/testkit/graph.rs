@@ -4,7 +4,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 use crate::model::{
     EntityKind, EntityRec, ObsValue, Observation, Origin, RELATION_META, Relation, RelationKind,
-    RelationRec, Role, Source, SourceKind, Verification, slugify,
+    RelationRec, Source, SourceKind, Verification, slugify,
 };
 use crate::ui::RedstringApp;
 
@@ -16,8 +16,7 @@ pub fn entity_rec(kind: EntityKind, label: &str, value: &str) -> Result<EntityRe
         value: value.to_owned(),
         sealed: false,
         observations: Vec::new(),
-        role: Role::Unset,
-        occupation: None,
+        facets: Default::default(),
         image: None,
     })
 }

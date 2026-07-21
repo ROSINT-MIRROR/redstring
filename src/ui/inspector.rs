@@ -3,10 +3,9 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    Author, CATEGORY_META, DATE_PRECISION_META, EntityKind, Facet, KIND_META, MAX_CASE_NAME,
-    OCCUPATION_ICONS, ObsValue, Observation, Occupation, OccupationIcon, Origin, RELATION_META,
-    ROLE_META, RelationKind, Role, SOURCE_META, Source, VERIFICATION_META, ValueFormat,
-    Verification, format_hint, pretty_key, slugify, status_color, status_label,
+    Author, CATEGORY_META, DATE_PRECISION_META, EntityKind, KIND_META, MAX_CASE_NAME, ObsValue,
+    Observation, Origin, RELATION_META, RelationKind, SOURCE_META, Source, VERIFICATION_META,
+    ValueFormat, Verification, format_hint, pretty_key, slugify, status_color, status_label,
 };
 use crate::modules::{ObsKind, parse_obs_value};
 
@@ -111,9 +110,12 @@ impl RedstringApp {
         };
         let e = node.payload_mut();
 
+        let kind_before = e.kind;
         kind_combo(ui, "insp_kind", &mut e.kind);
-
-        facet_rows(ui, e.kind, &mut e.role, &mut e.occupation)?;
+        if e.kind != kind_before {
+            crate::model::retain_declared_facets(&mut e.facets, e.kind)?;
+        }
+        super::facet_ui::facet_rows(ui, e.kind, &mut e.facets)?;
 
         ui.horizontal(|ui| {
             ui.label("label");
@@ -587,98 +589,6 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
         });
 }
 
-fn facet_rows(
-    ui: &mut egui::Ui,
-    kind: EntityKind,
-    role: &mut Role,
-    occupation: &mut Option<Occupation>,
-) -> Result<(), Error> {
-    let facets = KIND_META[kind as usize].facets;
-    if facets.contains(&Facet::Role) {
-        ui.horizontal(|ui| {
-            ui.label("role")
-                .on_hover_text("case-role — painted as a colored badge at the node's top-right");
-            role_combo(ui, "insp_role", role);
-        });
-    }
-    if facets.contains(&Facet::Occupation) {
-        ui.horizontal(|ui| -> Result<(), Error> {
-            ui.label("occupation")
-                .on_hover_text("job / profession — a steel badge at the node's bottom-left; pick its icon on the right");
-            occupation_field(ui, occupation)
-        })
-        .inner?;
-    }
-    Ok(())
-}
-
-fn occupation_field(ui: &mut egui::Ui, occ: &mut Option<Occupation>) -> Result<(), Error> {
-    let mut label = String::new();
-    for o in occ.iter() {
-        label = o.label.clone();
-    }
-    let resp = ui.add(
-        egui::TextEdit::singleline(&mut label)
-            .desired_width(140.0)
-            .hint_text("occupation"),
-    );
-    if resp.changed() {
-        let trimmed = label.trim().to_owned();
-        if trimmed.is_empty() {
-            *occ = None;
-        } else {
-            let mut icon = OccupationIcon::default();
-            for o in occ.iter() {
-                icon = o.icon;
-            }
-            *occ = Some(Occupation { label: trimmed, icon });
-        }
-    }
-    let Some(o) = occ.as_mut() else {
-        return Ok(());
-    };
-    occupation_icon_combo(ui, &mut o.icon)?;
-    let clear = style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "clear occupation")?;
-    if clear {
-        *occ = None;
-    }
-    Ok(())
-}
-
-fn occupation_icon_combo(ui: &mut egui::Ui, icon: &mut OccupationIcon) -> Result<(), Error> {
-    let cur = &OCCUPATION_ICONS[*icon as usize];
-    egui::ComboBox::from_id_salt("insp_occ_icon")
-        .selected_text(RichText::new(cur.glyph).size(16.0))
-        .show_ui(ui, |ui| {
-            for m in &OCCUPATION_ICONS {
-                ui.selectable_value(
-                    icon,
-                    m.icon,
-                    RichText::new(format!("{}  {}", m.glyph, m.label)),
-                )
-                .on_hover_text(m.label);
-            }
-        })
-        .response
-        .on_hover_text("pick the occupation badge icon");
-    Ok(())
-}
-
-fn role_combo(ui: &mut egui::Ui, id: &str, role: &mut Role) {
-    let cur = &ROLE_META[*role as usize];
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(RichText::new(format!("{} {}", cur.icon, cur.label)).color(cur.color))
-        .show_ui(ui, |ui| {
-            for m in &ROLE_META {
-                ui.selectable_value(
-                    role,
-                    m.role,
-                    RichText::new(format!("{} {}", m.icon, m.label)).color(m.color),
-                );
-            }
-        });
-}
-
 fn kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut EntityKind) {
     let cur = &KIND_META[*kind as usize];
     egui::ComboBox::from_id_salt(id)
@@ -697,68 +607,6 @@ fn kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut EntityKind) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn painted_texts(kind: EntityKind) -> Vec<String> {
-        let ctx = egui::Context::default();
-        let mut role = Role::Unset;
-        let mut occ: Option<Occupation> = None;
-        let out = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                facet_rows(ui, kind, &mut role, &mut occ).expect("facet rows render headless");
-            });
-        });
-        let mut texts = Vec::new();
-        for clipped in &out.shapes {
-            collect_text(&clipped.shape, &mut texts);
-        }
-        texts
-    }
-
-    fn collect_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
-        match shape {
-            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_owned()),
-            egui::epaint::Shape::Vec(v) => {
-                for s in v {
-                    collect_text(s, out);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn has(texts: &[String], needle: &str) -> bool {
-        texts.iter().any(|t| t.contains(needle))
-    }
-
-    #[test]
-    fn domain_form_renders_neither_role_nor_occupation() {
-        let texts = painted_texts(EntityKind::Domain);
-        assert!(!has(&texts, "role"), "Domain must not render a role row: {texts:?}");
-        assert!(
-            !has(&texts, "occupation"),
-            "Domain must not render an occupation field: {texts:?}"
-        );
-    }
-
-    #[test]
-    fn person_form_renders_both_role_and_occupation() {
-        let texts = painted_texts(EntityKind::Person);
-        assert!(has(&texts, "role"), "Person must render a role row: {texts:?}");
-        assert!(
-            has(&texts, "occupation"),
-            "Person must render an occupation field: {texts:?}"
-        );
-    }
-
-    #[test]
-    fn organization_form_renders_role_but_not_occupation() {
-        let texts = painted_texts(EntityKind::Organization);
-        assert!(has(&texts, "role"), "Organization must render a role row: {texts:?}");
-        assert!(
-            !has(&texts, "occupation"),
-            "Organization must not render an occupation field: {texts:?}"
-        );
-    }
 
     #[test]
     fn observation_row_fits_default_inspector_width() {

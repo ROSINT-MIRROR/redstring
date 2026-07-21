@@ -106,7 +106,7 @@ mod tests {
     use super::{CENTER_MAX_ZOOM, center_camera};
     use crate::model::{
         Author, Camera, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Relation, RelationKind,
-        Role, Verification,
+        Verification,
     };
 
     fn node(slug: &str) -> Entity {
@@ -117,8 +117,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

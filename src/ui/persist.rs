@@ -32,8 +32,7 @@ impl RedstringApp {
                 value: e.value.clone(),
                 sealed: e.sealed,
                 observations: e.observations.clone(),
-                role: e.role,
-                occupation: e.occupation.clone(),
+                facets: e.facets.clone(),
                 image: self.image_rec(&e.image)?,
             });
             let loc = n.location();
@@ -358,8 +357,7 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
             value: er.value.clone(),
             sealed: er.sealed,
             observations: er.observations.clone(),
-            role: er.role,
-            occupation: er.occupation.clone(),
+            facets: er.facets.clone(),
             note,
             image: image_abs(project, &er.image)?,
             size: size_of(&cf.display, &er.slug),
@@ -561,8 +559,7 @@ fn node_fp_line(e: &Entity) -> Result<String, Error> {
         value: e.value.clone(),
         sealed: e.sealed,
         observations: e.observations.clone(),
-        role: e.role,
-        occupation: e.occupation.clone(),
+        facets: e.facets.clone(),
         image: e.image.clone(),
     };
     let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
@@ -597,8 +594,8 @@ mod tests {
         RsGraph, compute_fingerprint, display_fp, dirty_state, edge_fp_line, node_fp_line,
     };
     use crate::model::{
-        Author, Camera, CaseDisplay, DEFAULT_NODE_SIZE, Entity, EntityKind, Occupation,
-        OccupationIcon, Origin, Relation, RelationKind, Role, Verification,
+        Author, Camera, CaseDisplay, DEFAULT_NODE_SIZE, Entity, EntityKind, Facet, FacetValue,
+        Occupation, OccupationIcon, Origin, Relation, RelationKind, Verification,
     };
     use egui::Pos2;
     use egui_graphs::Graph;
@@ -612,8 +609,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -655,10 +651,13 @@ mod tests {
     fn occupation_changes_node_fingerprint() {
         let base = bare_person();
         let mut judge = base.clone();
-        judge.occupation = Some(Occupation {
-            label: "Judge".into(),
-            icon: OccupationIcon::Scales,
-        });
+        judge.facets.insert(
+            Facet::Occupation,
+            FacetValue::Freeform(Occupation {
+                label: "Judge".into(),
+                icon: OccupationIcon::Scales,
+            }),
+        );
         assert_ne!(
             node_fp_line(&base).unwrap(),
             node_fp_line(&judge).unwrap(),
@@ -666,10 +665,13 @@ mod tests {
         );
 
         let mut lawyer = base.clone();
-        lawyer.occupation = Some(Occupation {
-            label: "Judge".into(),
-            icon: OccupationIcon::Briefcase,
-        });
+        lawyer.facets.insert(
+            Facet::Occupation,
+            FacetValue::Freeform(Occupation {
+                label: "Judge".into(),
+                icon: OccupationIcon::Briefcase,
+            }),
+        );
         assert_ne!(
             node_fp_line(&judge).unwrap(),
             node_fp_line(&lawyer).unwrap(),

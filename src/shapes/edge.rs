@@ -361,7 +361,7 @@ fn dist_point_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Role, Source, SourceKind};
+    use crate::model::{Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Source, SourceKind};
     use crate::shapes::EntityNodeShape;
     use egui_graphs::{MetadataFrame, SettingsStyle};
     use petgraph::{Directed, stable_graph::DefaultIx};
@@ -374,8 +374,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

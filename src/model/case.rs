@@ -15,10 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::entity::{EntityKind, KIND_META};
+use super::facet::{Facet, FacetValue};
 use super::observation::{Author, DEFAULT_CONFIDENCE, Observation, Origin, Verification};
-use super::occupation::Occupation;
 use super::relation::{RELATION_META, RelationKind};
-use super::role::Role;
 use super::source::Source;
 
 
@@ -114,18 +113,15 @@ pub struct EntityRec {
     #[serde(default)]
     pub observations: Vec<Observation>,
 
-    #[serde(default, skip_serializing_if = "role_is_unset")]
-    pub role: Role,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub occupation: Option<Occupation>,
+    #[serde(default, skip_serializing_if = "facets_empty")]
+    pub facets: BTreeMap<Facet, FacetValue>,
 
     #[serde(default)]
     pub image: Option<String>,
 }
 
-fn role_is_unset(role: &Role) -> bool {
-    *role == Role::Unset
+fn facets_empty(facets: &BTreeMap<Facet, FacetValue>) -> bool {
+    facets.is_empty()
 }
 
 fn sealed_is_false(sealed: &bool) -> bool {
@@ -193,7 +189,7 @@ impl Default for Camera {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::SourceKind;
+    use crate::model::{Facet, FacetValue, OccupationIcon, Role, SourceKind};
 
     
     
@@ -215,7 +211,7 @@ mod tests {
         assert_eq!(cf.data.entities.len(), 2);
         assert_eq!(cf.data.relations.len(), 1);
         assert!(!cf.data.entities[0].sealed, "sealed omitted → false (existing files stay valid)");
-        assert!(cf.data.entities[0].occupation.is_none(), "occupation omitted → None");
+        assert!(cf.data.entities[0].facets.is_empty(), "facets omitted → empty");
         assert!(cf.data.entities[0].image.is_none());
         assert!(cf.data.relations[0].sources.is_empty());
         assert!(cf.display.positions.is_empty());
@@ -266,11 +262,18 @@ mod tests {
                 )
                 .unwrap(),
             ],
-            role: Role::Suspect,
-            occupation: Some(crate::model::Occupation {
-                label: "Judge".into(),
-                icon: crate::model::OccupationIcon::Scales,
-            }),
+            facets: {
+                let mut m = BTreeMap::new();
+                m.insert(Facet::Role, FacetValue::Indexed(Role::Suspect as u16));
+                m.insert(
+                    Facet::Occupation,
+                    FacetValue::Freeform(crate::model::Occupation {
+                        label: "Judge".into(),
+                        icon: OccupationIcon::Scales,
+                    }),
+                );
+                m
+            },
             image: Some("entities/doe/portrait.png".into()),
         });
         cf.data.relations.push(RelationRec {
@@ -312,13 +315,17 @@ mod tests {
             back.data.relations[0].sources[0].sealed,
             "a sealed source must round-trip through save→load"
         );
-        assert_eq!(back.data.entities[0].role, Role::Suspect, "role must round-trip");
         assert_eq!(
-            back.data.entities[0].occupation,
-            Some(crate::model::Occupation {
+            back.data.entities[0].facets.get(&Facet::Role),
+            Some(&FacetValue::Indexed(Role::Suspect as u16)),
+            "role facet must round-trip"
+        );
+        assert_eq!(
+            back.data.entities[0].facets.get(&Facet::Occupation),
+            Some(&FacetValue::Freeform(crate::model::Occupation {
                 label: "Judge".into(),
-                icon: crate::model::OccupationIcon::Scales,
-            }),
+                icon: OccupationIcon::Scales,
+            })),
             "occupation facet must round-trip"
         );
     }
@@ -332,8 +339,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: vec![],
-            role: Role::Unset,
-            occupation: None,
+            facets: BTreeMap::new(),
             image: None,
         };
         let ron_s = ron::ser::to_string(&rec).unwrap();

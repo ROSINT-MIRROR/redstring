@@ -3,4 +3,5 @@
     kind: Person,
     label: "J. Doe",
     value: "John Doe",
+    facets: {Role: Indexed(2), Occupation: Freeform((label: "Judge", icon: Scales))},
 )

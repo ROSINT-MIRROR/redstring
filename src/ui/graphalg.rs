@@ -60,7 +60,7 @@ mod tests {
     use super::super::app::RsGraph;
     use super::{components, largest};
     use crate::model::{
-        Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Relation, RelationKind, Role,
+        Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Relation, RelationKind,
         Verification,
     };
 
@@ -72,8 +72,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

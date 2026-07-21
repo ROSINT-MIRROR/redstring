@@ -4,7 +4,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use crate::error::Error;
 use crate::model::{
     DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, Origin, Preset, RELATION_META, Relation,
-    RelationKind, Role, Source, SourceKind, Verification, apply_preset,
+    RelationKind, Source, SourceKind, Verification, apply_preset,
 };
 
 use super::app::{RedstringApp, RsGraph};
@@ -137,8 +137,7 @@ pub fn spawn_node(
         value: value.to_owned(),
         sealed: false,
         observations: Vec::new(),
-        role: Role::Unset,
-        occupation: None,
+        facets: Default::default(),
         note: String::new(),
         image: None,
         size: DEFAULT_NODE_SIZE,
