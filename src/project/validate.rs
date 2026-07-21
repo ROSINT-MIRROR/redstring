@@ -165,6 +165,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            sealed: false,
         });
         io::write_case(&p, &cf).unwrap();
 

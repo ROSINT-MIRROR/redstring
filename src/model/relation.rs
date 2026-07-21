@@ -287,12 +287,19 @@ pub struct Relation {
     #[serde(default)]
     pub sources: Vec<Source>,
 
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
+
     #[serde(skip)]
     pub hidden: bool,
 }
 
 fn full_confidence() -> u8 {
     DEFAULT_CONFIDENCE
+}
+
+fn sealed_is_false(sealed: &bool) -> bool {
+    !*sealed
 }
 
 impl Relation {
@@ -310,6 +317,7 @@ impl Relation {
             author,
             created_at: now_unix()?,
             sources: Vec::new(),
+            sealed: false,
             hidden: false,
         })
     }

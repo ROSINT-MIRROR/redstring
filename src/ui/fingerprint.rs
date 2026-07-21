@@ -69,6 +69,7 @@ fn edge_fp_line(from: &str, to: &str, r: &Relation) -> Result<String, Error> {
         author: r.author.clone(),
         created_at: r.created_at,
         sources: r.sources.clone(),
+        sealed: r.sealed,
     };
     let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
     Ok(format!("e|{body}"))
@@ -114,6 +115,7 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: Vec::new(),
+            sealed: false,
             hidden: false,
         }
     }
@@ -207,6 +209,19 @@ mod tests {
         assert!(
             dirty_state(true, &after_tier, &saved),
             "a source tier change must mark the case dirty"
+        );
+    }
+
+    #[test]
+    fn edge_seal_toggle_flips_dirty() {
+        let saved = edge_fp_line("a", "b", &relation(80, Verification::Unreviewed)).unwrap();
+        let mut sealed = relation(80, Verification::Unreviewed);
+        sealed.sealed = true;
+        let after = edge_fp_line("a", "b", &sealed).unwrap();
+        assert_ne!(saved, after, "sealing an edge must change the fingerprint");
+        assert!(
+            dirty_state(true, &after, &saved),
+            "sealing a relation must mark the case dirty"
         );
     }
 

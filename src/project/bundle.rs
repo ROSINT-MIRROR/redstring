@@ -54,12 +54,12 @@ fn needs_redaction(cf: &CaseFile) -> bool {
         .entities
         .iter()
         .any(|e| e.sealed || e.observations.iter().any(|o| o.sealed));
-    let source = cf
+    let relation = cf
         .data
         .relations
         .iter()
-        .any(|r| r.sources.iter().any(|s| s.sealed));
-    entity || source
+        .any(|r| r.sealed || r.sources.iter().any(|s| s.sealed));
+    entity || relation
 }
 
 fn staging_dir(project: &Project) -> Result<PathBuf, Error> {
@@ -391,36 +391,76 @@ mod tests {
             facets: Default::default(),
             image: None,
         };
-        let edge = RelationRec {
-            from: "acme".into(),
-            to: "jane_victim".into(),
-            kind: RelationKind::Owns,
+        let soldier = EntityRec {
+            slug: "soldier".into(),
+            kind: EntityKind::Person,
+            label: "Sgt Marku".into(),
+            value: String::new(),
+            sealed: false,
+            observations: vec![],
+            facets: Default::default(),
+            image: None,
+        };
+        let assault = RelationRec {
+            from: "jane_victim".into(),
+            to: "soldier".into(),
+            kind: RelationKind::SexuallyAssaulted,
             origin: Origin::Manual,
             status: Verification::AnalystAsserted,
             confidence: 100,
             author: Author::default(),
             created_at: 0,
-            sources: vec![
-                Source {
-                    kind: SourceKind::Note,
-                    reference: "confidential-wire".into(),
-                    excerpt: "secret wiretap line".into(),
-                    sealed: true,
-                    ..Default::default()
-                },
-                Source {
-                    kind: SourceKind::Url,
-                    reference: "https://public.example/filing".into(),
-                    ..Default::default()
-                },
-            ],
+            sources: vec![Source {
+                kind: SourceKind::Note,
+                reference: "confidential-wire".into(),
+                excerpt: "secret wiretap line".into(),
+                sealed: true,
+                ..Default::default()
+            }],
+            sealed: false,
+        };
+        let employ = RelationRec {
+            from: "soldier".into(),
+            to: "acme".into(),
+            kind: RelationKind::EmployeeOf,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![Source {
+                kind: SourceKind::Url,
+                reference: "https://public.example/filing".into(),
+                ..Default::default()
+            }],
+            sealed: false,
+        };
+        let hush = RelationRec {
+            from: "acme".into(),
+            to: "soldier".into(),
+            kind: RelationKind::Paid,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![Source {
+                kind: SourceKind::Note,
+                reference: "hush-money-ledger".into(),
+                excerpt: "off-books settlement".into(),
+                ..Default::default()
+            }],
+            sealed: true,
         };
 
         let mut cf = CaseFile::default();
         cf.meta = CaseMeta::stamped(name).unwrap();
         cf.data.entities.push(victim);
         cf.data.entities.push(acme);
-        cf.data.relations.push(edge);
+        cf.data.entities.push(soldier);
+        cf.data.relations.push(assault);
+        cf.data.relations.push(employ);
+        cf.data.relations.push(hush);
         cf.display.positions.insert("jane_victim".into(), (10.0, 20.0));
         io::write_case(&p, &cf).unwrap();
         io::write_note(&p, "jane_victim", "minor, 14yo, do not publish her name\n").unwrap();
@@ -462,14 +502,18 @@ mod tests {
             "informant_tip",
             "confidential-wire",
             "secret wiretap",
+            "sexually assaulted",
+            "hush-money-ledger",
+            "off-books settlement",
         ] {
             assert!(!blob.contains(leak), "bundle leaked sealed data '{leak}'");
         }
         assert!(blob.contains(&alias), "the anonymized id must be present in the bundle");
         assert!(blob.contains("[sealed]"), "the placeholder label must be present");
         assert!(blob.contains("Acme Care Home"), "an unsealed entity survives");
+        assert!(blob.contains("Sgt Marku"), "the named perpetrator still ships — only the victim is protected");
         assert!(blob.contains("RO12345"), "an unsealed observation survives");
-        assert!(blob.contains("public.example/filing"), "an unsealed source survives");
+        assert!(blob.contains("public.example/filing"), "an unsealed source on a surviving edge survives");
 
         let inbox = fresh_dir("sealed_inbox");
         std::fs::create_dir_all(&inbox).unwrap();
@@ -493,13 +537,27 @@ mod tests {
             "no note ships for the sealed entity"
         );
 
-        assert_eq!(back.data.relations.len(), 1);
-        assert_eq!(back.data.relations[0].from, "acme", "the unsealed endpoint is untouched");
-        assert_eq!(back.data.relations[0].to, alias, "the edge still connects, anonymized");
         assert_eq!(
-            back.data.relations[0].sources.len(),
+            back.data.relations.len(),
             1,
-            "the sealed source is dropped, the public one survives"
+            "only the unsealed edge between two unsealed nodes survives — the incident and explicitly-sealed edges are withheld"
+        );
+        let survivor = &back.data.relations[0];
+        assert_eq!(
+            survivor.kind,
+            RelationKind::EmployeeOf,
+            "the sensitive incident verb and the explicitly-sealed verb are both gone"
+        );
+        assert_eq!(survivor.from, "soldier");
+        assert_eq!(survivor.to, "acme");
+        assert_eq!(survivor.sources.len(), 1, "the surviving edge keeps its unsealed source");
+        assert!(
+            back.data.relations.iter().all(|r| r.from != alias && r.to != alias),
+            "no surviving edge may touch the anonymized victim — that pairing is the triangulation vector"
+        );
+        assert!(
+            back.data.relations.iter().all(|r| r.kind != RelationKind::SexuallyAssaulted),
+            "the sensitive verb must not survive on any relation record"
         );
 
         assert_eq!(
@@ -511,6 +569,69 @@ mod tests {
         assert!(
             local.data.entities.iter().any(|e| e.label == "Jane Victim"),
             "the local on-disk case keeps the real entity data"
+        );
+
+        std::fs::remove_dir_all(p.root).unwrap();
+        std::fs::remove_dir_all(&inbox).unwrap();
+    }
+
+    #[test]
+    fn sealed_relation_alone_triggers_redaction_and_is_dropped() {
+        let p = Project::create(&fresh_dir("relseal")).unwrap();
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("relseal").unwrap();
+        for (slug, kind, label) in [
+            ("ana", EntityKind::Person, "Ana"),
+            ("beta", EntityKind::Organization, "Beta SRL"),
+        ] {
+            cf.data.entities.push(EntityRec {
+                slug: slug.into(),
+                kind,
+                label: label.into(),
+                value: String::new(),
+                sealed: false,
+                observations: vec![],
+                facets: Default::default(),
+                image: None,
+            });
+        }
+        cf.data.relations.push(RelationRec {
+            from: "ana".into(),
+            to: "beta".into(),
+            kind: RelationKind::Bribed,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![Source {
+                kind: SourceKind::Note,
+                reference: "sealed-tip-xyz".into(),
+                excerpt: "kept strictly off record".into(),
+                ..Default::default()
+            }],
+            sealed: true,
+        });
+        io::write_case(&p, &cf).unwrap();
+
+        let (zip_path, _n, _sealed) = export(&p).unwrap();
+        let blob = zip_blob(&zip_path);
+        assert!(
+            !blob.contains("sealed-tip-xyz"),
+            "a case whose only seal is a relation must still redact — its source ref leaked"
+        );
+        assert!(!blob.contains("kept strictly off record"), "the sealed edge excerpt leaked");
+        assert!(!blob.contains("|bribed"), "graph.md must not render the sealed edge");
+        assert!(blob.contains("Ana") && blob.contains("Beta SRL"), "the unsealed named nodes still ship");
+
+        let inbox = fresh_dir("relseal_inbox");
+        std::fs::create_dir_all(&inbox).unwrap();
+        let received = inbox.join(zip_path.file_name().unwrap());
+        std::fs::copy(&zip_path, &received).unwrap();
+        let opened = open_bundle(&received).unwrap();
+        assert!(
+            io::read_case(&opened).unwrap().data.relations.is_empty(),
+            "the sealed relation must be dropped from the bundle"
         );
 
         std::fs::remove_dir_all(p.root).unwrap();

@@ -145,6 +145,8 @@ pub struct RelationRec {
     pub created_at: i64,
     #[serde(default)]
     pub sources: Vec<Source>,
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
 }
 
 fn full_confidence() -> u8 {
@@ -304,6 +306,7 @@ mod tests {
                 tier: crate::model::SourceTier::Primary,
                 sealed: true,
             }],
+            sealed: true,
         });
         cf.display.positions.insert("doe".into(), (12.5, -40.0));
         cf.display.sizes.insert("doe".into(), 3.5);
@@ -318,6 +321,10 @@ mod tests {
         assert_eq!(cf, back);
         assert_eq!(back.display.sizes.get("doe").copied(), Some(3.5));
         assert!(back.data.entities[0].sealed, "a sealed entity must round-trip through save→load");
+        assert!(
+            back.data.relations[0].sealed,
+            "a sealed relation must round-trip through save→load"
+        );
         assert!(
             back.data.relations[0].sources[0].sealed,
             "a sealed source must round-trip through save→load"
@@ -355,5 +362,29 @@ mod tests {
         sealed.sealed = true;
         let ron_s = ron::ser::to_string(&sealed).unwrap();
         assert!(ron_s.contains("sealed"), "a sealed entity head must carry the flag: {ron_s}");
+    }
+
+    #[test]
+    fn unsealed_relation_line_stays_byte_identical() {
+        let rec = RelationRec {
+            from: "a".into(),
+            to: "b".into(),
+            kind: RelationKind::Controls,
+            origin: Origin::Manual,
+            status: Verification::Unreviewed,
+            confidence: DEFAULT_CONFIDENCE,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![],
+            sealed: false,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(!json.contains("sealed"), "an unsealed relation line must not gain a sealed key: {json}");
+        let mut sealed = rec.clone();
+        sealed.sealed = true;
+        let json = serde_json::to_string(&sealed).unwrap();
+        assert!(json.contains("sealed"), "a sealed relation line must carry the flag: {json}");
+        let back: RelationRec = serde_json::from_str(&json).unwrap();
+        assert!(back.sealed, "a sealed relation must survive save→load");
     }
 }
