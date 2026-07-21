@@ -326,8 +326,8 @@ mod tests {
         });
         let mut icon_left = 0.0f32;
         let input = egui::RawInput::default();
-        ctx.run(input, |ctx| {
-            egui::SidePanel::left("p").exact_width(200.0).show(ctx, |ui| {
+        let _full = ctx.run_ui(input, |ui| {
+            egui::Panel::left("p").exact_size(200.0).show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     step(ui);
                     let icon = ui.add(
@@ -429,8 +429,8 @@ mod tests {
             if let Some(p) = pointer {
                 input.events.push(egui::Event::PointerMoved(p));
             }
-            ctx.run(input, |ctx| {
-                egui::SidePanel::left("p").exact_width(200.0).show(ctx, |ui| {
+            let _full = ctx.run_ui(input, |ui| {
+                egui::Panel::left("p").exact_size(200.0).show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                         for i in 0..12usize {
                             let resp = ui.add(

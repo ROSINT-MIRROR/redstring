@@ -180,8 +180,8 @@ mod tests {
     fn painted_texts(kind: EntityKind) -> Vec<String> {
         let ctx = egui::Context::default();
         let mut facets: BTreeMap<Facet, FacetValue> = BTreeMap::new();
-        let out = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
                 facet_rows(ui, kind, &mut facets).expect("facet rows render headless");
             });
         });

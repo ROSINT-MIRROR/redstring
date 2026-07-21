@@ -438,7 +438,8 @@ mod tests {
         let ctx = egui::Context::default();
         let mut input = egui::RawInput::default();
         input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
-        ctx.run(input, |c| {
+        let _full = ctx.run_ui(input, |ui| {
+            let c = ui.ctx();
             let painter = c.debug_painter();
             let style = SettingsStyle::default();
             let meta = MetadataFrame::default();

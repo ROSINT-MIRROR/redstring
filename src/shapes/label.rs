@@ -117,7 +117,7 @@ mod tests {
     fn galley_size_wrapped(text: &str, font_px: f32, wrap: f32) -> Vec2 {
         let ctx = egui::Context::default();
         let mut sz = Vec2::ZERO;
-        ctx.run(egui::RawInput::default(), |ctx| {
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
             let mut job = egui::text::LayoutJob::simple(
                 text.to_owned(),
                 FontId::new(font_px, FontFamily::Monospace),
@@ -125,7 +125,7 @@ mod tests {
                 wrap,
             );
             job.halign = egui::Align::Center;
-            sz = ctx.fonts_mut(|f| f.layout_job(job)).size();
+            sz = ui.ctx().fonts_mut(|f| f.layout_job(job)).size();
         });
         sz
     }
@@ -227,13 +227,14 @@ mod tests {
         let ctx = egui::Context::default();
         let box_rect = Rect::from_center_size(Pos2::new(100.0, 100.0), Vec2::splat(40.0));
 
-        ctx.run(egui::RawInput::default(), |c| {
-            claim_label(c, box_rect, 100.0).expect("seed a higher-priority claim");
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            claim_label(ui.ctx(), box_rect, 100.0).expect("seed a higher-priority claim");
         });
 
         let mut warn_win = false;
         let mut verb_win = true;
-        ctx.run(egui::RawInput::default(), |c| {
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let c = ui.ctx();
             claim_label(c, box_rect, 100.0).expect("re-seed the higher-priority claim");
             warn_win = claim_edge_label(c, box_rect, 100.0, true).expect("forced warning claim");
             verb_win = claim_edge_label(c, box_rect, 0.0, false).expect("gated verb claim");
