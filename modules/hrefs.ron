@@ -1,0 +1,26 @@
+// builtin module spec — hrefs: list the <a href> links in a web page's initial HTML.
+// No crawl — one fetch, parse the delivered markup only. curl pulls the page, htmlq
+// (jq-for-HTML) resolves every anchor against the page URL as base and prints its href;
+// grep keeps only absolute http(s) targets (dropping mailto:/tel:/#anchors/javascript:);
+// head -150 is a HARD cap so a link-heavy page can never flood the board.
+// Each surviving URL becomes a web page this page links_to, full URL as the value so
+// distinct paths stay distinct and shared targets converge by slug upsert.
+(
+    id: "hrefs",
+    label: "page links",
+    applies_to: ["website", "web_page"],
+    bin: "sh",
+    requires: ["curl", "htmlq"],
+    args: ["-c", "curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring hrefs' '{value}' | htmlq -B --base '{value}' --attribute href a | grep -E '^https?://' | head -150"],
+    timeout_secs: 45,
+    shapes: [
+        (
+            id: "hrefs",
+            extract: (id: "lines", config: (field: "url")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "url", kind: "web_page", rel: "links_to"),
+            ],
+        ),
+    ],
+)
