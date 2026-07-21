@@ -62,12 +62,8 @@ pub enum EntityKind {
     Person,
     Alias,
     Organization,
-    PoliticalParty,
     Court,
-    LawFirm,
     Bank,
-    MediaOutlet,
-    CriminalOrg,
     Domain,
     IpAddress,
     Email,
@@ -166,16 +162,12 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 65] = [
+pub const KIND_META: [KindMeta; 61] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
-    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role, Facet::OrgType]),
-    k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority", "law firm", "lawyers", "attorneys", "legal", "counsel", "media outlet", "news", "press", "tv", "newspaper", "publication", "political party", "party", "criminal org", "mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role, Facet::OrgType]),
     k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free, &[Facet::Role]),
-    k(EntityKind::LawFirm, "Law firm", egui_phosphor::regular::BRIEFCASE, Category::Organizations, (240, 190, 110), &["jurisdiction", "specialty"], &["lawyers", "attorneys", "legal", "counsel"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Bank, "Bank", egui_phosphor::regular::VAULT, Category::Organizations, (225, 155, 70), &["swift_bic", "jurisdiction", "regulator"], &["financial institution", "lender"], ValueFormat::Free, &[Facet::Role]),
-    k(EntityKind::MediaOutlet, "Media outlet", egui_phosphor::regular::BROADCAST, Category::Organizations, (255, 185, 125), &["country", "medium", "owner"], &["news", "press", "tv", "newspaper", "publication"], ValueFormat::Free, &[Facet::Role]),
-    k(EntityKind::CriminalOrg, "Criminal org", egui_phosphor::regular::SKULL, Category::Organizations, (180, 105, 45), &["territory", "activity", "active_since"], &["mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Domain, "Domain", egui_phosphor::regular::GLOBE, Category::Digital, (120, 210, 150), &["registrar", "registered_on", "expires", "registrant"], &["dns", "site name"], ValueFormat::Hostname, &[Facet::DomainType]),
     k(EntityKind::IpAddress, "IP address", egui_phosphor::regular::NETWORK, Category::Digital, (90, 200, 200), &["asn", "isp", "geolocation"], &["ip", "host", "ipv4", "ipv6"], ValueFormat::Ip, &[]),
     k(EntityKind::Email, "Email", egui_phosphor::regular::ENVELOPE, Category::Digital, (110, 215, 185), &["holder", "provider", "first_seen"], &["mail", "inbox"], ValueFormat::Email, &[]),
@@ -519,12 +511,9 @@ mod tests {
         }
         for kind in [
             EntityKind::Organization,
-            EntityKind::PoliticalParty,
             EntityKind::Court,
-            EntityKind::LawFirm,
             EntityKind::Bank,
-            EntityKind::MediaOutlet,
-            EntityKind::CriminalOrg,
+            EntityKind::CareInstitution,
         ] {
             let f = KIND_META[kind as usize].facets;
             assert!(f.contains(&Facet::Role), "{kind:?} needs Role");
@@ -620,19 +609,91 @@ mod tests {
 
     #[test]
     fn collapsed_subtype_kinds_are_gone_but_searchable() {
-        for label in ["Company", "Shell company", "NGO", "Government body", "Government agency"] {
+        for label in [
+            "Company",
+            "Shell company",
+            "NGO",
+            "Government body",
+            "Government agency",
+            "Law firm",
+            "Media outlet",
+            "Political party",
+            "Criminal org",
+        ] {
             assert!(
                 !KIND_META.iter().any(|m| m.label == label),
                 "{label} must no longer be a base kind"
             );
         }
         let org = &KIND_META[EntityKind::Organization as usize];
-        for term in ["company", "shell company", "ngo", "government agency", "offshore"] {
+        for term in [
+            "company",
+            "shell company",
+            "ngo",
+            "government agency",
+            "offshore",
+            "law firm",
+            "cartel",
+            "party",
+            "newspaper",
+            "mafia",
+            "media outlet",
+        ] {
             assert!(
                 org.aliases.contains(&term),
                 "Organization aliases must fold in '{term}' so search still finds it"
             );
         }
+    }
+
+    #[test]
+    fn folded_org_subtypes_resolve_to_organization_and_round_trip() {
+        use crate::model::{Facet, FacetValue, subtype_value};
+
+        let by_slug =
+            |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        for gone in ["law_firm", "media_outlet", "political_party", "criminal_org"] {
+            assert_eq!(by_slug(gone), None, "{gone} is no longer a base kind");
+        }
+        assert_eq!(by_slug("organization"), Some(EntityKind::Organization));
+        assert_eq!(by_slug("court"), Some(EntityKind::Court), "Court stays a distinct kind");
+        assert_eq!(by_slug("bank"), Some(EntityKind::Bank), "Bank stays a distinct kind");
+
+        assert_eq!(
+            subtype_value(Facet::OrgType, 7).unwrap().expect("law-firm vocab row").label,
+            "Law firm",
+            "the folded LawFirm kind survives as an OrgType vocab value"
+        );
+
+        let mut e = Entity {
+            slug: "acme_legal".into(),
+            kind: EntityKind::Organization,
+            label: "Acme Legal".into(),
+            value: String::new(),
+            sealed: false,
+            observations: Vec::new(),
+            facets: Default::default(),
+            note: String::new(),
+            image: None,
+            size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        };
+        e.facets.insert(Facet::OrgType, FacetValue::Indexed(7));
+
+        let ron_s = ron::to_string(&e).unwrap();
+        let from_ron: Entity = ron::from_str(&ron_s).unwrap();
+        assert_eq!(from_ron.kind, EntityKind::Organization);
+        assert_eq!(
+            from_ron.facets.get(&Facet::OrgType),
+            Some(&FacetValue::Indexed(7)),
+            "an Organization tagged OrgType=Law firm survives RON (entity.ron)"
+        );
+
+        let json = serde_json::to_string(&e).unwrap();
+        let from_json: Entity = serde_json::from_str(&json).unwrap();
+        assert_eq!(from_json.facets.get(&Facet::OrgType), Some(&FacetValue::Indexed(7)));
     }
 
     #[test]

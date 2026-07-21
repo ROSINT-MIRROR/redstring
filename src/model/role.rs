@@ -86,7 +86,7 @@ const fn ps(
 }
 
 #[rustfmt::skip]
-pub const PRESETS: [Preset; 56] = [
+pub const PRESETS: [Preset; 60] = [
     ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None, None, None),
     ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None, None, None),
     ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None, None, None),
@@ -104,6 +104,10 @@ pub const PRESETS: [Preset; 56] = [
     ps("Registrar", egui_phosphor::regular::IDENTIFICATION_CARD, EntityKind::Organization, None, None, Some((Facet::OrgType, 4)), None),
     ps("Hosting provider", egui_phosphor::regular::HARD_DRIVES, EntityKind::Organization, None, None, Some((Facet::OrgType, 5)), None),
     ps("CPA network", egui_phosphor::regular::HANDSHAKE, EntityKind::Organization, None, None, Some((Facet::OrgType, 6)), None),
+    ps("Law firm", egui_phosphor::regular::BRIEFCASE, EntityKind::Organization, None, None, Some((Facet::OrgType, 7)), None),
+    ps("Media outlet", egui_phosphor::regular::BROADCAST, EntityKind::Organization, None, None, Some((Facet::OrgType, 8)), None),
+    ps("Political party", egui_phosphor::regular::FLAG_BANNER, EntityKind::Organization, None, None, Some((Facet::OrgType, 9)), None),
+    ps("Criminal org", egui_phosphor::regular::SKULL, EntityKind::Organization, None, None, Some((Facet::OrgType, 10)), None),
     ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 0)), None),
     ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 1)), None),
     ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, None, Some((Facet::DomainType, 0)), None),
@@ -305,6 +309,8 @@ mod tests {
             ("Registrar", EntityKind::Organization, Facet::OrgType, 4),
             ("Hosting provider", EntityKind::Organization, Facet::OrgType, 5),
             ("CPA network", EntityKind::Organization, Facet::OrgType, 6),
+            ("Law firm", EntityKind::Organization, Facet::OrgType, 7),
+            ("Criminal org", EntityKind::Organization, Facet::OrgType, 10),
             ("Burner", EntityKind::SocialAccount, Facet::AccountType, 0),
             ("Sockpuppet", EntityKind::SocialAccount, Facet::AccountType, 1),
             ("Parked", EntityKind::Domain, Facet::DomainType, 0),

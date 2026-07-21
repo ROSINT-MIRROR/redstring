@@ -228,7 +228,14 @@ mod tests {
         assert_eq!(m.format, FORMAT_VERSION);
         assert_eq!(m.ontology.entity_kinds.len(), KIND_META.len());
         assert_eq!(m.ontology.relation_kinds.len(), RELATION_META.len());
-        assert!(m.ontology.entity_kinds.contains(&"CriminalOrg".to_owned()));
+        assert!(m.ontology.entity_kinds.contains(&"Court".to_owned()));
+        assert!(m.ontology.entity_kinds.contains(&"Bank".to_owned()));
+        for folded in ["CriminalOrg", "LawFirm", "MediaOutlet", "PoliticalParty"] {
+            assert!(
+                !m.ontology.entity_kinds.contains(&folded.to_owned()),
+                "{folded} folded into Organization+OrgType — it must not appear in the ontology"
+            );
+        }
         assert!(m.ontology.relation_kinds.contains(&"LaunderedThrough".to_owned()));
         for kind in ["WebPage", "Endpoint", "Parameter", "Technology", "TlsCertificate", "DnsRecord", "Asn", "TrackerId"] {
             assert!(m.ontology.entity_kinds.contains(&kind.to_owned()), "ontology missing {kind}");

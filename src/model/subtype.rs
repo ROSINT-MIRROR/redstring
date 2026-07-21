@@ -20,7 +20,7 @@ const fn sv(label: &'static str, icon: &'static str, rgb: (u8, u8, u8)) -> Subty
 }
 
 #[rustfmt::skip]
-pub const ORG_TYPE_VALUES: [SubtypeValue; 7] = [
+pub const ORG_TYPE_VALUES: [SubtypeValue; 11] = [
     sv("Company", egui_phosphor::regular::BUILDING_OFFICE, (120, 160, 210)),
     sv("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, (215, 95, 95)),
     sv("NGO", egui_phosphor::regular::HAND_HEART, (110, 190, 140)),
@@ -28,6 +28,10 @@ pub const ORG_TYPE_VALUES: [SubtypeValue; 7] = [
     sv("Registrar", egui_phosphor::regular::IDENTIFICATION_CARD, (210, 175, 95)),
     sv("Hosting provider", egui_phosphor::regular::HARD_DRIVES, (95, 180, 195)),
     sv("CPA network", egui_phosphor::regular::HANDSHAKE, (215, 150, 110)),
+    sv("Law firm", egui_phosphor::regular::BRIEFCASE, (240, 190, 110)),
+    sv("Media outlet", egui_phosphor::regular::BROADCAST, (255, 185, 125)),
+    sv("Political party", egui_phosphor::regular::FLAG_BANNER, (255, 135, 85)),
+    sv("Criminal org", egui_phosphor::regular::SKULL, (180, 105, 45)),
 ];
 
 #[rustfmt::skip]
@@ -106,6 +110,10 @@ mod tests {
                 "Registrar",
                 "Hosting provider",
                 "CPA network",
+                "Law firm",
+                "Media outlet",
+                "Political party",
+                "Criminal org",
             ],
             "org-type vocab order pins the preset indices"
         );
@@ -156,9 +164,12 @@ mod tests {
     #[test]
     fn lookup_resolves_and_bounds_check() {
         let vocab = subtype_vocab(Facet::OrgType).unwrap().expect("org-type vocab");
-        assert_eq!(vocab.values.len(), 7);
+        assert_eq!(vocab.values.len(), 11);
         let shell = subtype_value(Facet::OrgType, 1).unwrap().expect("index 1");
         assert_eq!(shell.label, "Shell company");
+        let crim = subtype_value(Facet::OrgType, 10).unwrap().expect("index 10");
+        assert_eq!(crim.label, "Criminal org");
+        assert_eq!(crim.icon, egui_phosphor::regular::SKULL);
         assert!(subtype_value(Facet::OrgType, 99).unwrap().is_none(), "out-of-range index");
         assert!(subtype_vocab(Facet::Role).unwrap().is_none(), "Role is not a subtype facet");
         assert!(
