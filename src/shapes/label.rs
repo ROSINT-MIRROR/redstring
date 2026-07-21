@@ -93,6 +93,16 @@ pub fn claim_label(ctx: &Context, rect: Rect, priority: f32) -> Result<bool, Err
     Ok(win)
 }
 
+pub fn claim_edge_label(
+    ctx: &Context,
+    rect: Rect,
+    priority: f32,
+    force: bool,
+) -> Result<bool, Error> {
+    let win = claim_label(ctx, rect, priority)?;
+    Ok(force || win)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +214,33 @@ mod tests {
         assert_eq!(
             node_box, zone_box,
             "node.rs draw and links.rs label_zone must derive an identical label box"
+        );
+    }
+
+    #[test]
+    fn edge_label_force_claims_and_gated_verb_yields() {
+        let ctx = egui::Context::default();
+        let box_rect = Rect::from_center_size(Pos2::new(100.0, 100.0), Vec2::splat(40.0));
+
+        ctx.run(egui::RawInput::default(), |c| {
+            claim_label(c, box_rect, 100.0).expect("seed a higher-priority claim");
+        });
+
+        let mut warn_win = false;
+        let mut verb_win = true;
+        ctx.run(egui::RawInput::default(), |c| {
+            claim_label(c, box_rect, 100.0).expect("re-seed the higher-priority claim");
+            warn_win = claim_edge_label(c, box_rect, 100.0, true).expect("forced warning claim");
+            verb_win = claim_edge_label(c, box_rect, 0.0, false).expect("gated verb claim");
+        });
+
+        assert!(
+            warn_win,
+            "a forced unsourced-edge warning must always claim, even when overlapping a higher-priority box"
+        );
+        assert!(
+            !verb_win,
+            "a gated sourced-verb label overlapping a higher-priority box must be skipped"
         );
     }
 }
