@@ -80,6 +80,8 @@ pub struct RedstringApp {
 
     pub delete_confirm: Option<Vec<NodeIndex>>,
 
+    pub seal_confirm: Option<(Vec<NodeIndex>, bool)>,
+
     pub quit_confirm: bool,
     pub allow_close: bool,
 
@@ -173,6 +175,7 @@ impl RedstringApp {
             jobs: Vec::new(),
             next_run_id: 1,
             delete_confirm: None,
+            seal_confirm: None,
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
@@ -341,6 +344,7 @@ impl RedstringApp {
         self.quit_window(ui)?;
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
+        self.seal_confirm_window(ui)?;
         self.welcome_window(ui)?;
         self.find_window(ui)?;
         super::logview::window(ui.ctx())?;
@@ -442,6 +446,75 @@ impl RedstringApp {
             return Ok(());
         };
         board::camera_write(ui, cam)?;
+        Ok(())
+    }
+
+    pub fn apply_seal(&mut self, list: &[NodeIndex], target: bool) -> Result<usize, Error> {
+        let mut changed = 0usize;
+        for idx in list {
+            let Some(node) = self.g.node_mut(*idx) else {
+                continue;
+            };
+            let e = node.payload_mut();
+            if e.sealed != target {
+                e.sealed = target;
+                changed += 1;
+            }
+        }
+        Ok(changed)
+    }
+
+    pub fn seal_confirm_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+        let Some((list, target)) = self.seal_confirm.clone() else {
+            return Ok(());
+        };
+        let n = list.len();
+        let verb = if target { "seal" } else { "unseal" };
+        let mut yes = false;
+        let mut cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Window::new(if target { "seal entities" } else { "unseal entities" })
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ui.ctx().content_rect().center())
+            .show(ui.ctx(), |ui| {
+                let noun = if n == 1 { "entity" } else { "entities" };
+                let body = if target {
+                    format!(
+                        "Seal {n} {noun}? Redacted from exports & generated files — the local copy keeps the data."
+                    )
+                } else {
+                    format!("Unseal {n} {noun}? They reappear in exports & generated files.")
+                };
+                ui.label(body);
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    let icon = if target {
+                        egui_phosphor::regular::EYE_SLASH
+                    } else {
+                        egui_phosphor::regular::EYE
+                    };
+                    let yes_btn = ui.button(
+                        RichText::new(format!("{icon} yes, {verb}"))
+                            .color(super::style::DANGER)
+                            .strong(),
+                    );
+                    if ui.memory(|m| m.focused().is_none()) {
+                        yes_btn.request_focus();
+                    }
+                    yes = yes_btn.clicked();
+                    cancel |= ui.button("cancel").clicked();
+                });
+            });
+        if yes {
+            let changed = self.apply_seal(&list, target)?;
+            crate::dlog_info!("ops", "bulk seal target={target} changed={changed} requested={n}");
+            self.seal_confirm = None;
+            self.status = format!("{} {n} entities", if target { "sealed" } else { "unsealed" });
+        }
+        if cancel {
+            self.seal_confirm = None;
+        }
         Ok(())
     }
 }

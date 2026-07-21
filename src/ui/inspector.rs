@@ -64,6 +64,21 @@ impl RedstringApp {
         );
         super::pathview::section(self, ui, &sel)?;
         ui.add_space(style::GAP);
+        if style::action_btn(
+            ui,
+            egui_phosphor::regular::EYE_SLASH,
+            &format!("seal {} entities", sel.len()),
+        )? {
+            self.seal_confirm = Some((sel.clone(), true));
+        }
+        if style::action_btn(
+            ui,
+            egui_phosphor::regular::EYE,
+            &format!("unseal {} entities", sel.len()),
+        )? {
+            self.seal_confirm = Some((sel.clone(), false));
+        }
+        ui.add_space(style::GAP);
         if style::danger_btn(
             ui,
             egui_phosphor::regular::TRASH,
