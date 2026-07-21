@@ -91,6 +91,7 @@ impl RedstringApp {
             && let Some(node) = edge_start_node(self.edge_drag, down, press_node, moved)
         {
             self.edge_drag = Some(node);
+            crate::dlog_debug!("links", "edge drag start from={}", node.index());
             self.status = "release on a target entity to link".into();
         }
 
@@ -127,12 +128,14 @@ impl RedstringApp {
         match right_release_outcome(edge_from, press_node, release_node) {
             RightRelease::Idle => {}
             RightRelease::CancelLink => {
+                crate::dlog_debug!("links", "link cancelled");
                 self.status = "link cancelled".into();
             }
             RightRelease::Menu(node) => {
                 let Some(p) = pointer else {
                     return Ok(());
                 };
+                crate::dlog_debug!("links", "node menu open idx={}", node.index());
                 self.node_menu = Some((node, p));
                 self.node_menu_just_opened = true;
                 self.status = "expand or collapse this node's subtree".into();
@@ -141,6 +144,7 @@ impl RedstringApp {
                 let Some(p) = pointer else {
                     return Ok(());
                 };
+                crate::dlog_debug!("links", "link picker from={} to={}", from.index(), to.index());
                 self.verb_filter.clear();
                 self.verb_filter_focus = true;
                 self.pending_edge = Some((from, to, p));
@@ -257,6 +261,7 @@ impl RedstringApp {
         let relation =
             Relation::stamp(kind, Origin::Manual, Verification::Unreviewed, self.author.clone())?;
         self.g.add_edge_with_label(from, to, relation, label.into());
+        crate::dlog_info!("links", "link created kind={label} from={} to={}", from.index(), to.index());
         self.status = format!("linked: {from_l} —{label}→ {to_l} (unsourced — attach a source!)");
         Ok(true)
     }

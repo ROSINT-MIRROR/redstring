@@ -1,3 +1,5 @@
+use std::sync::{Mutex, OnceLock};
+
 use egui::{Pos2, Rect, Vec2};
 use egui_graphs::{
     GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation, SettingsStyle,
@@ -8,12 +10,31 @@ use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META};
 use crate::shapes::{IMG_RADIUS, NODE_RADIUS, SourcedEdgeShape};
 
-use super::app::{BOARD_META_ID, RedstringApp};
+use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
 const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 
 const MIN_ZOOM: f32 = 0.01;
 const MAX_ZOOM: f32 = 30.0;
+
+static LAST_SEL: OnceLock<Mutex<Vec<usize>>> = OnceLock::new();
+
+fn log_selection(g: &RsGraph) {
+    if !crate::log::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let mut cur: Vec<usize> = g.selected_nodes().iter().map(|i| i.index()).collect();
+    cur.sort();
+    let cell = LAST_SEL.get_or_init(|| Mutex::new(Vec::new()));
+    let Ok(mut prev) = cell.lock() else {
+        return;
+    };
+    if *prev == cur {
+        return;
+    }
+    crate::dlog_debug!("board", "selection {}->{} nodes={:?}", prev.len(), cur.len(), cur);
+    *prev = cur;
+}
 
 pub fn meta(ui: &egui::Ui) -> Result<MetadataFrame, Error> {
     Ok(MetadataFrame::new(Some(BOARD_META_ID.to_owned())).load(ui))
@@ -65,6 +86,7 @@ fn scroll_zoom(ui: &mut egui::Ui) -> Result<(), Error> {
 
     let mut mf = meta(ui)?;
     let new_zoom = sane_zoom(mf.zoom * factor);
+    crate::dlog_debug!("board", "zoom {:.3}->{:.3}", mf.zoom, new_zoom);
 
     let local = pointer - board.left_top();
     mf.pan = local - (local - mf.pan) * (new_zoom / mf.zoom);
@@ -130,6 +152,7 @@ impl RedstringApp {
         self.verb_picker(ui)?;
         self.fold_menu(ui)?;
         self.label_editor(ui, rect)?;
+        log_selection(&self.g);
         Ok(())
     }
 
@@ -237,6 +260,7 @@ impl RedstringApp {
         if drags.is_empty() {
             return;
         }
+        crate::dlog_debug!("board", "node drag start idx={} group={}", idx.index(), drags.len());
         self.node_drag = Some(drags);
     }
 
@@ -244,6 +268,7 @@ impl RedstringApp {
         let Some(group) = self.node_drag.take() else {
             return;
         };
+        crate::dlog_debug!("board", "node drag end moved={}", group.len());
         for (idx, _) in group {
             let Some(n) = self.g.node_mut(idx) else {
                 continue;
@@ -270,6 +295,7 @@ impl RedstringApp {
             && (mid_pressed || (sec_pressed && sec_on_empty))
         {
             self.panning = true;
+            crate::dlog_debug!("board", "pan start");
         }
         if !self.panning {
             return Ok(());
@@ -310,12 +336,14 @@ impl RedstringApp {
             && self.node_at_screen(ui, rect, p)?.is_none()
         {
             self.band = Some(p);
+            crate::dlog_debug!("board", "rubber-band start");
         }
 
         let Some(anchor) = self.band else {
             return Ok(());
         };
         if !down || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            crate::dlog_debug!("board", "rubber-band end selected={}", self.g.selected_nodes().len());
             self.band = None;
             return Ok(());
         }
@@ -446,6 +474,7 @@ impl RedstringApp {
         let kind = *kind;
         let canvas = meta(ui)?.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
         let idx = self.add_entity(kind, KIND_META[kind as usize].label.to_owned(), canvas)?;
+        crate::dlog_info!("board", "drop-spawn kind={:?} idx={}", kind, idx.index());
         self.ne_kind = kind;
         self.start_label_edit(idx)
     }
