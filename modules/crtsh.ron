@@ -5,13 +5,16 @@
 // crt.sh returns a JSON array of certs whose name_value packs several SANs
 // separated by newlines, so jq explodes the array and splits name_value
 // into one flat {issuer, san} object per SAN before ndjson reads it.
+// crt.sh is flaky: under load it 404/502s with an HTML body. curl -sf turns
+// that into a non-zero exit, --retry rides out transient failures, and the
+// && gate means jq only ever sees a real 2xx JSON body — never HTML garbage.
 (
     id: "crtsh",
     label: "crt.sh CT subdomains",
     applies_to: ["domain"],
     bin: "sh",
-    args: ["-c", "curl -s 'https://crt.sh/?q={value}&output=json' | jq -c '.[] | {issuer: .issuer_name, san: (.name_value | split(\"\\n\")[])}'"],
-    timeout_secs: 60,
+    args: ["-c", "r=$(curl -sf --retry 3 --retry-delay 2 --retry-all-errors -m 40 'https://crt.sh/?q={value}&output=json') && printf '%s' \"$r\" | jq -c '.[] | {issuer: .issuer_name, san: (.name_value | split(\"\\n\")[])}'"],
+    timeout_secs: 150,
     shapes: [
         (
             id: "crtsh",
