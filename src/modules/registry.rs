@@ -149,3 +149,5 @@ fn is_exec(p: &Path) -> bool {
 
 #[cfg(test)]
 include!("registry_tests.rs");
+#[cfg(test)]
+include!("transforms_tests.rs");

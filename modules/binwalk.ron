@@ -1,0 +1,58 @@
+// builtin module spec — binwalk embedded-signature scan of a firmware / binary Document or Dataset.
+// A file-consuming module like exiftool/pdfforensics: {attr:file} is the entity's project-relative
+// file observation, resolved because lookups run with cwd = the project root. This runs binwalk's
+// DEFAULT signature scan ONLY — never `-e`/`--extract`, which would write carved files to disk and be
+// slow. binwalk 3.x prints a `DECIMAL  HEXADECIMAL  DESCRIPTION` table (2+-space columns, wrapped
+// descriptions continue on indented lines with no offset); `-l/--log` cannot target a pipe (it seeks
+// the file), so the table is reshaped by an sh/awk pass into a keyvalue block the keyvalue adapter
+// reads. Only rows whose first column is a decimal offset are data rows; the description is rebuilt
+// from column 3 onward (guards a description split by an internal wide gap). Emitted as observations
+// on the source Document: `embedded_signatures` (count of signature hits), `signature_types` (the
+// de-duplicated leading phrase of each description), and boolean flags for notable finds —
+// compressed/archived data, embedded filesystems, certificates, private keys. No Port/Service-style
+// pivot node exists for firmware artifacts yet, so observations are the right home. click/binwalk
+// strip ANSI on a non-TTY pipe; a defensive sed pass keeps awk clean regardless. awk exits 0 on
+// success, so the runner (which parses stdout only on a zero exit) always sees the reshaped block.
+(
+    id: "binwalk",
+    label: "binwalk signatures",
+    applies_to: ["document", "dataset"],
+    bin: "sh",
+    requires: ["binwalk"],
+    args: ["-c", r#"binwalk "{attr:file}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk -F'  +' '
+$1 ~ /^[0-9]+$/ {
+  desc=$3; for(i=4;i<=NF;i++) desc=desc " " $i
+  t=desc; sub(/,.*$/,"",t); sub(/^[ \t]+/,"",t); sub(/[ \t]+$/,"",t)
+  if(t!=""){ count++; if(index(seen,"|" t "|")==0){ seen=seen "|" t "|"; if(types=="") types=t; else types=types ", " t } }
+  d=tolower(desc)
+  if(d ~ /compress|archive|gzip|zlib|lzma|bzip|deflate|zstd|zip|lz4/) comp=1
+  if(d ~ /filesystem|squashfs|cramfs|jffs|romfs|ubifs|yaffs|ext[234]|iso9660/) fs=1
+  if(d ~ /certificate|x\.509|x509/) cert=1
+  if(d ~ /private key|rsa private|pgp private|ssh private/) pk=1
+}
+END{
+  if(count>0) print "embedded_signatures: " count
+  if(types!="") print "signature_types: " types
+  if(comp) print "compressed_data: yes"
+  if(fs) print "filesystems: yes"
+  if(cert) print "certificates: yes"
+  if(pk) print "private_keys: yes"
+}
+'"#],
+    timeout_secs: 60,
+    shapes: [
+        (
+            id: "binwalk",
+            extract: (id: "keyvalue", config: (sep: ":")),
+            min_hits: 1,
+            emit: [
+                Attr(from: "embedded_signatures", key: "embedded_signatures", kind: Number),
+                Attr(from: "signature_types", key: "signature_types"),
+                Attr(from: "compressed_data", key: "has_compressed_data", kind: Bool),
+                Attr(from: "filesystems", key: "has_filesystem", kind: Bool),
+                Attr(from: "certificates", key: "has_certificate", kind: Bool),
+                Attr(from: "private_keys", key: "has_private_key", kind: Bool),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,67 @@
+// builtin module spec — Shodan host lookup for an IP: open ports, services, hostnames, org, vulns.
+// The shodan CLI is authenticated out of band (~/.shodan) and burns one query credit per call, so
+// the module gates on the `shodan` binary alone (no API key in the spec). `shodan host` has no JSON
+// formatter — only `pretty` and `tsv` — and tsv carries ports only, so the rich `pretty` output is
+// reshaped by an sh/awk pass (like pdfforensics) into a keyvalue block the keyvalue adapter reads:
+//   - each Hostnames entry (the CLI ';'-joins them) becomes its own `hostname:` line → a domain node
+//     that resolves_to this IP (outbound:false: the hostname points AT the address);
+//   - Organization becomes an organization node (related_to);
+//   - open ports / services / vulnerabilities collapse to comma-joined observations on the IP, and
+//     city/country/os ride as plain observations. Ports and service products are de-duplicated
+//     (53/tcp + 53/udp is one port; a product seen on many ports is listed once).
+// A future Port/Service entity kind would let each port/service become a pivotable node instead of a
+// joined attribute; observations are the correct home until that kind exists. click strips ANSI on a
+// non-TTY pipe, but a defensive sed pass keeps the awk clean regardless. The awk exits 0 on success,
+// so the runner (which only parses stdout on a zero exit) always sees the reshaped block.
+(
+    id: "shodan",
+    label: "shodan host",
+    applies_to: ["ip_address"],
+    bin: "sh",
+    requires: ["shodan"],
+    args: ["-c", r#"shodan host "{value}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk '
+function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+inports==0 && /^Ports:/ { inports=1; next }
+inports==0 {
+  idx=index($0,":"); if(idx<=0) next
+  key=trim(substr($0,1,idx-1)); val=trim(substr($0,idx+1)); if(val=="") next
+  if(key=="Hostnames"){ n=split(val,hh,";"); for(i=1;i<=n;i++){ h=trim(hh[i]); if(h!="") print "hostname: " h }; next }
+  if(key=="Organization"){ print "organization: " val; next }
+  if(key=="City"){ print "city: " val; next }
+  if(key=="Country"){ print "country: " val; next }
+  if(key=="Operating System"){ print "os: " val; next }
+  if(key=="Vulnerabilities"){ gsub(/[ \t]+/,", ",val); print "vulns: " val; next }
+  next
+}
+inports==1 {
+  l=trim($0); if(l=="") next
+  if(l !~ /^[0-9]+\//) next
+  slash=index(l,"/"); p=substr(l,1,slash-1); rest=substr(l,slash+1)
+  sub(/^[a-z]+/,"",rest); sub(/\(.*$/,"",rest); svc=trim(rest)
+  if(index(pseen,"|" p "|")==0){ pseen=pseen "|" p "|"; if(ports=="") ports=p; else ports=ports ", " p }
+  if(svc!=""){ if(index(sseen,"|" svc "|")==0){ sseen=sseen "|" svc "|"; if(svcs=="") svcs=svc; else svcs=svcs ", " svc } }
+}
+END{
+  if(ports!="") print "open_ports: " ports
+  if(svcs!="") print "services: " svcs
+}
+'"#],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "shodan",
+            extract: (id: "keyvalue", config: (sep: ":")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "hostname", kind: "domain", rel: "resolves_to", outbound: false),
+                Entity(from: "organization", kind: "organization", rel: "related_to"),
+                Attr(from: "open_ports", key: "open_ports"),
+                Attr(from: "services", key: "services"),
+                Attr(from: "vulns", key: "vulns"),
+                Attr(from: "os", key: "os"),
+                Attr(from: "city", key: "city"),
+                Attr(from: "country", key: "country"),
+            ],
+        ),
+    ],
+)
