@@ -1,0 +1,28 @@
+// builtin module spec — blockchain.info raw-address: recent transactions for a BTC wallet (KEYLESS).
+// CryptoWallet is free-format so this always runs; a bad address 404s and degrades to evidence.
+// One HTTPS GET returns the address's tx list (limit 25); the json adapter walks the "txs" array
+// and pulls each tx hash. Every hash becomes a transaction node linked related_to the wallet — the
+// tx fan is the pivot: a shared transaction converges two wallets onto one node and the red string
+// appears. Balance and n_tx sit at the document root, outside the per-tx records the json adapter
+// builds, so they are deliberately skipped — one shape, first-match-wins.
+(
+    id: "blockchain_btc",
+    label: "blockchain.info BTC txs",
+    applies_to: ["crypto_wallet"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -s 'https://blockchain.info/rawaddr/{value}?limit=25'"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "blockchain_btc",
+            extract: (id: "json", config: (array: "txs", fields: [
+                ("hash", "hash"),
+            ])),
+            min_hits: 1,
+            emit: [
+                Entity(from: "hash", kind: "transaction", rel: "related_to"),
+            ],
+        ),
+    ],
+)

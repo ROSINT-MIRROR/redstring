@@ -1,0 +1,25 @@
+// builtin module spec — HackerTarget reverse-IP lookup: every hostname sharing this IP (KEYLESS).
+// The free endpoint answers one hostname per line; co-hosted sites share the same box, so each
+// becomes a domain node linked hosted_on -> this IP (inbound: the domain sits ON the address).
+// head -100 caps the fan-out on busy shared hosts. The free tier is rate-limited; a quota/error
+// reply is a single prose line that upserts to a throwaway node the journalist prunes (degrade to
+// evidence, never to garbage). The lines adapter reads each line as a domain.
+(
+    id: "hackertarget",
+    label: "HackerTarget reverse IP",
+    applies_to: ["ip_address"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -s 'https://api.hackertarget.com/reverseiplookup/?q={value}' | head -100"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "hackertarget",
+            extract: (id: "lines", config: (field: "domain")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "domain", kind: "domain", rel: "hosted_on", outbound: false),
+            ],
+        ),
+    ],
+)

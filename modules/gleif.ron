@@ -1,0 +1,33 @@
+// builtin module spec — GLEIF Legal Entity Identifier lookup for an organization (KEYLESS).
+// Org names are prose, so this transform keys on {label}, not {value}. One HTTPS GET to the
+// GLEIF LEI-records API (a clean JSON:API document) returns matching legal entities; -G with
+// --data-urlencode lets curl percent-encode the whitespace-bearing legal name safely, and the
+// name arg is double-quoted so apostrophe'd org names (McDonald's, L'Oreal) survive the shell.
+// The json adapter reads the "data" array and pulls the LEI, registration status and the legal
+// -address country by dot-path pointer. All three land as observations on the org — the LEI is
+// the pivot key that ties an org to filings, sanctions lists and other structured datasets.
+(
+    id: "gleif",
+    label: "GLEIF LEI record",
+    applies_to: ["organization"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -sG 'https://api.gleif.org/api/v1/lei-records' --data-urlencode \"filter[entity.legalName]={label}\""],
+    timeout_secs: 20,
+    shapes: [
+        (
+            id: "gleif",
+            extract: (id: "json", config: (array: "data", fields: [
+                ("lei", "attributes.lei"),
+                ("status", "attributes.registration.status"),
+                ("country", "attributes.entity.legalAddress.country"),
+            ])),
+            min_hits: 1,
+            emit: [
+                Attr(from: "lei", key: "lei"),
+                Attr(from: "status", key: "registration_status"),
+                Attr(from: "country", key: "jurisdiction"),
+            ],
+        ),
+    ],
+)

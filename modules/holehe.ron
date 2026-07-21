@@ -1,0 +1,25 @@
+// builtin module spec — holehe: which of ~120 sites an email is registered on (KEYLESS).
+// requires holehe (pipx install holehe); the requires-gate hides this until it is on PATH.
+// holehe prints its used-site hits as `[+] site.com`; --only-used drops the misses and the sed
+// strips holehe's ANSI colour so the regex sees clean text. Each hit becomes a website node
+// linked uses_account — email -> accounts is the single highest-value journalistic pivot and was
+// a total gap. The regex adapter captures the domain token after each [+] marker; one hit per record.
+(
+    id: "holehe",
+    label: "holehe email accounts",
+    applies_to: ["email"],
+    bin: "sh",
+    requires: ["holehe"],
+    args: ["-c", "holehe '{value}' --only-used 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
+    timeout_secs: 120,
+    shapes: [
+        (
+            id: "holehe",
+            extract: (id: "regex", config: (pattern: "\\[\\+\\]\\s+(?<site>\\S+)")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "site", kind: "website", rel: "uses_account"),
+            ],
+        ),
+    ],
+)
