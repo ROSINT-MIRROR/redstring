@@ -322,4 +322,89 @@ mod transforms_tests {
             kind: ObsKind::Text,
         }));
     }
+
+    #[test]
+    fn dehashed_applies_to_identity_kinds_and_declares_its_api_key_header() {
+        let spec = builtin("builtin:dehashed");
+        assert!(spec.keys.iter().any(|k| k == "dehashed"), "dehashed grows its own key slot");
+        assert_eq!(
+            spec.headers,
+            vec![("DeHashed-Api-Key".to_owned(), "{key:dehashed}".to_owned())],
+            "the secret rides the headers field as an env token, never argv"
+        );
+        let kinds = spec.kinds().unwrap();
+        for want in [
+            EntityKind::Email,
+            EntityKind::Person,
+            EntityKind::Phone,
+            EntityKind::Alias,
+            EntityKind::SocialAccount,
+        ] {
+            assert!(kinds.contains(&want), "dehashed should apply to {want:?}");
+        }
+    }
+
+    #[test]
+    fn dehashed_breach_rows_pivot_to_typed_nodes_and_keep_hashes_descriptive() {
+        let spec = builtin("builtin:dehashed");
+        let sample = r#"{"balance":42,"entries":[
+            {"id":"a1","email":["john.doe@example.com"],"username":["johnd"],
+             "password":["hunter2"],"hashed_password":["$2y$10$Abc"],"name":["John Doe"],
+             "phone":["+15551234567"],"address":["221B Baker St"],
+             "database_name":"ExampleBreach2019","ip_address":["203.0.113.7"]},
+            {"id":"b2","email":["john.doe@example.com"],"password":["p@ssw0rd"],
+             "database_name":"AnotherLeak2021"}
+        ],"total":2,"success":true}"#;
+        let (shape, records) = sniff(&spec.shapes, sample).unwrap().unwrap();
+        assert_eq!(shape.id, "dehashed");
+        assert_eq!(records.len(), 2, "one record per breach row");
+        let facts = emit(shape, &records).unwrap();
+
+        let leak = |name: &str| Fact::Entity {
+            kind: EntityKind::Leak,
+            label: name.to_owned(),
+            value: name.to_owned(),
+            rel: RelationKind::AppearedIn,
+            outbound: true,
+            attrs: Vec::new(),
+        };
+        assert!(facts.contains(&leak("ExampleBreach2019")));
+        assert!(facts.contains(&leak("AnotherLeak2021")), "each distinct breach is its own Leak node");
+
+        let related = |kind: EntityKind, v: &str| Fact::Entity {
+            kind,
+            label: v.to_owned(),
+            value: v.to_owned(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        };
+        assert!(facts.contains(&related(EntityKind::Email, "john.doe@example.com")));
+        assert!(facts.contains(&related(EntityKind::Alias, "johnd")));
+        assert!(facts.contains(&related(EntityKind::Person, "John Doe")));
+        assert!(facts.contains(&related(EntityKind::Phone, "+15551234567")));
+        assert!(facts.contains(&related(EntityKind::Address, "221B Baker St")));
+        assert!(facts.contains(&related(EntityKind::IpAddress, "203.0.113.7")));
+        assert!(facts.contains(&related(EntityKind::Secret, "hunter2")), "plaintext password reuse pivots");
+        assert!(
+            facts.contains(&related(EntityKind::Secret, "p@ssw0rd")),
+            "the second row's distinct password is its own Secret"
+        );
+
+        assert!(
+            facts.contains(&Fact::Attr {
+                key: "hashed_password".into(),
+                value: "$2y$10$Abc".into(),
+                kind: ObsKind::Text,
+            }),
+            "a salted hash is a descriptive observation, not a pivot"
+        );
+        assert!(
+            !facts.iter().any(|f| matches!(
+                f,
+                Fact::Entity { kind: EntityKind::Secret, value, .. } if value.starts_with("$2y$")
+            )),
+            "the hash must never become a Secret node"
+        );
+    }
 }

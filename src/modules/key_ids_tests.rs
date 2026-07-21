@@ -13,6 +13,7 @@ mod key_ids_tests {
             args: vec!["{value}".to_owned()],
             timeout_secs: 20,
             keys: keys.iter().map(|k| (*k).to_owned()).collect(),
+            headers: Vec::new(),
             shapes: Vec::new(),
         }
     }

@@ -275,6 +275,7 @@ OrgName:        Google LLC
             args: Vec::new(),
             timeout_secs: 5,
             keys: Vec::new(),
+            headers: Vec::new(),
             shapes: Vec::new(),
         }
     }

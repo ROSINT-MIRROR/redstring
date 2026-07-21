@@ -1,6 +1,6 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender};
@@ -45,6 +45,9 @@ pub struct RunInput {
     pub bin: PathBuf,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+
+    pub headers: Vec<(String, String)>,
+
     pub timeout_secs: u64,
     pub shapes: Vec<Shape>,
     pub target_slug: String,
@@ -136,8 +139,13 @@ fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<Fact>), Error
 
 fn build_command(input: &RunInput) -> Command {
     let mut cmd = Command::new(&input.bin);
+    let stdin = if input.headers.is_empty() {
+        Stdio::null()
+    } else {
+        Stdio::piped()
+    };
     cmd.args(&input.args)
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in &input.env {
@@ -150,6 +158,41 @@ fn build_command(input: &RunInput) -> Command {
         cmd.current_dir(root);
     }
     cmd
+}
+
+fn header_blob(headers: &[(String, String)], env: &[(String, String)]) -> String {
+    let mut out = String::new();
+    for (name, template) in headers {
+        out.push_str(name);
+        out.push_str(": ");
+        out.push_str(&materialize(template, env));
+        out.push('\n');
+    }
+    out
+}
+
+fn materialize(template: &str, env: &[(String, String)]) -> String {
+    let mut s = template.to_owned();
+    for (k, v) in env {
+        let Some(id) = k.strip_prefix("REDSTRING_KEY_") else {
+            continue;
+        };
+        s = s.replace(&format!("{{key:{}}}", id.to_lowercase()), v);
+    }
+    s
+}
+
+fn feed_stdin(child: &mut Child, blob: &str) {
+    if blob.is_empty() {
+        return;
+    }
+    let Some(mut sink) = child.stdin.take() else {
+        return;
+    };
+    if sink.write_all(blob.as_bytes()).is_err() {
+        return;
+    }
+    drop(sink);
 }
 
 fn capture(input: &RunInput) -> (String, String, bool, bool) {
@@ -175,6 +218,7 @@ fn capture(input: &RunInput) -> (String, String, bool, bool) {
     };
     let out_h = std::thread::spawn(move || read_all(out_pipe));
     let err_h = std::thread::spawn(move || read_all(err_pipe));
+    feed_stdin(&mut child, &header_blob(&input.headers, &input.env));
 
     let deadline = Instant::now() + Duration::from_secs(input.timeout_secs.max(1));
     let mut timed_out = false;
@@ -264,6 +308,7 @@ fn stream(input: &RunInput, tx: &Sender<ModuleRun>, ctx: &egui::Context) {
             }
         }
     });
+    feed_stdin(&mut child, &header_blob(&input.headers, &input.env));
 
     let shape = input.shapes.first();
     let deadline = Instant::now() + Duration::from_secs(input.timeout_secs.max(1));
@@ -396,6 +441,7 @@ mod tests {
             bin: PathBuf::from(bin),
             args: args.iter().map(|a| (*a).to_owned()).collect(),
             env: Vec::new(),
+            headers: Vec::new(),
             timeout_secs: timeout,
             shapes: Vec::new(),
             target_slug: "x".into(),
@@ -404,6 +450,39 @@ mod tests {
             evidence_rel: String::new(),
             cancel: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[test]
+    fn headers_materialize_secret_from_env_not_argv() {
+        let headers = vec![("DeHashed-Api-Key".to_owned(), "{key:dehashed}".to_owned())];
+        let env = vec![("REDSTRING_KEY_DEHASHED".to_owned(), "s3cr3t".to_owned())];
+        assert_eq!(header_blob(&headers, &env), "DeHashed-Api-Key: s3cr3t\n");
+    }
+
+    #[test]
+    fn header_blob_joins_many_and_leaves_unset_key_tokens_literal() {
+        let headers = vec![
+            ("A".to_owned(), "{key:one}".to_owned()),
+            ("B".to_owned(), "static".to_owned()),
+            ("C".to_owned(), "{key:missing}".to_owned()),
+        ];
+        let env = vec![("REDSTRING_KEY_ONE".to_owned(), "v1".to_owned())];
+        assert_eq!(header_blob(&headers, &env), "A: v1\nB: static\nC: {key:missing}\n");
+    }
+
+    #[test]
+    fn empty_headers_blob_is_empty_and_does_not_pipe() {
+        assert_eq!(header_blob(&[], &[("REDSTRING_KEY_X".to_owned(), "y".to_owned())]), "");
+    }
+
+    #[test]
+    fn stdin_headers_reach_the_child_from_env() {
+        let mut inp = input("cat", &[], 5);
+        inp.headers = vec![("DeHashed-Api-Key".to_owned(), "{key:dehashed}".to_owned())];
+        inp.env = vec![("REDSTRING_KEY_DEHASHED".to_owned(), "abc123".to_owned())];
+        let (out, err, ok, _c) = capture(&inp);
+        assert!(ok, "{err}");
+        assert_eq!(out, "DeHashed-Api-Key: abc123\n", "the child read the header off stdin, argv stayed empty");
     }
 
     #[test]
