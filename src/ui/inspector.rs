@@ -62,6 +62,7 @@ impl RedstringApp {
                 .weak()
                 .small(),
         );
+        super::pathview::section(self, ui, &sel)?;
         ui.add_space(style::GAP);
         if style::danger_btn(
             ui,

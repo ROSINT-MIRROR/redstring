@@ -14,6 +14,7 @@ mod lookups;
 mod logview;
 mod ops;
 mod palette;
+mod pathview;
 mod persist;
 mod style;
 #[cfg(test)]

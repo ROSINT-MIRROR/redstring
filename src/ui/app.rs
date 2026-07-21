@@ -103,6 +103,8 @@ pub struct RedstringApp {
 
     pub layout_anim: Option<super::layout::LayoutAnim>,
 
+    pub active_path: Option<Vec<super::graphalg::PathHop>>,
+
     pub ns_kind: SourceKind,
     pub ns_ref: String,
     pub ns_excerpt: String,
@@ -153,6 +155,7 @@ impl RedstringApp {
             band: None,
             panning: false,
             layout_anim: None,
+            active_path: None,
             prefs_open: false,
             settings_tab: super::chrome::SettingsTab::General,
             registry,
