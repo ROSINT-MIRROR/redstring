@@ -173,4 +173,71 @@ mod tests {
         assert_eq!(graph::node_count(&app).unwrap(), 1, "cancelling keeps the entity");
         invariant::check_graph(&app).unwrap();
     }
+
+    fn sealed(app: &RedstringApp, idx: NodeIndex) -> bool {
+        app.g.g().node_weight(idx).unwrap().payload().sealed
+    }
+
+    #[test]
+    fn bulk_seal_seals_every_selected_entity_then_unseal_clears_them() {
+        let (td, project) = harness::temp_project().unwrap();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project);
+        let mut nodes = Vec::new();
+        for i in 0..4usize {
+            nodes.push(graph::add(&mut app, EntityKind::Person, &format!("victim{i}")).unwrap());
+        }
+        harness::save(&mut app).unwrap();
+        assert!(!app.dirty().unwrap(), "a freshly saved case is clean");
+
+        app.g.set_selected_nodes(nodes.clone());
+        let n = app.apply_seal(&nodes, true).unwrap();
+        assert_eq!(n, 4, "all four flipped from unsealed to sealed");
+        for idx in &nodes {
+            assert!(sealed(&app, *idx), "every selected entity is sealed");
+        }
+        assert!(app.dirty().unwrap(), "bulk seal marks the case dirty");
+
+        harness::save(&mut app).unwrap();
+        let again = app.apply_seal(&nodes, true).unwrap();
+        assert_eq!(again, 0, "re-sealing an already-sealed selection changes nothing");
+        assert!(!app.dirty().unwrap(), "an idempotent re-seal leaves the case clean");
+
+        let cleared = app.apply_seal(&nodes, false).unwrap();
+        assert_eq!(cleared, 4, "bulk unseal clears every flag");
+        for idx in &nodes {
+            assert!(!sealed(&app, *idx), "every selected entity is unsealed");
+        }
+        assert!(app.dirty().unwrap(), "bulk unseal marks the case dirty");
+        invariant::check_graph(&app).unwrap();
+        drop(td);
+    }
+
+    fn seal_escape(app: &mut RedstringApp) {
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        });
+        harness::frame_input(app, input, |a, ui| a.seal_confirm_window(ui)).unwrap();
+    }
+
+    #[test]
+    fn bulk_seal_confirm_gate_holds_until_action_and_escape_cancels() {
+        let mut app = harness::app().unwrap();
+        let a = graph::add(&mut app, EntityKind::Person, "Target").unwrap();
+        app.seal_confirm = Some((vec![a], true));
+
+        harness::frame(&mut app, |app, ui| app.seal_confirm_window(ui)).unwrap();
+        assert!(app.seal_confirm.is_some(), "an untouched confirm stays pending");
+        assert!(!sealed(&app, a), "nothing is sealed before the analyst confirms");
+
+        seal_escape(&mut app);
+        assert!(app.seal_confirm.is_none(), "escape dismisses the seal confirm");
+        assert!(!sealed(&app, a), "cancelling leaves the entity unsealed");
+        invariant::check_graph(&app).unwrap();
+    }
 }
