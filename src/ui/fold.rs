@@ -133,10 +133,25 @@ fn derive_hidden(g: &RsGraph) -> HashSet<NodeIndex> {
     hidden_for(g, &collapsed)
 }
 
-fn pendant_cluster(g: &RsGraph, root: NodeIndex) -> HashSet<NodeIndex> {
-    let mut collapsed = collapsed_set(g);
-    collapsed.insert(root);
-    hidden_for(g, &collapsed)
+fn set_collapsed_flag(g: &mut RsGraph, idx: NodeIndex, value: bool) {
+    let Some(n) = g.node_mut(idx) else {
+        return;
+    };
+    n.payload_mut().collapsed = value;
+}
+
+fn collapse_root(g: &mut RsGraph, root: NodeIndex) -> usize {
+    let before = hidden_for(g, &collapsed_set(g));
+    set_collapsed_flag(g, root, true);
+    let after = hidden_for(g, &collapsed_set(g));
+    after.difference(&before).count()
+}
+
+fn expand_root(g: &mut RsGraph, root: NodeIndex) -> usize {
+    let before = hidden_for(g, &collapsed_set(g));
+    set_collapsed_flag(g, root, false);
+    let after = hidden_for(g, &collapsed_set(g));
+    before.difference(&after).count()
 }
 
 fn fold_target(double: bool, over: Option<NodeIndex>) -> Option<NodeIndex> {
@@ -189,6 +204,16 @@ fn collapsed_with_root(g: &RsGraph, root: NodeIndex) -> HashSet<NodeIndex> {
     c
 }
 
+fn stale_collapsed(
+    before: &HashSet<NodeIndex>,
+    after: &HashSet<NodeIndex>,
+    root: NodeIndex,
+) -> HashSet<NodeIndex> {
+    let mut expected = before.clone();
+    expected.remove(&root);
+    after.difference(&expected).copied().collect()
+}
+
 fn log_components(g: &RsGraph, collapsed: &HashSet<NodeIndex>, op: &str, root: &str) {
     if !crate::log::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
@@ -227,24 +252,6 @@ impl RedstringApp {
             return String::new();
         };
         n.payload().label.clone()
-    }
-
-    fn apply_cluster_collapse(
-        &mut self,
-        root: NodeIndex,
-        cluster: HashSet<NodeIndex>,
-        value: bool,
-    ) -> usize {
-        let count = cluster.len();
-        let mut targets = vec![root];
-        targets.extend(cluster);
-        for idx in targets {
-            let Some(n) = self.g.node_mut(idx) else {
-                continue;
-            };
-            n.payload_mut().collapsed = value;
-        }
-        count
     }
 
     pub fn apply_fold(&mut self) -> Result<(), Error> {
@@ -314,17 +321,15 @@ impl RedstringApp {
 
     pub fn collapse_subtree(&mut self, root: NodeIndex) -> Result<(), Error> {
         let before = collapsed_set(&self.g);
-        let cluster = pendant_cluster(&self.g, root);
         let root_slug = node_slug_str(&self.g, root);
         let label = self.node_caption(root);
         crate::dlog_info!(
             "fold",
-            "collapse_all root={root_slug} before={:?} cluster={:?}",
-            slug_list(&self.g, &before),
-            slug_list(&self.g, &cluster)
+            "collapse_all root={root_slug} before={:?}",
+            slug_list(&self.g, &before)
         );
         log_components(&self.g, &collapsed_with_root(&self.g, root), "collapse_all", &root_slug);
-        let count = self.apply_cluster_collapse(root, cluster, true);
+        let count = collapse_root(&mut self.g, root);
         let after = collapsed_set(&self.g);
         crate::dlog_info!(
             "fold",
@@ -337,27 +342,29 @@ impl RedstringApp {
 
     pub fn expand_subtree(&mut self, root: NodeIndex) -> Result<(), Error> {
         let before = collapsed_set(&self.g);
-        let cluster = pendant_cluster(&self.g, root);
         let root_slug = node_slug_str(&self.g, root);
         let label = self.node_caption(root);
         crate::dlog_info!(
             "fold",
-            "expand_all root={root_slug} before={:?} cluster={:?}",
-            slug_list(&self.g, &before),
-            slug_list(&self.g, &cluster)
+            "expand_all root={root_slug} before={:?}",
+            slug_list(&self.g, &before)
         );
-        log_components(&self.g, &collapsed_with_root(&self.g, root), "expand_all", &root_slug);
-        let count = self.apply_cluster_collapse(root, cluster, false);
+        log_components(&self.g, &before, "expand_all", &root_slug);
+        let count = expand_root(&mut self.g, root);
         let after = collapsed_set(&self.g);
-        if after.is_empty() {
-            crate::dlog_info!("fold", "expand_all root={root_slug} after=[] shown={count}");
+        let stale = stale_collapsed(&before, &after, root);
+        if stale.is_empty() {
+            crate::dlog_info!(
+                "fold",
+                "expand_all root={root_slug} after={:?} shown={count}",
+                slug_list(&self.g, &after)
+            );
         } else {
             crate::dlog_warn!(
                 "fold",
-                "expand_all root={root_slug} left {} STALE collapsed flags {:?} — cluster was computed from {} before-collapsed nodes, not collapse's set",
-                after.len(),
-                slug_list(&self.g, &after),
-                before.len()
+                "expand_all root={root_slug} left {} STALE collapsed flags {:?} — expand must clear only the root from the explicit-collapse set",
+                stale.len(),
+                slug_list(&self.g, &stale)
             );
         }
         self.status = format!("expanded {label} — {count} node(s) shown");
@@ -442,13 +449,18 @@ impl RedstringApp {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use egui::Pos2;
     use egui_graphs::Graph;
     use petgraph::graph::NodeIndex;
     use petgraph::stable_graph::StableGraph;
 
     use super::super::app::RsGraph;
-    use super::{derive_hidden, fold_target, menu_should_close};
+    use super::{
+        collapse_root, collapsed_set, derive_hidden, expand_root, fold_target, menu_should_close,
+        stale_collapsed,
+    };
     use crate::model::{
         Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind, Role,
         Verification,
@@ -612,5 +624,111 @@ mod tests {
         link(&mut g, b, a);
         set_collapsed(&mut g, a, true);
         assert_eq!(hidden_slugs(&g), vec!["b".to_string()]);
+    }
+
+    fn collapsed_slugs(g: &RsGraph) -> Vec<String> {
+        let mut v: Vec<String> = collapsed_set(g)
+            .iter()
+            .filter_map(|idx| g.node(*idx).map(|n| n.payload().slug.clone()))
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn menu_collapse_then_expand_is_identity_from_a_clean_board() {
+        let (mut g, ids) = chain();
+        let root = ids[1];
+        let c0 = collapsed_set(&g);
+        let h0 = derive_hidden(&g);
+        let folded = collapse_root(&mut g, root);
+        assert_eq!(folded, 1);
+        assert_eq!(collapsed_slugs(&g), vec!["b".to_string()]);
+        let shown = expand_root(&mut g, root);
+        assert_eq!(shown, 1);
+        assert_eq!(collapsed_set(&g), c0);
+        assert_eq!(derive_hidden(&g), h0);
+    }
+
+    #[test]
+    fn menu_collapse_then_expand_leaves_unrelated_collapses_untouched() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn(&mut g, "a");
+        let b = spawn(&mut g, "b");
+        let c = spawn(&mut g, "c");
+        let x = spawn(&mut g, "x");
+        let y = spawn(&mut g, "y");
+        let z = spawn(&mut g, "z");
+        link(&mut g, a, b);
+        link(&mut g, b, c);
+        link(&mut g, x, y);
+        link(&mut g, y, z);
+        set_collapsed(&mut g, y, true);
+        let c0 = collapsed_set(&g);
+        let h0 = derive_hidden(&g);
+        let folded = collapse_root(&mut g, b);
+        assert_eq!(folded, 2);
+        let shown = expand_root(&mut g, b);
+        assert_eq!(shown, 2);
+        assert_eq!(collapsed_set(&g), c0);
+        assert_eq!(derive_hidden(&g), h0);
+        assert!(collapsed_set(&g).contains(&y));
+    }
+
+    #[test]
+    fn repeated_collapse_expand_never_accumulates_stale_flags() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let hetzner = spawn(&mut g, "hetzner");
+        let dash = spawn(&mut g, "dash");
+        let ip = spawn(&mut g, "ip");
+        link(&mut g, dash, ip);
+        link(&mut g, hetzner, ip);
+        let mut folds: Vec<Vec<String>> = Vec::new();
+        let mut shows: Vec<Vec<String>> = Vec::new();
+        for _ in 0..5 {
+            let folded = collapse_root(&mut g, ip);
+            assert_eq!(folded, 2);
+            assert_eq!(collapsed_slugs(&g), vec!["ip".to_string()]);
+            folds.push(hidden_slugs(&g));
+            let before_expand = collapsed_set(&g);
+            let shown = expand_root(&mut g, ip);
+            assert_eq!(shown, 2);
+            let after_expand = collapsed_set(&g);
+            assert!(stale_collapsed(&before_expand, &after_expand, ip).is_empty());
+            assert!(after_expand.is_empty());
+            shows.push(hidden_slugs(&g));
+        }
+        assert!(folds.windows(2).all(|w| w[0] == w[1]));
+        assert!(shows.windows(2).all(|w| w[0] == w[1]));
+        assert!(folds.iter().all(|s| *s == vec!["dash".to_string(), "hetzner".to_string()]));
+        assert!(shows.iter().all(|s| s.is_empty()));
+    }
+
+    #[test]
+    fn collapse_root_is_idempotent_and_expand_inverts_it() {
+        let (mut g, ids) = chain();
+        let root = ids[2];
+        let f1 = collapse_root(&mut g, root);
+        assert_eq!(f1, 1);
+        let s1 = hidden_slugs(&g);
+        let f2 = collapse_root(&mut g, root);
+        assert_eq!(f2, 0);
+        let s2 = hidden_slugs(&g);
+        assert_eq!(s1, s2);
+        assert_eq!(collapsed_slugs(&g), vec!["c".to_string()]);
+        let back = expand_root(&mut g, root);
+        assert_eq!(back, 1);
+        assert!(hidden_slugs(&g).is_empty());
+        assert!(collapsed_set(&g).is_empty());
+    }
+
+    #[test]
+    fn stale_collapsed_detects_a_leftover_derived_member() {
+        let (_g, ids) = chain();
+        let before: HashSet<NodeIndex> = [ids[1]].into_iter().collect();
+        let after: HashSet<NodeIndex> = [ids[0]].into_iter().collect();
+        let stale = stale_collapsed(&before, &after, ids[1]);
+        let expected: HashSet<NodeIndex> = [ids[0]].into_iter().collect();
+        assert_eq!(stale, expected);
     }
 }
