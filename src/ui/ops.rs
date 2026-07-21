@@ -7,7 +7,7 @@ use crate::model::{
     RelationKind, Role, Source, SourceKind, Verification, apply_preset,
 };
 
-use super::app::RedstringApp;
+use super::app::{RedstringApp, RsGraph};
 
 impl RedstringApp {
     pub fn seed_demo(&mut self) -> Result<(), Error> {
@@ -61,36 +61,6 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn unique_slug(&self, label: &str) -> String {
-        let mut base: String = label
-            .to_lowercase()
-            .chars()
-            .map(|c| if c.is_alphanumeric() { c } else { '_' })
-            .collect::<String>()
-            .split('_')
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("_");
-        if base.is_empty() {
-            base = "entity".to_owned();
-        }
-        if !self.slug_taken(&base) {
-            return base;
-        }
-        let mut n = 2;
-        loop {
-            let candidate = format!("{base}_{n}");
-            if !self.slug_taken(&candidate) {
-                return candidate;
-            }
-            n += 1;
-        }
-    }
-
-    fn slug_taken(&self, slug: &str) -> bool {
-        self.g.g().node_weights().any(|n| n.payload().slug == slug)
-    }
-
     pub fn node_slug(&self, idx: NodeIndex) -> Result<String, Error> {
         let Some(n) = self.g.g().node_weight(idx) else {
             return Ok(String::new());
@@ -104,25 +74,7 @@ impl RedstringApp {
         label: String,
         pos: Pos2,
     ) -> Result<NodeIndex, Error> {
-        let meta = &KIND_META[kind as usize];
-        let ent = Entity {
-            slug: self.unique_slug(&label),
-            kind,
-            label: label.clone(),
-            value: String::new(),
-            observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        };
-        let idx = self
-            .g
-            .add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos);
+        let idx = spawn_node(&mut self.g, kind, &label, "", pos)?;
         crate::dlog_info!("ops", "add_entity kind={:?} label={label:?} idx={}", kind, idx.index());
         Ok(idx)
     }
@@ -137,15 +89,7 @@ impl RedstringApp {
     }
 
     pub fn apply_label(&mut self, idx: NodeIndex, label: &str) -> Result<(), Error> {
-        let slug = self.unique_slug(label);
-        let Some(n) = self.g.node_mut(idx) else {
-            return Ok(());
-        };
-        let e = n.payload_mut();
-        e.label = label.to_owned();
-        e.slug = slug;
-        crate::dlog_info!("ops", "rename idx={} slug={} label={label:?}", idx.index(), e.slug);
-        Ok(())
+        relabel(&mut self.g, idx, label)
     }
 
     pub fn set_node_size(&mut self, idx: NodeIndex, size: f32) -> Result<(), Error> {
@@ -218,8 +162,133 @@ impl RedstringApp {
     }
 }
 
+pub fn spawn_node(
+    g: &mut RsGraph,
+    kind: EntityKind,
+    label: &str,
+    value: &str,
+    pos: Pos2,
+) -> Result<NodeIndex, Error> {
+    let meta = &KIND_META[kind as usize];
+    let ent = Entity {
+        slug: slug_unique(g, label, None),
+        kind,
+        label: label.to_owned(),
+        value: value.to_owned(),
+        observations: Vec::new(),
+        role: Role::Unset,
+        occupation: None,
+        note: String::new(),
+        image: None,
+        size: DEFAULT_NODE_SIZE,
+        boost: 1.0,
+        collapsed: false,
+        hidden: false,
+    };
+    let idx = g.add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos);
+    Ok(idx)
+}
+
+fn relabel(g: &mut RsGraph, idx: NodeIndex, label: &str) -> Result<(), Error> {
+    let slug = slug_unique(g, label, Some(idx));
+    let Some(n) = g.node_mut(idx) else {
+        return Ok(());
+    };
+    let e = n.payload_mut();
+    e.label = label.to_owned();
+    e.slug = slug;
+    crate::dlog_info!("ops", "rename idx={} slug={} label={label:?}", idx.index(), e.slug);
+    Ok(())
+}
+
+fn slug_unique(g: &RsGraph, label: &str, exclude: Option<NodeIndex>) -> String {
+    let mut base: String = label
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    if base.is_empty() {
+        base = "entity".to_owned();
+    }
+    if !slug_taken(g, &base, exclude) {
+        return base;
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}_{n}");
+        if !slug_taken(g, &candidate, exclude) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+fn slug_taken(g: &RsGraph, slug: &str, exclude: Option<NodeIndex>) -> bool {
+    g.g().node_indices().any(|i| {
+        if Some(i) == exclude {
+            return false;
+        }
+        let Some(n) = g.g().node_weight(i) else {
+            return false;
+        };
+        n.payload().slug == slug
+    })
+}
+
 pub fn spiral(n: usize) -> Result<Pos2, Error> {
     let a = n as f32 * 2.399_963_2;
     let r = 40.0 + 16.0 * n as f32;
     Ok(Pos2::new(r * a.cos(), r * a.sin()))
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::Pos2;
+    use egui_graphs::Graph;
+    use petgraph::stable_graph::StableGraph;
+
+    use super::super::app::RsGraph;
+    use super::{relabel, slug_unique, spawn_node};
+    use crate::model::EntityKind;
+
+    #[test]
+    fn spawn_slug_tracks_label() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let idx = spawn_node(&mut g, EntityKind::Domain, "evil.com", "evil.com", Pos2::ZERO).unwrap();
+        assert_eq!(g.node(idx).unwrap().payload().slug, "evil_com");
+    }
+
+    #[test]
+    fn inspector_rename_regenerates_slug() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let idx = spawn_node(&mut g, EntityKind::Domain, "Domain", "", Pos2::ZERO).unwrap();
+        assert_eq!(g.node(idx).unwrap().payload().slug, "domain");
+        relabel(&mut g, idx, "evil.com").unwrap();
+        let e = g.node(idx).unwrap().payload();
+        assert_eq!(e.label, "evil.com");
+        assert_eq!(e.slug, "evil_com");
+        assert_eq!(e.slug, slug_unique(&g, "evil.com", Some(idx)));
+    }
+
+    #[test]
+    fn recommitting_same_label_keeps_a_stable_slug() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let idx = spawn_node(&mut g, EntityKind::Domain, "evil.com", "evil.com", Pos2::ZERO).unwrap();
+        relabel(&mut g, idx, "evil.com").unwrap();
+        relabel(&mut g, idx, "evil.com").unwrap();
+        assert_eq!(g.node(idx).unwrap().payload().slug, "evil_com");
+    }
+
+    #[test]
+    fn rename_colliding_with_another_node_suffixes() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        spawn_node(&mut g, EntityKind::Domain, "evil.com", "evil.com", Pos2::ZERO).unwrap();
+        let b = spawn_node(&mut g, EntityKind::Domain, "other", "other", Pos2::ZERO).unwrap();
+        relabel(&mut g, b, "evil.com").unwrap();
+        assert_eq!(g.node(b).unwrap().payload().slug, "evil_com_2");
+    }
 }

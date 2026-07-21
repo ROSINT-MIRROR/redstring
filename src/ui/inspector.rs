@@ -100,6 +100,7 @@ impl RedstringApp {
 
     fn node_inspector(&mut self, ui: &mut egui::Ui, nidx: NodeIndex) -> Result<(), Error> {
         let mut picked_image: Option<String> = None;
+        let mut relabel: Option<String> = None;
         let mut delete = false;
         let author = self.author.clone();
 
@@ -114,9 +115,12 @@ impl RedstringApp {
 
         ui.horizontal(|ui| {
             ui.label("label");
-            ui.add(
+            let resp = ui.add(
                 egui::TextEdit::singleline(&mut e.label).desired_width(f32::INFINITY),
             );
+            if resp.lost_focus() {
+                relabel = Some(e.label.clone());
+            }
         });
         ui.horizontal(|ui| {
             ui.label("value")
@@ -240,6 +244,7 @@ impl RedstringApp {
         }
 
         self.apply_picked_image(ui.ctx(), nidx, picked_image)?;
+        self.apply_relabel(nidx, relabel)?;
         self.start_module_request(ui, nidx, run_module)?;
         if delete {
             self.g.remove_node(nidx);
@@ -263,6 +268,13 @@ impl RedstringApp {
         };
         node.payload_mut().image = Some(resolved);
         Ok(())
+    }
+
+    fn apply_relabel(&mut self, nidx: NodeIndex, relabel: Option<String>) -> Result<(), Error> {
+        let Some(label) = relabel else {
+            return Ok(());
+        };
+        self.apply_label(nidx, &label)
     }
 
     fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> Result<String, Error> {
