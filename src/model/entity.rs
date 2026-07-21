@@ -19,6 +19,7 @@ pub enum Category {
     Events,
     Other,
     Web,
+    Commerce,
 }
 
 pub struct CategoryMeta {
@@ -42,7 +43,7 @@ const fn c(
     }
 }
 
-pub const CATEGORY_META: [CategoryMeta; 9] = [
+pub const CATEGORY_META: [CategoryMeta; 10] = [
     c(Category::People, "People", egui_phosphor::regular::USERS_THREE, (100, 170, 255)),
     c(Category::Organizations, "Organizations", egui_phosphor::regular::BUILDINGS, (255, 170, 80)),
     c(Category::Digital, "Digital", egui_phosphor::regular::GLOBE, (100, 210, 175)),
@@ -52,6 +53,7 @@ pub const CATEGORY_META: [CategoryMeta; 9] = [
     c(Category::Events, "Events", egui_phosphor::regular::CALENDAR, (250, 125, 125)),
     c(Category::Other, "Other", egui_phosphor::regular::QUESTION, (170, 170, 170)),
     c(Category::Web, "Web", egui_phosphor::regular::GLOBE_HEMISPHERE_WEST, (175, 125, 235)),
+    c(Category::Commerce, "Commerce", egui_phosphor::regular::STOREFRONT, (224, 120, 160)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -114,6 +116,8 @@ pub enum EntityKind {
     DnsRecord,
     Asn,
     TrackerId,
+    Product,
+    Favicon,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -257,7 +261,7 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 58] = [
+pub const KIND_META: [KindMeta; 60] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role]),
@@ -316,6 +320,8 @@ pub const KIND_META: [KindMeta; 58] = [
     k(EntityKind::DnsRecord, "DNS record", egui_phosphor::regular::ADDRESS_BOOK, Category::Digital, (80, 200, 190), &["record_type", "name", "value", "ttl"], &["dns", "a record", "mx", "spf", "txt", "ns"], ValueFormat::Free, &[]),
     k(EntityKind::Asn, "ASN", egui_phosphor::regular::SHARE_NETWORK, Category::Digital, (70, 190, 200), &["asn", "as_org", "country"], &["autonomous system", "as number", "netblock", "asn"], ValueFormat::Free, &[]),
     k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free, &[]),
+    k(EntityKind::Product, "Product", egui_phosphor::regular::PILL, Category::Commerce, (224, 128, 168), &["brand", "claimed_cure", "category", "price", "currency", "registry_status"], &["supplement", "drug", "medicine", "sku", "pill", "remedy"], ValueFormat::Free, &[]),
+    k(EntityKind::Favicon, "Favicon", egui_phosphor::regular::IMAGE, Category::Digital, (120, 210, 205), &["mmh3_hash", "sha256", "source_url"], &["favicon", "icon", "favicon-hash"], ValueFormat::Free, &[]),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -714,6 +720,33 @@ mod tests {
         assert!(
             !p.attrs.contains(&"occupation"),
             "occupation is now the Entity.occupation facet — it must not double as a suggested observation"
+        );
+    }
+
+    #[test]
+    fn commerce_and_pivot_kinds_resolve_by_slug_and_carry_no_facets() {
+        let by_slug =
+            |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("product"), Some(EntityKind::Product), "Product resolves via its label slug");
+        assert_eq!(by_slug("favicon"), Some(EntityKind::Favicon), "Favicon resolves via its label slug");
+
+        assert_eq!(KIND_META[EntityKind::Product as usize].category, Category::Commerce);
+        assert_eq!(KIND_META[EntityKind::Favicon as usize].category, Category::Digital);
+        assert_eq!(KIND_META[EntityKind::Product as usize].value_format, ValueFormat::Free);
+        assert_eq!(KIND_META[EntityKind::Favicon as usize].value_format, ValueFormat::Free);
+
+        assert!(
+            KIND_META[EntityKind::Product as usize].facets.is_empty(),
+            "Product is a commerce object, not an actor — it declares no facets"
+        );
+        assert!(
+            KIND_META[EntityKind::Favicon as usize].facets.is_empty(),
+            "Favicon is a hash pivot, not an actor — it declares no facets"
+        );
+
+        assert!(
+            CATEGORY_META.iter().any(|c| c.category == Category::Commerce),
+            "Commerce category must own a CATEGORY_META row"
         );
     }
 }

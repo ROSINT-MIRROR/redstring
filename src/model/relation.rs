@@ -63,6 +63,8 @@ pub enum RelationKind {
     LicensedBy,
     RegisteredAt,
     IncorporatedIn,
+    Impersonates,
+    HarmedBy,
     OwnsDomain,
     Hosts,
     ResolvesTo,
@@ -102,6 +104,8 @@ pub enum RelationKind {
     Loads,
     Leaks,
     RedirectsTo,
+    Sells,
+    AdvertisedOn,
 }
 
 pub struct RelMeta {
@@ -119,7 +123,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 95] = [
+pub const RELATION_META: [RelMeta; 99] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -176,6 +180,8 @@ pub const RELATION_META: [RelMeta; 95] = [
     r(RelationKind::LicensedBy, "licensed by", "legal/state"),
     r(RelationKind::RegisteredAt, "registered at", "legal/state"),
     r(RelationKind::IncorporatedIn, "incorporated in", "legal/state"),
+    r(RelationKind::Impersonates, "impersonates", "legal/state"),
+    r(RelationKind::HarmedBy, "harmed by", "legal/state"),
     r(RelationKind::OwnsDomain, "owns domain", "digital/infra"),
     r(RelationKind::Hosts, "hosts", "digital/infra"),
     r(RelationKind::ResolvesTo, "resolves to", "digital/infra"),
@@ -215,6 +221,8 @@ pub const RELATION_META: [RelMeta; 95] = [
     r(RelationKind::Loads, "loads", "web/infra"),
     r(RelationKind::Leaks, "leaks", "web/infra"),
     r(RelationKind::RedirectsTo, "redirects to", "web/infra"),
+    r(RelationKind::Sells, "sells", "commerce"),
+    r(RelationKind::AdvertisedOn, "advertised on", "commerce"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -283,7 +291,23 @@ mod tests {
                 seen_cats.push(m.category);
             }
         }
-        assert_eq!(seen_cats.len(), 11, "expected the 11 verb families");
+        assert_eq!(seen_cats.len(), 12, "expected the 12 verb families");
+    }
+
+    #[test]
+    fn scam_and_commerce_relations_resolve_by_slug_with_expected_families() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("impersonates"), Some(RelationKind::Impersonates));
+        assert_eq!(by_slug("harmed_by"), Some(RelationKind::HarmedBy));
+        assert_eq!(by_slug("sells"), Some(RelationKind::Sells));
+        assert_eq!(by_slug("advertised_on"), Some(RelationKind::AdvertisedOn));
+
+        assert_eq!(RELATION_META[RelationKind::Impersonates as usize].category, "legal/state");
+        assert_eq!(RELATION_META[RelationKind::HarmedBy as usize].category, "legal/state");
+        assert_eq!(RELATION_META[RelationKind::Sells as usize].category, "commerce");
+        assert_eq!(RELATION_META[RelationKind::AdvertisedOn as usize].category, "commerce");
     }
 
     #[test]
