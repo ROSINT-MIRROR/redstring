@@ -219,6 +219,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: String::new(),
+            sealed: false,
             observations: vec![],
             role: Role::Unset,
             occupation: None,

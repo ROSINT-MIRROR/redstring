@@ -108,6 +108,9 @@ pub struct EntityRec {
 
     #[serde(default)]
     pub value: String,
+
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
     #[serde(default)]
     pub observations: Vec<Observation>,
 
@@ -123,6 +126,10 @@ pub struct EntityRec {
 
 fn role_is_unset(role: &Role) -> bool {
     *role == Role::Unset
+}
+
+fn sealed_is_false(sealed: &bool) -> bool {
+    !*sealed
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -207,6 +214,7 @@ mod tests {
         let cf: CaseFile = ron::from_str(s).expect("minimal file must parse");
         assert_eq!(cf.data.entities.len(), 2);
         assert_eq!(cf.data.relations.len(), 1);
+        assert!(!cf.data.entities[0].sealed, "sealed omitted → false (existing files stay valid)");
         assert!(cf.data.entities[0].occupation.is_none(), "occupation omitted → None");
         assert!(cf.data.entities[0].image.is_none());
         assert!(cf.data.relations[0].sources.is_empty());
@@ -247,6 +255,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "J. Doe".into(),
             value: "John Doe".into(),
+            sealed: true,
             observations: vec![
                 crate::model::Observation::stamp(
                     "dob".into(),
@@ -283,6 +292,7 @@ mod tests {
                 archive_url: Some("https://web.archive.org/web/y".into()),
                 ots: Some("evidence/y.ots".into()),
                 tier: crate::model::SourceTier::Primary,
+                sealed: true,
             }],
         });
         cf.display.positions.insert("doe".into(), (12.5, -40.0));
@@ -297,6 +307,11 @@ mod tests {
         let back: CaseFile = ron::from_str(&s).unwrap();
         assert_eq!(cf, back);
         assert_eq!(back.display.sizes.get("doe").copied(), Some(3.5));
+        assert!(back.data.entities[0].sealed, "a sealed entity must round-trip through save→load");
+        assert!(
+            back.data.relations[0].sources[0].sealed,
+            "a sealed source must round-trip through save→load"
+        );
         assert_eq!(back.data.entities[0].role, Role::Suspect, "role must round-trip");
         assert_eq!(
             back.data.entities[0].occupation,
@@ -306,5 +321,26 @@ mod tests {
             }),
             "occupation facet must round-trip"
         );
+    }
+
+    #[test]
+    fn unsealed_entity_head_stays_byte_identical() {
+        let rec = EntityRec {
+            slug: "doe".into(),
+            kind: EntityKind::Person,
+            label: "J. Doe".into(),
+            value: String::new(),
+            sealed: false,
+            observations: vec![],
+            role: Role::Unset,
+            occupation: None,
+            image: None,
+        };
+        let ron_s = ron::ser::to_string(&rec).unwrap();
+        assert!(!ron_s.contains("sealed"), "an unsealed entity head must not gain a sealed key: {ron_s}");
+        let mut sealed = rec.clone();
+        sealed.sealed = true;
+        let ron_s = ron::ser::to_string(&sealed).unwrap();
+        assert!(ron_s.contains("sealed"), "a sealed entity head must carry the flag: {ron_s}");
     }
 }

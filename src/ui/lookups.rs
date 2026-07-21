@@ -572,6 +572,7 @@ mod tests {
             kind: EntityKind::Domain,
             label: label.to_owned(),
             value: value.to_owned(),
+            sealed: false,
             observations: Vec::new(),
             role: Role::Unset,
             occupation: None,

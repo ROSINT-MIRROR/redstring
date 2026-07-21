@@ -126,10 +126,17 @@ pub struct Observation {
     pub created_at: i64,
     #[serde(default)]
     pub sources: Vec<Source>,
+
+    #[serde(default, skip_serializing_if = "sealed_is_false")]
+    pub sealed: bool,
 }
 
 fn full_confidence() -> u8 {
     DEFAULT_CONFIDENCE
+}
+
+fn sealed_is_false(sealed: &bool) -> bool {
+    !*sealed
 }
 
 impl Observation {
@@ -150,6 +157,7 @@ impl Observation {
             author,
             created_at: now_unix()?,
             sources: Vec::new(),
+            sealed: false,
         })
     }
 }
@@ -257,6 +265,28 @@ mod tests {
         assert_eq!(o.author, author);
         assert!(o.created_at > 0);
         assert!(o.sources.is_empty());
+    }
+
+    #[test]
+    fn sealed_defaults_false_omitted_and_round_trips() {
+        let o = Observation::stamp(
+            "dob".to_owned(),
+            ObsValue::Text("2009-05-01".to_owned()),
+            Origin::Manual,
+            Verification::AnalystAsserted,
+            Author::default(),
+        )
+        .unwrap();
+        assert!(!o.sealed, "a fresh observation is not sealed");
+        let json = serde_json::to_string(&o).unwrap();
+        assert!(!json.contains("sealed"), "unsealed obs must not bloat the line: {json}");
+
+        let mut sealed = o.clone();
+        sealed.sealed = true;
+        let json = serde_json::to_string(&sealed).unwrap();
+        assert!(json.contains("\"sealed\":true"), "sealed obs carries the flag: {json}");
+        let back: Observation = serde_json::from_str(&json).unwrap();
+        assert!(back.sealed, "sealed must round-trip through the observation line");
     }
 
     #[test]

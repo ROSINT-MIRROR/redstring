@@ -119,6 +119,7 @@ mod tests {
             kind: EntityKind::Person,
             label: slug.into(),
             value: String::new(),
+            sealed: false,
             observations: vec![],
             role: Role::Unset,
             occupation: None,

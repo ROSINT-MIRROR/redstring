@@ -3,22 +3,89 @@
 
 
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::error::Error;
-use crate::model::{CaseFile, KIND_META, RELATION_META};
+use crate::model::{CaseFile, KIND_META, RELATION_META, Role};
 
 use super::layout::Project;
 
 pub fn write_json(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("case.json");
-    let text = serde_json::to_string_pretty(cf).map_err(|source| Error::JsonSer { source })?;
+    let public = redact(cf);
+    let text = serde_json::to_string_pretty(&public).map_err(|source| Error::JsonSer { source })?;
     std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
 }
 
 pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
     let path = project.root.join("graph.md");
-    std::fs::write(&path, graph_md(cf)).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
+    let public = redact(cf);
+    std::fs::write(&path, graph_md(&public))
+        .map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
     Ok(())
+}
+
+const SEALED_LABEL: &str = "[sealed]";
+
+fn redact(cf: &CaseFile) -> CaseFile {
+    let mut out = cf.clone();
+    let mut remap: BTreeMap<String, String> = BTreeMap::new();
+    for e in &mut out.data.entities {
+        if e.sealed {
+            let alias = sealed_alias(&e.slug);
+            remap.insert(e.slug.clone(), alias.clone());
+            e.slug = alias;
+            e.label = SEALED_LABEL.to_owned();
+            e.value = String::new();
+            e.image = None;
+            e.occupation = None;
+            e.role = Role::Unset;
+            e.observations.clear();
+        } else {
+            e.observations.retain(|o| !o.sealed);
+        }
+    }
+    for r in &mut out.data.relations {
+        r.from = resolve(&remap, &r.from);
+        r.to = resolve(&remap, &r.to);
+        r.sources.retain(|s| !s.sealed);
+    }
+    out.display.positions = remapped_map(&out.display.positions, &remap);
+    out.display.sizes = remapped_map(&out.display.sizes, &remap);
+    out.display.collapsed = remapped_set(&out.display.collapsed, &remap);
+    out
+}
+
+fn resolve(remap: &BTreeMap<String, String>, slug: &str) -> String {
+    let Some(alias) = remap.get(slug) else {
+        return slug.to_owned();
+    };
+    alias.clone()
+}
+
+fn remapped_map<V: Clone>(
+    src: &BTreeMap<String, V>,
+    remap: &BTreeMap<String, String>,
+) -> BTreeMap<String, V> {
+    src.iter().map(|(k, v)| (resolve(remap, k), v.clone())).collect()
+}
+
+fn remapped_set(src: &BTreeSet<String>, remap: &BTreeMap<String, String>) -> BTreeSet<String> {
+    src.iter().map(|k| resolve(remap, k)).collect()
+}
+
+fn sealed_alias(slug: &str) -> String {
+    format!("sealed_{:016x}", fnv1a(slug))
+}
+
+fn fnv1a(s: &str) -> u64 {
+    let mut h = 0xcbf29ce484222325u64;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }
 
 
@@ -58,9 +125,48 @@ fn label_safe(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::model::{
-        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Role, Source,
-        SourceKind, Verification,
+        Author, CaseMeta, EntityKind, EntityRec, ObsValue, Observation, Origin, RelationKind,
+        RelationRec, Role, Source, SourceKind, Verification,
     };
+
+    fn obs(name: &str, value: &str) -> Observation {
+        Observation::stamp(
+            name.to_owned(),
+            ObsValue::Text(value.to_owned()),
+            Origin::Manual,
+            Verification::AnalystAsserted,
+            Author::default(),
+        )
+        .unwrap()
+    }
+
+    fn ent(slug: &str, kind: EntityKind, label: &str, value: &str, sealed: bool) -> EntityRec {
+        EntityRec {
+            slug: slug.to_owned(),
+            kind,
+            label: label.to_owned(),
+            value: value.to_owned(),
+            sealed,
+            observations: vec![],
+            role: Role::Unset,
+            occupation: None,
+            image: None,
+        }
+    }
+
+    fn rel(from: &str, to: &str, kind: RelationKind) -> RelationRec {
+        RelationRec {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            kind,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![],
+        }
+    }
 
     #[test]
     fn mermaid_shape_and_escaping() {
@@ -71,6 +177,7 @@ mod tests {
             kind: EntityKind::Person,
             label: "Radu \"the Brick\" P.".into(),
             value: String::new(),
+            sealed: false,
             observations: vec![],
             role: Role::Unset,
             occupation: None,
@@ -81,6 +188,7 @@ mod tests {
             kind: EntityKind::Organization,
             label: "Strada Sigur SRL".into(),
             value: String::new(),
+            sealed: false,
             observations: vec![],
             role: Role::Unset,
             occupation: None,
@@ -121,5 +229,149 @@ mod tests {
         
         assert!(md.contains("radu -->|owns| strada_sigur"), "{md}");
         assert!(md.contains("strada_sigur -.->|paid ⚠| radu"), "{md}");
+    }
+
+    #[test]
+    fn sealed_entity_redacted_from_all_derived_outputs() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("protected").unwrap();
+
+        let mut victim = ent(
+            "jane_victim",
+            EntityKind::Person,
+            "Jane Victim",
+            "jane.victim@example.com",
+            true,
+        );
+        victim.observations = vec![obs("dob", "2009-05-01")];
+        victim.image = Some("entities/jane_victim/face.png".into());
+        cf.data.entities.push(victim);
+        cf.data
+            .entities
+            .push(ent("acme", EntityKind::Organization, "Acme Care Home", "", false));
+        cf.data.relations.push(rel("acme", "jane_victim", RelationKind::Owns));
+        cf.display.positions.insert("jane_victim".into(), (10.0, 20.0));
+
+        let public = redact(&cf);
+        let md = graph_md(&public);
+        let json = serde_json::to_string_pretty(&public).unwrap();
+        let alias = sealed_alias("jane_victim");
+
+        for leak in [
+            "Jane Victim",
+            "jane.victim@example.com",
+            "jane_victim",
+            "2009-05-01",
+            "face.png",
+        ] {
+            assert!(!md.contains(leak), "graph.md leaked sealed '{leak}':\n{md}");
+            assert!(!json.contains(leak), "case.json leaked sealed '{leak}':\n{json}");
+        }
+
+        assert!(json.contains("[sealed]"), "case.json must show the placeholder: {json}");
+        assert!(md.contains(&alias), "graph.md must carry the anonymized id: {md}");
+        assert!(md.contains("Acme Care Home"), "an unsealed node must survive: {md}");
+
+        let redacted = public
+            .data
+            .entities
+            .iter()
+            .find(|e| e.slug == alias)
+            .expect("the sealed entity keeps a stable anonymized slug");
+        assert_eq!(redacted.label, SEALED_LABEL);
+        assert!(redacted.value.is_empty());
+        assert!(redacted.observations.is_empty(), "sealed obs must be omitted");
+        assert!(redacted.image.is_none(), "the image path leaks the name — drop it");
+
+        assert_eq!(public.data.relations[0].from, "acme", "the unsealed endpoint is untouched");
+        assert_eq!(public.data.relations[0].to, alias, "the edge still connects, anonymized");
+        assert_eq!(
+            public.display.positions.get(&alias).copied(),
+            Some((10.0, 20.0)),
+            "display keys must follow the alias, not leak the real slug"
+        );
+        assert!(
+            public.display.positions.get("jane_victim").is_none(),
+            "the real slug must not survive as a display key"
+        );
+    }
+
+    #[test]
+    fn unsealed_derive_output_is_byte_identical() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("open case").unwrap();
+        let mut d = ent("doe", EntityKind::Person, "J. Doe", "", false);
+        d.observations = vec![obs("dob", "1971-03-04")];
+        cf.data.entities.push(d);
+        cf.data
+            .entities
+            .push(ent("shell", EntityKind::Organization, "Shell Co", "", false));
+        cf.data.relations.push(rel("doe", "shell", RelationKind::Controls));
+        cf.display.positions.insert("doe".into(), (1.0, 2.0));
+        cf.display.sizes.insert("doe".into(), 3.0);
+        cf.display.collapsed.insert("shell".into());
+
+        let before_md = graph_md(&cf);
+        let before_json = serde_json::to_string_pretty(&cf).unwrap();
+        let public = redact(&cf);
+
+        assert_eq!(public, cf, "redact is a no-op when nothing is sealed");
+        assert_eq!(graph_md(&public), before_md, "graph.md stays byte-identical");
+        assert_eq!(
+            serde_json::to_string_pretty(&public).unwrap(),
+            before_json,
+            "case.json stays byte-identical"
+        );
+    }
+
+    #[test]
+    fn sealed_observation_dropped_from_unsealed_entity() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("mixed").unwrap();
+        let mut auditor = ent("auditor", EntityKind::Person, "The Auditor", "", false);
+        let mut secret = obs("informant_name", "Deep Throat");
+        secret.sealed = true;
+        auditor.observations = vec![secret, obs("role_title", "Compliance Auditor")];
+        cf.data.entities.push(auditor);
+
+        let json = serde_json::to_string_pretty(&redact(&cf)).unwrap();
+        assert!(!json.contains("Deep Throat"), "sealed obs content must not leak: {json}");
+        assert!(!json.contains("informant_name"), "sealed obs key must not leak: {json}");
+        assert!(json.contains("Compliance Auditor"), "an unsealed obs survives: {json}");
+    }
+
+    #[test]
+    fn sealed_source_dropped_from_relation() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("wire").unwrap();
+        cf.data
+            .entities
+            .push(ent("a", EntityKind::Person, "A", "", false));
+        cf.data
+            .entities
+            .push(ent("b", EntityKind::Person, "B", "", false));
+        let mut edge = rel("a", "b", RelationKind::Controls);
+        edge.sources = vec![
+            Source {
+                kind: SourceKind::Note,
+                reference: "confidential-wire-tap".into(),
+                excerpt: "the intercept transcript".into(),
+                sealed: true,
+                ..Default::default()
+            },
+            Source {
+                kind: SourceKind::Url,
+                reference: "https://public.example/filing".into(),
+                ..Default::default()
+            },
+        ];
+        cf.data.relations.push(edge);
+
+        let public = redact(&cf);
+        let json = serde_json::to_string_pretty(&public).unwrap();
+        assert!(!json.contains("confidential-wire-tap"), "sealed source ref must not leak: {json}");
+        assert!(!json.contains("intercept transcript"), "sealed source excerpt must not leak: {json}");
+        assert!(json.contains("public.example/filing"), "an unsealed source survives: {json}");
+        assert_eq!(public.data.relations[0].sources.len(), 1, "only the sealed source is dropped");
     }
 }
