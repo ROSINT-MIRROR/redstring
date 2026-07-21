@@ -20,26 +20,33 @@ pub enum Category {
 pub struct CategoryMeta {
     pub category: Category,
     pub label: &'static str,
+    pub icon: &'static str,
     pub color: Color32,
 }
 
-const fn c(category: Category, label: &'static str, rgb: (u8, u8, u8)) -> CategoryMeta {
+const fn c(
+    category: Category,
+    label: &'static str,
+    icon: &'static str,
+    rgb: (u8, u8, u8),
+) -> CategoryMeta {
     CategoryMeta {
         category,
         label,
+        icon,
         color: Color32::from_rgb(rgb.0, rgb.1, rgb.2),
     }
 }
 
 pub const CATEGORY_META: [CategoryMeta; 8] = [
-    c(Category::People, "People", (100, 170, 255)),
-    c(Category::Organizations, "Organizations", (255, 170, 80)),
-    c(Category::Digital, "Digital", (100, 210, 175)),
-    c(Category::Financial, "Financial", (235, 210, 95)),
-    c(Category::Physical, "Physical", (185, 160, 120)),
-    c(Category::Documents, "Documents", (195, 195, 200)),
-    c(Category::Events, "Events", (250, 125, 125)),
-    c(Category::Other, "Other", (170, 170, 170)),
+    c(Category::People, "People", egui_phosphor::regular::USERS_THREE, (100, 170, 255)),
+    c(Category::Organizations, "Organizations", egui_phosphor::regular::BUILDINGS, (255, 170, 80)),
+    c(Category::Digital, "Digital", egui_phosphor::regular::GLOBE, (100, 210, 175)),
+    c(Category::Financial, "Financial", egui_phosphor::regular::MONEY, (235, 210, 95)),
+    c(Category::Physical, "Physical", egui_phosphor::regular::PACKAGE, (185, 160, 120)),
+    c(Category::Documents, "Documents", egui_phosphor::regular::FILE_TEXT, (195, 195, 200)),
+    c(Category::Events, "Events", egui_phosphor::regular::CALENDAR, (250, 125, 125)),
+    c(Category::Other, "Other", egui_phosphor::regular::QUESTION, (170, 170, 170)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 use egui::{RichText, Vec2};
 
 use crate::error::Error;
-use crate::model::{CATEGORY_META, KIND_META, KindMeta};
+use crate::model::{CATEGORY_META, CategoryMeta, KIND_META, KindMeta};
 
 use super::app::RedstringApp;
 use super::style;
@@ -58,35 +58,79 @@ impl RedstringApp {
 
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
         let needle = self.kind_search.trim().to_lowercase();
+        let searching = !needle.is_empty();
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for m in &KIND_META {
-                    let cat = &CATEGORY_META[m.category as usize];
-                    if !kind_matches(m, cat.label, &needle) {
+                for cat in &CATEGORY_META {
+                    let ci = cat.category as usize;
+                    let hits: Vec<&KindMeta> = KIND_META
+                        .iter()
+                        .filter(|m| m.category == cat.category && kind_matches(m, cat.label, &needle))
+                        .collect();
+                    if hits.is_empty() {
                         continue;
                     }
-                    let resp = ui.add(
-                        egui::Button::selectable(
-                            self.ne_kind == m.kind,
-                            (
-                                RichText::new(m.icon).color(m.color).size(24.0f32),
-                                RichText::new(m.label).color(m.color).size(12.0f32),
-                                egui::Atom::grow(),
-                            ),
-                        )
-                        .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.5f32)))
-                        .sense(egui::Sense::click_and_drag())
-                        .min_size(Vec2::new(ui.available_width(), 40.0)),
-                    );
-                    if resp.clicked() {
-                        self.ne_kind = m.kind;
+                    let open = searching || self.palette_open[ci];
+                    if category_header(ui, cat, open, hits.len()) {
+                        self.palette_open[ci] = !self.palette_open[ci];
                     }
-                    resp.dnd_set_drag_payload(m.kind);
+                    if !open {
+                        continue;
+                    }
+                    for m in hits {
+                        if kind_row(ui, m, cat, self.ne_kind == m.kind) {
+                            self.ne_kind = m.kind;
+                        }
+                    }
                 }
             });
     }
+}
+
+
+fn category_header(ui: &mut egui::Ui, cat: &CategoryMeta, open: bool, count: usize) -> bool {
+    let caret = if open {
+        egui_phosphor::regular::CARET_DOWN
+    } else {
+        egui_phosphor::regular::CARET_RIGHT
+    };
+    let resp = ui.add(
+        egui::Button::new((
+            RichText::new(format!("{caret}  {}", cat.icon))
+                .color(cat.color)
+                .size(16.0f32),
+            RichText::new(cat.label).color(cat.color).strong().size(14.0f32),
+            egui::Atom::grow(),
+            RichText::new(count.to_string())
+                .color(cat.color.gamma_multiply(0.7f32))
+                .size(12.0f32),
+        ))
+        .fill(cat.color.gamma_multiply(0.10f32))
+        .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.6f32)))
+        .min_size(Vec2::new(ui.available_width(), style::ROW_H)),
+    );
+    resp.clicked()
+}
+
+
+fn kind_row(ui: &mut egui::Ui, m: &KindMeta, cat: &CategoryMeta, selected: bool) -> bool {
+    let resp = ui.add(
+        egui::Button::selectable(
+            selected,
+            (
+                RichText::new(m.icon).color(m.color).size(24.0f32),
+                RichText::new(m.label).color(m.color).size(12.0f32),
+                egui::Atom::grow(),
+            ),
+        )
+        .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.5f32)))
+        .sense(egui::Sense::click_and_drag())
+        .min_size(Vec2::new(ui.available_width(), 40.0)),
+    );
+    resp.dnd_set_drag_payload(m.kind);
+    resp.clicked()
 }
 
 
@@ -200,6 +244,37 @@ mod tests {
             (unsel, unsel, unsel),
             "palette row height drifts: unsel {unsel}, sel_idle {sel_idle}, sel_hover {sel_hover}"
         );
+    }
+
+    #[test]
+    fn grouping_covers_every_kind_once() {
+        let mut total = 0usize;
+        for cat in &CATEGORY_META {
+            let n = KIND_META
+                .iter()
+                .filter(|m| m.category == cat.category)
+                .count();
+            assert!(n > 0, "empty category header would render: {}", cat.label);
+            total += n;
+        }
+        assert_eq!(total, KIND_META.len(), "grouping drops or double-counts kinds");
+    }
+
+    #[test]
+    fn search_hides_nonmatching_groups() {
+        let needle = "person";
+        let mut shown = 0usize;
+        for cat in &CATEGORY_META {
+            let hits = KIND_META
+                .iter()
+                .filter(|m| m.category == cat.category && kind_matches(m, cat.label, needle))
+                .count();
+            if hits > 0 {
+                shown += 1;
+            }
+        }
+        assert!(shown >= 1, "a matching group must survive");
+        assert!(shown < CATEGORY_META.len(), "an active query must prune some groups");
     }
 
     #[test]
