@@ -241,9 +241,7 @@ fn clamp_zoom(z: f32) -> f32 {
 }
 
 fn fit_camera(g: &RsGraph, board: Vec2) -> Camera {
-    let mut min = Pos2::new(f32::INFINITY, f32::INFINITY);
-    let mut max = Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
-    let mut any = false;
+    let mut pts: Vec<(Pos2, f32)> = Vec::new();
     for idx in g.g().node_indices() {
         let Some(n) = g.node(idx) else { continue };
         let e = n.payload();
@@ -251,17 +249,14 @@ fn fit_camera(g: &RsGraph, board: Vec2) -> Camera {
             continue;
         }
         let half = node_base(e) * e.size * e.boost;
-        let loc = n.location();
-        min.x = min.x.min(loc.x - half);
-        min.y = min.y.min(loc.y - half);
-        max.x = max.x.max(loc.x + half);
-        max.y = max.y.max(loc.y + half);
-        any = true;
+        pts.push((n.location(), half));
     }
-    if !any || board.x < 1.0 || board.y < 1.0 {
+    if pts.is_empty() || board.x < 1.0 || board.y < 1.0 {
         return Camera::default();
     }
-    let bbox = Rect::from_min_max(min, max);
+    let Ok(bbox) = super::frame::cluster_bounds(&pts) else {
+        return Camera::default();
+    };
     let span = bbox.size();
     let w = span.x.max(1.0);
     let h = span.y.max(1.0);
@@ -394,6 +389,7 @@ pub(super) fn run_frames(
     let mut tex_free: Vec<egui::epaint::TextureId> = Vec::new();
     let mut produced = false;
     let mut cam_err: Result<(), Error> = Ok(());
+    SourcedEdgeShape::set_shot_labels(true)?;
     for _ in 0..RENDER_FRAMES {
         let full = ctx.run_ui(raw.clone(), |ui| {
             ui.add(
@@ -426,6 +422,7 @@ pub(super) fn run_frames(
         }
         produced = true;
     }
+    SourcedEdgeShape::set_shot_labels(false)?;
     cam_err?;
     if !produced {
         return Err(Error::Render {
