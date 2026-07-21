@@ -4,15 +4,29 @@ use crate::ui::RsGraph;
 
 use super::engine::{Opts, RenderedFrame, run_frames};
 
-const BOARD_CLEAR: wgpu::Color = wgpu::Color {
+const BOARD_CLEAR_DARK: wgpu::Color = wgpu::Color {
     r: 0.043,
     g: 0.043,
     b: 0.051,
     a: 1.0,
 };
 
+const BOARD_CLEAR_LIGHT: wgpu::Color = wgpu::Color {
+    r: 0.965,
+    g: 0.965,
+    b: 0.972,
+    a: 1.0,
+};
+
+fn board_clear(dark: bool) -> wgpu::Color {
+    if dark {
+        return BOARD_CLEAR_DARK;
+    }
+    BOARD_CLEAR_LIGHT
+}
+
 pub(super) fn render_png(g: &mut RsGraph, cam: Camera, opts: &Opts) -> Result<String, Error> {
-    let frame: RenderedFrame = run_frames(opts.width, opts.height, cam, g)?;
+    let frame: RenderedFrame = run_frames(opts.width, opts.height, cam, g, opts.dark)?;
     let ppp = frame.pixels_per_point;
     let primitives = frame.ctx.tessellate(frame.shapes, ppp);
 
@@ -69,7 +83,7 @@ pub(super) fn render_png(g: &mut RsGraph, cam: Camera, opts: &Opts) -> Result<St
                 view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(BOARD_CLEAR),
+                    load: wgpu::LoadOp::Clear(board_clear(opts.dark)),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,

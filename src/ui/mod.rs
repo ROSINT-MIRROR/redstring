@@ -17,5 +17,5 @@ pub mod testkit;
 mod welcome;
 
 pub use app::{RedstringApp, RsGraph};
-pub use ops::apply_visuals;
+pub use ops::{apply_visuals, board_color};
 pub use persist::build_graph;

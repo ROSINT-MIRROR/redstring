@@ -1,4 +1,4 @@
-use egui::Pos2;
+use egui::{Color32, Pos2};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
@@ -233,6 +233,15 @@ pub fn apply_visuals(g: &mut RsGraph, size_by_degree: bool) -> Result<(), Error>
         ed.set_label(label);
     }
     Ok(())
+}
+
+const LIGHT_DARKEN: f32 = 0.55;
+
+pub fn board_color(raw: Color32, dark: bool) -> Result<Color32, Error> {
+    if dark {
+        return Ok(raw);
+    }
+    Ok(raw.lerp_to_gamma(Color32::BLACK, LIGHT_DARKEN))
 }
 
 fn degree_boost(g: &RsGraph, idx: NodeIndex, size_by_degree: bool) -> f32 {

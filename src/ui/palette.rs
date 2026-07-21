@@ -65,6 +65,7 @@ impl RedstringApp {
     fn kind_picker(&mut self, ui: &mut egui::Ui) {
         let needle = self.kind_search.trim().to_lowercase();
         let searching = !needle.is_empty();
+        let dark = ui.visuals().dark_mode;
         egui::ScrollArea::vertical()
             .id_salt("ne_kind_grid")
             .auto_shrink([false, false])
@@ -82,14 +83,14 @@ impl RedstringApp {
                         continue;
                     }
                     let open = searching || self.palette_open[ci];
-                    if category_header(ui, cat, open, hits.len()) {
+                    if category_header(ui, cat, open, hits.len(), dark) {
                         self.palette_open[ci] = !self.palette_open[ci];
                     }
                     if !open {
                         continue;
                     }
                     for m in hits {
-                        self.kind_tree_row(ui, m, cat, &needle, searching);
+                        self.kind_tree_row(ui, m, cat, &needle, searching, dark);
                     }
                 }
             });
@@ -102,6 +103,7 @@ impl RedstringApp {
         cat: &CategoryMeta,
         needle: &str,
         searching: bool,
+        dark: bool,
     ) {
         let ki = m.kind as usize;
         let has_presets = PRESETS.iter().any(|p| p.base_kind == m.kind);
@@ -115,7 +117,7 @@ impl RedstringApp {
             self.kind_expanded[ki]
         };
         let selected = self.ne_kind == m.kind && self.ne_preset.is_none();
-        let (armed, toggled) = kind_row(ui, m, cat, selected, has_presets, expanded);
+        let (armed, toggled) = kind_row(ui, m, cat, selected, has_presets, expanded, dark);
         if toggled {
             self.kind_expanded[ki] = !self.kind_expanded[ki];
         }
@@ -127,32 +129,46 @@ impl RedstringApp {
             return;
         }
         for &p in &presets {
-            if preset_row(ui, p, cat, self.ne_preset == Some(*p)) {
+            if preset_row(ui, p, cat, self.ne_preset == Some(*p), dark) {
                 self.ne_preset = Some(*p);
             }
         }
     }
 }
 
-fn category_header(ui: &mut egui::Ui, cat: &CategoryMeta, open: bool, count: usize) -> bool {
+fn adj(raw: Color32, dark: bool) -> Color32 {
+    let Ok(c) = crate::ui::board_color(raw, dark) else {
+        return raw;
+    };
+    c
+}
+
+fn category_header(
+    ui: &mut egui::Ui,
+    cat: &CategoryMeta,
+    open: bool,
+    count: usize,
+    dark: bool,
+) -> bool {
     let caret = if open {
         egui_phosphor::regular::CARET_DOWN
     } else {
         egui_phosphor::regular::CARET_RIGHT
     };
+    let hc = adj(cat.color, dark);
     let resp = ui.add(
         egui::Button::new((
             RichText::new(format!("{caret}  {}", cat.icon))
-                .color(cat.color)
+                .color(hc)
                 .size(16.0f32),
-            RichText::new(cat.label).color(cat.color).strong().size(14.0f32),
+            RichText::new(cat.label).color(hc).strong().size(14.0f32),
             egui::Atom::grow(),
             RichText::new(count.to_string())
-                .color(cat.color.gamma_multiply(0.7f32))
+                .color(hc.gamma_multiply(0.7f32))
                 .size(12.0f32),
         ))
-        .fill(cat.color.gamma_multiply(0.10f32))
-        .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.6f32)))
+        .fill(hc.gamma_multiply(0.10f32))
+        .stroke(egui::Stroke::new(1.0f32, hc.gamma_multiply(0.6f32)))
         .min_size(Vec2::new(ui.available_width(), style::ROW_H)),
     );
     resp.clicked()
@@ -165,21 +181,23 @@ fn kind_row(
     selected: bool,
     has_presets: bool,
     expanded: bool,
+    dark: bool,
 ) -> (bool, bool) {
     let mut armed = false;
     let mut toggled = false;
+    let kc = adj(m.color, dark);
     ui.horizontal(|ui| {
-        toggled = caret_gutter(ui, cat.color, has_presets, expanded);
+        toggled = caret_gutter(ui, cat.color, has_presets, expanded, dark);
         let resp = ui.add(
             egui::Button::selectable(
                 selected,
                 (
-                    RichText::new(m.icon).color(m.color).size(24.0f32),
-                    RichText::new(m.label).color(m.color).size(12.0f32),
+                    RichText::new(m.icon).color(kc).size(24.0f32),
+                    RichText::new(m.label).color(kc).size(12.0f32),
                     egui::Atom::grow(),
                 ),
             )
-            .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.5f32)))
+            .stroke(egui::Stroke::new(1.0f32, adj(cat.color, dark).gamma_multiply(0.5f32)))
             .sense(egui::Sense::click_and_drag())
             .min_size(Vec2::new(ui.available_width(), 40.0f32)),
         );
@@ -191,7 +209,13 @@ fn kind_row(
     (armed, toggled)
 }
 
-fn caret_gutter(ui: &mut egui::Ui, color: Color32, has_presets: bool, expanded: bool) -> bool {
+fn caret_gutter(
+    ui: &mut egui::Ui,
+    color: Color32,
+    has_presets: bool,
+    expanded: bool,
+    dark: bool,
+) -> bool {
     if !has_presets {
         return false;
     }
@@ -201,15 +225,15 @@ fn caret_gutter(ui: &mut egui::Ui, color: Color32, has_presets: bool, expanded: 
         egui_phosphor::regular::CARET_RIGHT
     };
     let resp = ui.add(
-        egui::Button::new(RichText::new(glyph).color(color).size(16.0f32))
+        egui::Button::new(RichText::new(glyph).color(adj(color, dark)).size(16.0f32))
             .frame(false)
             .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
     );
     resp.clicked()
 }
 
-fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool) -> bool {
-    let color = preset_color(p);
+fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool, dark: bool) -> bool {
+    let color = adj(preset_color(p), dark);
     let mut armed = false;
     ui.horizontal(|ui| {
         let indent = CHEVRON_W + ui.spacing().item_spacing.x + PRESET_STEP;
@@ -223,7 +247,7 @@ fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool)
                     egui::Atom::grow(),
                 ),
             )
-            .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.35f32)))
+            .stroke(egui::Stroke::new(1.0f32, adj(cat.color, dark).gamma_multiply(0.35f32)))
             .sense(egui::Sense::click_and_drag())
             .min_size(Vec2::new(ui.available_width(), 34.0f32)),
         );
@@ -322,13 +346,13 @@ mod tests {
         let color = CATEGORY_META[0].color;
         let base = icon_left_with(|_ui| {});
         let leaf = icon_left_with(|ui| {
-            caret_gutter(ui, color, false, false);
+            caret_gutter(ui, color, false, false, true);
         });
         let collapsed = icon_left_with(|ui| {
-            caret_gutter(ui, color, true, false);
+            caret_gutter(ui, color, true, false, true);
         });
         let expanded = icon_left_with(|ui| {
-            caret_gutter(ui, color, true, true);
+            caret_gutter(ui, color, true, true, true);
         });
         assert_eq!(
             leaf, base,
@@ -353,10 +377,10 @@ mod tests {
     fn preset_icon_sits_right_of_base_kind_icon() {
         let color = CATEGORY_META[0].color;
         let kind_icon = icon_left_with(|ui| {
-            caret_gutter(ui, color, true, false);
+            caret_gutter(ui, color, true, false, true);
         });
         let leaf_icon = icon_left_with(|ui| {
-            caret_gutter(ui, color, false, false);
+            caret_gutter(ui, color, false, false, true);
         });
         assert!(
             leaf_icon < kind_icon - 0.5f32,
