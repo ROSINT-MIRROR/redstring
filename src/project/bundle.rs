@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 
 use crate::error::Error;
-use crate::model::{CaseMeta, FORMAT_VERSION};
+use crate::model::{CaseFile, CaseMeta, FORMAT_VERSION};
 
+use super::derive::{redact, write_graph_md, write_json};
 use super::ignore::RsIgnore;
-use super::io::read_case;
+use super::io::{read_case, write_case};
 use super::layout::{CASE_FILE, Project};
 use super::validate::cited_paths;
 
@@ -21,28 +22,84 @@ pub const BUNDLE_SUFFIX: &str = ".redstring.zip";
 
 
 
-pub fn export(project: &Project) -> Result<(PathBuf, usize), Error> {
+pub fn export(project: &Project) -> Result<(PathBuf, usize, usize), Error> {
     let ignore = RsIgnore::load(&project.root)?;
     let out = project
         .root
         .join(format!("{}{BUNDLE_SUFFIX}", project.dir_name()?));
 
+    let cf = read_case(project)?;
+    let sealed = cf.data.entities.iter().filter(|e| e.sealed).count();
+    if !needs_redaction(&cf) {
+        let n = zip_tree(&project.root, &out, &ignore)?;
+        return Ok((out, n, 0));
+    }
+
+    let staging = staging_dir(project)?;
+    let _stale = std::fs::remove_dir_all(&staging);
+    copy_tree(&project.root, &staging, &ignore)?;
+    let temp = Project::open(&staging)?;
+    let public = redact(&cf)?;
+    write_case(&temp, &public)?;
+    write_json(&temp, &cf)?;
+    write_graph_md(&temp, &cf)?;
+    let n = zip_tree(&staging, &out, &ignore)?;
+    let _cleanup = std::fs::remove_dir_all(&staging);
+    Ok((out, n, sealed))
+}
+
+fn needs_redaction(cf: &CaseFile) -> bool {
+    let entity = cf
+        .data
+        .entities
+        .iter()
+        .any(|e| e.sealed || e.observations.iter().any(|o| o.sealed));
+    let source = cf
+        .data
+        .relations
+        .iter()
+        .any(|r| r.sources.iter().any(|s| s.sealed));
+    entity || source
+}
+
+fn staging_dir(project: &Project) -> Result<PathBuf, Error> {
+    let stem = project.dir_name()?;
+    Ok(std::env::temp_dir().join(format!("redstring_export_{stem}_{}", std::process::id())))
+}
+
+fn copy_tree(src_root: &Path, dst_root: &Path, ignore: &RsIgnore) -> Result<(), Error> {
+    std::fs::create_dir_all(dst_root)
+        .map_err(|source| Error::Io { path: dst_root.to_path_buf(), source })?;
     let mut files: Vec<String> = Vec::new();
-    collect_files(&project.root, "", &ignore, &mut files)?;
+    collect_files(src_root, "", ignore, &mut files)?;
+    for rel in &files {
+        let from = src_root.join(rel);
+        let to = dst_root.join(rel);
+        let Some(parent) = to.parent() else { continue };
+        std::fs::create_dir_all(parent)
+            .map_err(|source| Error::Io { path: parent.to_path_buf(), source })?;
+        std::fs::copy(&from, &to).map_err(|source| Error::Io { path: from.to_path_buf(), source })?;
+    }
+    Ok(())
+}
+
+fn zip_tree(src_root: &Path, out: &Path, ignore: &RsIgnore) -> Result<usize, Error> {
+    let mut files: Vec<String> = Vec::new();
+    collect_files(src_root, "", ignore, &mut files)?;
     files.sort();
 
-    let f = std::fs::File::create(&out).map_err(|source| Error::Io { path: out.to_path_buf(), source })?;
+    let f = std::fs::File::create(out).map_err(|source| Error::Io { path: out.to_path_buf(), source })?;
     let mut zip = zip::ZipWriter::new(f);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for rel in &files {
         zip.start_file(rel, opts)
             .map_err(|source| Error::Zip { path: out.to_path_buf(), source })?;
-        let abs = project.resolve(rel)?;
+        let abs = src_root.join(rel);
         let mut src = std::fs::File::open(&abs).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
         std::io::copy(&mut src, &mut zip).map_err(|source| Error::Io { path: abs.to_path_buf(), source })?;
     }
     zip.finish().map_err(|source| Error::Zip { path: out.to_path_buf(), source })?;
-    Ok((out, files.len()))
+    Ok(files.len())
 }
 
 
@@ -194,7 +251,10 @@ fn extract_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CaseFile, CaseMeta, EntityKind, EntityRec};
+    use crate::model::{
+        Author, CaseFile, CaseMeta, EntityKind, EntityRec, ObsValue, Observation, Origin,
+        RelationKind, RelationRec, Source, SourceKind, Verification,
+    };
     use crate::project::io;
 
     fn fresh_dir(name: &str) -> PathBuf {
@@ -232,8 +292,9 @@ mod tests {
     #[test]
     fn export_then_open_round_trip() {
         let p = seeded_project("trip");
-        let (zip_path, n) = export(&p).unwrap();
+        let (zip_path, n, sealed) = export(&p).unwrap();
         assert!(zip_path.ends_with(format!("{}{BUNDLE_SUFFIX}", p.dir_name().unwrap())));
+        assert_eq!(sealed, 0, "an unsealed case reports zero redactions");
 
 
         assert_eq!(n, 16);
@@ -272,7 +333,7 @@ mod tests {
         
         
         std::fs::remove_file(p.resolve("entities/doe/portrait.png").unwrap()).unwrap();
-        let (zip_path, _) = export(&p).unwrap();
+        let (zip_path, _, _) = export(&p).unwrap();
 
         let inbox = fresh_dir("integrity_inbox");
         std::fs::create_dir_all(&inbox).unwrap();
@@ -286,5 +347,197 @@ mod tests {
 
         std::fs::remove_dir_all(p.root).unwrap();
         std::fs::remove_dir_all(&inbox).unwrap();
+    }
+
+    fn obs(name: &str, value: &str, sealed: bool) -> Observation {
+        let mut o = Observation::stamp(
+            name.to_owned(),
+            ObsValue::Text(value.to_owned()),
+            Origin::Manual,
+            Verification::AnalystAsserted,
+            Author::default(),
+        )
+        .unwrap();
+        o.sealed = sealed;
+        o
+    }
+
+    fn sealed_project(name: &str) -> Project {
+        let p = Project::create(&fresh_dir(name)).unwrap();
+        let img = p.resolve("entities/jane_victim/face.png").unwrap();
+        std::fs::create_dir_all(img.parent().unwrap()).unwrap();
+        std::fs::write(&img, b"fakepng").unwrap();
+
+        let victim = EntityRec {
+            slug: "jane_victim".into(),
+            kind: EntityKind::Person,
+            label: "Jane Victim".into(),
+            value: "jane.victim@example.com".into(),
+            sealed: true,
+            observations: vec![obs("dob", "2009-05-01", false)],
+            facets: Default::default(),
+            image: Some("entities/jane_victim/face.png".into()),
+        };
+        let acme = EntityRec {
+            slug: "acme".into(),
+            kind: EntityKind::Organization,
+            label: "Acme Care Home".into(),
+            value: String::new(),
+            sealed: false,
+            observations: vec![
+                obs("public_reg", "RO12345", false),
+                obs("informant_tip", "Deep Throat rang", true),
+            ],
+            facets: Default::default(),
+            image: None,
+        };
+        let edge = RelationRec {
+            from: "acme".into(),
+            to: "jane_victim".into(),
+            kind: RelationKind::Owns,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: 100,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![
+                Source {
+                    kind: SourceKind::Note,
+                    reference: "confidential-wire".into(),
+                    excerpt: "secret wiretap line".into(),
+                    sealed: true,
+                    ..Default::default()
+                },
+                Source {
+                    kind: SourceKind::Url,
+                    reference: "https://public.example/filing".into(),
+                    ..Default::default()
+                },
+            ],
+        };
+
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped(name).unwrap();
+        cf.data.entities.push(victim);
+        cf.data.entities.push(acme);
+        cf.data.relations.push(edge);
+        cf.display.positions.insert("jane_victim".into(), (10.0, 20.0));
+        io::write_case(&p, &cf).unwrap();
+        io::write_note(&p, "jane_victim", "minor, 14yo, do not publish her name\n").unwrap();
+        io::write_note(&p, "acme", "public company\n").unwrap();
+        p
+    }
+
+    fn zip_blob(zip_path: &Path) -> String {
+        let f = std::fs::File::open(zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(f).unwrap();
+        let mut blob = String::new();
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).unwrap();
+            blob.push_str(entry.name());
+            blob.push('\n');
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            blob.push_str(&String::from_utf8_lossy(&bytes));
+            blob.push('\n');
+        }
+        blob
+    }
+
+    #[test]
+    fn sealed_entity_never_leaks_into_bundle() {
+        let p = sealed_project("sealed");
+        let (zip_path, _n, sealed) = export(&p).unwrap();
+        assert_eq!(sealed, 1, "one sealed entity reported redacted");
+
+        let alias = format!("sealed_{:016x}", crate::model::fnv1a("jane_victim").unwrap());
+        let blob = zip_blob(&zip_path);
+        for leak in [
+            "jane_victim",
+            "Jane Victim",
+            "jane.victim@example.com",
+            "2009-05-01",
+            "minor, 14yo",
+            "Deep Throat rang",
+            "informant_tip",
+            "confidential-wire",
+            "secret wiretap",
+        ] {
+            assert!(!blob.contains(leak), "bundle leaked sealed data '{leak}'");
+        }
+        assert!(blob.contains(&alias), "the anonymized id must be present in the bundle");
+        assert!(blob.contains("[sealed]"), "the placeholder label must be present");
+        assert!(blob.contains("Acme Care Home"), "an unsealed entity survives");
+        assert!(blob.contains("RO12345"), "an unsealed observation survives");
+        assert!(blob.contains("public.example/filing"), "an unsealed source survives");
+
+        let inbox = fresh_dir("sealed_inbox");
+        std::fs::create_dir_all(&inbox).unwrap();
+        let received = inbox.join(zip_path.file_name().unwrap());
+        std::fs::copy(&zip_path, &received).unwrap();
+        let opened = open_bundle(&received).unwrap();
+        let back = io::read_case(&opened).unwrap();
+
+        let ghost = back
+            .data
+            .entities
+            .iter()
+            .find(|e| e.slug == alias)
+            .expect("the sealed entity keeps a stable anonymized slug in the bundle");
+        assert_eq!(ghost.label, "[sealed]");
+        assert!(ghost.value.is_empty());
+        assert!(ghost.observations.is_empty(), "no real observations ship");
+        assert!(ghost.image.is_none(), "no image path ships");
+        assert!(
+            io::read_note(&opened, &alias).unwrap().is_empty(),
+            "no note ships for the sealed entity"
+        );
+
+        assert_eq!(back.data.relations.len(), 1);
+        assert_eq!(back.data.relations[0].from, "acme", "the unsealed endpoint is untouched");
+        assert_eq!(back.data.relations[0].to, alias, "the edge still connects, anonymized");
+        assert_eq!(
+            back.data.relations[0].sources.len(),
+            1,
+            "the sealed source is dropped, the public one survives"
+        );
+
+        assert_eq!(
+            io::read_note(&p, "jane_victim").unwrap(),
+            "minor, 14yo, do not publish her name\n",
+            "the local on-disk case keeps the full note as the working copy"
+        );
+        let local = io::read_case(&p).unwrap();
+        assert!(
+            local.data.entities.iter().any(|e| e.label == "Jane Victim"),
+            "the local on-disk case keeps the real entity data"
+        );
+
+        std::fs::remove_dir_all(p.root).unwrap();
+        std::fs::remove_dir_all(&inbox).unwrap();
+    }
+
+    #[test]
+    fn unsealed_bundle_is_byte_identical_to_source_dir() {
+        let p = seeded_project("regress");
+        let (zip_path, n, sealed) = export(&p).unwrap();
+        assert_eq!(sealed, 0, "no redaction happens for an unsealed case");
+        assert_eq!(n, 16, "the unsealed file count is unchanged");
+
+        let f = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(f).unwrap();
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).unwrap();
+            let entry_name = entry.name().to_owned();
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            let on_disk = std::fs::read(p.root.join(&entry_name)).unwrap();
+            assert_eq!(
+                bytes, on_disk,
+                "unsealed bundle rewrote '{entry_name}' — it must be a pristine copy of the dir"
+            );
+        }
+
+        std::fs::remove_dir_all(p.root).unwrap();
     }
 }
