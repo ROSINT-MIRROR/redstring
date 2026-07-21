@@ -14,8 +14,8 @@ use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
 const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 
-const MIN_ZOOM: f32 = 0.01;
-const MAX_ZOOM: f32 = 30.0;
+pub const MIN_ZOOM: f32 = 0.01;
+pub const MAX_ZOOM: f32 = 30.0;
 
 static LAST_SEL: OnceLock<Mutex<Vec<usize>>> = OnceLock::new();
 
@@ -113,6 +113,17 @@ impl RedstringApp {
         mf.pan = local - (local - mf.pan) * (z / mf.zoom);
         mf.zoom = z;
         mf.save(ui);
+        Ok(())
+    }
+
+    pub fn center_graph(&mut self) -> Result<(), Error> {
+        let Some((cam, n)) = super::center::center_camera(&self.g, self.board_size)? else {
+            self.status = "center — no visible nodes to frame".to_owned();
+            return Ok(());
+        };
+        crate::dlog_info!("board", "center biggest visible cluster n={n} zoom={:.3}", cam.zoom);
+        self.pending_camera = Some(cam);
+        self.status = format!("centered on biggest visible cluster — {n} node(s)");
         Ok(())
     }
 

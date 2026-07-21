@@ -1,5 +1,6 @@
 mod app;
 mod board;
+mod center;
 mod chrome;
 mod fold;
 mod inspector;

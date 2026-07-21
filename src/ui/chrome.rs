@@ -148,6 +148,13 @@ impl RedstringApp {
                     {
                         self.apply_spread(ui, Spread::Loosen)?;
                     }
+                    ui.separator();
+                    if tb_button(ui, egui_phosphor::regular::FRAME_CORNERS, "Center")
+                        .on_hover_text("frame the biggest cluster of visible nodes in view")
+                        .clicked()
+                    {
+                        self.center_graph()?;
+                    }
                     ui.label(RichText::new("layout:").weak());
                     Ok(())
                 },
