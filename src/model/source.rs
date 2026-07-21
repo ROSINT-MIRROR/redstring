@@ -59,10 +59,10 @@ const fn t(tier: SourceTier, label: &'static str, color: Color32) -> SourceTierM
 
 #[rustfmt::skip]
 pub const SOURCE_TIER_META: [SourceTierMeta; 4] = [
-    t(SourceTier::Unrated,   "unrated",   Color32::from_rgb(150, 155, 165)),
-    t(SourceTier::Primary,   "primary",   Color32::from_rgb(110, 195, 130)),
-    t(SourceTier::Secondary, "secondary", Color32::from_rgb(100, 170, 210)),
-    t(SourceTier::Reported,  "reported",  Color32::from_rgb(225, 175, 85)),
+    t(SourceTier::Unrated,   "unrated",   Color32::from_rgb(150, 152, 158)),
+    t(SourceTier::Primary,   "primary",   Color32::from_rgb(76, 185, 104)),
+    t(SourceTier::Secondary, "secondary", Color32::from_rgb(72, 140, 226)),
+    t(SourceTier::Reported,  "reported",  Color32::from_rgb(230, 168, 62)),
 ];
 
 fn tier_is_unrated(tier: &SourceTier) -> bool {
