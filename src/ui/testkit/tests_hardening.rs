@@ -452,7 +452,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "KNOWN LEAK (reported): src/project/derive.rs redact() drops sealed sources on relations (r.sources.retain(|s| !s.sealed)) but never filters sealed sources carried by observations of unsealed entities — it only drops whole sealed observations (e.observations.retain(|o| !o.sealed)). A sealed Source on an UNSEALED observation leaks its reference + excerpt into case.json AND the exported bundle. Remove #[ignore] once redact() also filters obs.sources for kept observations."]
     fn sealed_source_on_unsealed_observation_is_redacted() {
         let p = temp_project("obssrc");
         let mut cf = CaseFile::default();
@@ -479,7 +478,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "FINDING (reported): redact() re-aliases already-sealed nodes because it never clears e.sealed on the anonymized entity. Re-deriving an already-redacted case (e.g. open a bundle then re-export) churns the anon slug sealed_<h1> -> sealed_<fnv(sealed_<h1>)>, so the public case.json / graph.md are not git-stable across re-exports. Non-leaking, but breaks the diff-like-code guarantee for sealed cases. Remove #[ignore] once redact() reaches a fixed point on already-anonymized nodes."]
     fn redact_reapplication_keeps_the_sealed_alias_stable() {
         let p = temp_project("stable");
         let cf = build_case(1);

@@ -49,11 +49,9 @@ pub fn export(project: &Project) -> Result<(PathBuf, usize, usize), Error> {
 }
 
 fn needs_redaction(cf: &CaseFile) -> bool {
-    let entity = cf
-        .data
-        .entities
-        .iter()
-        .any(|e| e.sealed || e.observations.iter().any(|o| o.sealed));
+    let entity = cf.data.entities.iter().any(|e| {
+        e.sealed || e.observations.iter().any(|o| o.sealed || o.sources.iter().any(|s| s.sealed))
+    });
     let relation = cf
         .data
         .relations
