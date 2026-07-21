@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
+use super::facet::Facet;
 use super::observation::Observation;
 use super::occupation::Occupation;
 use super::role::Role;
@@ -227,6 +228,8 @@ pub struct KindMeta {
     pub aliases: &'static [&'static str],
 
     pub value_format: ValueFormat,
+
+    pub facets: &'static [Facet],
 }
 
 const fn k(
@@ -238,6 +241,7 @@ const fn k(
     attrs: &'static [&'static str],
     aliases: &'static [&'static str],
     value_format: ValueFormat,
+    facets: &'static [Facet],
 ) -> KindMeta {
     KindMeta {
         kind,
@@ -248,69 +252,70 @@ const fn k(
         attrs,
         aliases,
         value_format,
+        facets,
     }
 }
 
 #[rustfmt::skip]
 pub const KIND_META: [KindMeta; 58] = [
-    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
-    k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free),
-    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free),
-    k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free),
-    k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free),
-    k(EntityKind::LawFirm, "Law firm", egui_phosphor::regular::BRIEFCASE, Category::Organizations, (240, 190, 110), &["jurisdiction", "specialty"], &["lawyers", "attorneys", "legal", "counsel"], ValueFormat::Free),
-    k(EntityKind::Bank, "Bank", egui_phosphor::regular::VAULT, Category::Organizations, (225, 155, 70), &["swift_bic", "jurisdiction", "regulator"], &["financial institution", "lender"], ValueFormat::Free),
-    k(EntityKind::MediaOutlet, "Media outlet", egui_phosphor::regular::BROADCAST, Category::Organizations, (255, 185, 125), &["country", "medium", "owner"], &["news", "press", "tv", "newspaper", "publication"], ValueFormat::Free),
-    k(EntityKind::CriminalOrg, "Criminal org", egui_phosphor::regular::SKULL, Category::Organizations, (180, 105, 45), &["territory", "activity", "active_since"], &["mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free),
-    k(EntityKind::Domain, "Domain", egui_phosphor::regular::GLOBE, Category::Digital, (120, 210, 150), &["registrar", "registered_on", "expires", "registrant"], &["dns", "site name"], ValueFormat::Hostname),
-    k(EntityKind::IpAddress, "IP address", egui_phosphor::regular::NETWORK, Category::Digital, (90, 200, 200), &["asn", "isp", "geolocation"], &["ip", "host", "ipv4", "ipv6"], ValueFormat::Ip),
-    k(EntityKind::Email, "Email", egui_phosphor::regular::ENVELOPE, Category::Digital, (110, 215, 185), &["holder", "provider", "first_seen"], &["mail", "inbox"], ValueFormat::Email),
-    k(EntityKind::Phone, "Phone", egui_phosphor::regular::PHONE, Category::Digital, (135, 205, 165), &["country", "carrier", "holder"], &["mobile", "telephone", "number", "cell"], ValueFormat::Free),
-    k(EntityKind::SocialAccount, "Social account", egui_phosphor::regular::AT, Category::Digital, (80, 210, 170), &["platform", "handle", "holder", "created"], &["twitter", "facebook", "instagram", "telegram", "profile", "x"], ValueFormat::Free),
-    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Web, (175, 130, 225), &["platform", "cms", "title", "operator", "first_archived"], &["site", "url", "webpage", "web app", "webapp", "storefront"], ValueFormat::Url),
-    k(EntityKind::Server, "Server", egui_phosphor::regular::HARD_DRIVES, Category::Digital, (70, 185, 185), &["ip", "hosting_provider", "location"], &["host", "vps", "infrastructure", "machine"], ValueFormat::Hostname),
-    k(EntityKind::Device, "Device", egui_phosphor::regular::DEVICE_MOBILE, Category::Digital, (105, 220, 205), &["type", "imei", "owner"], &["laptop", "computer", "hardware", "gadget"], ValueFormat::Free),
-    k(EntityKind::CryptoWallet, "Crypto wallet", egui_phosphor::regular::CURRENCY_BTC, Category::Digital, (60, 195, 155), &["chain", "address", "custodian"], &["bitcoin", "btc", "eth", "blockchain", "crypto"], ValueFormat::Free),
-    k(EntityKind::BankAccount, "Bank account", egui_phosphor::regular::CREDIT_CARD, Category::Financial, (230, 205, 75), &["iban", "bank", "holder", "currency"], &["iban", "account", "swift"], ValueFormat::Free),
-    k(EntityKind::Transaction, "Transaction", egui_phosphor::regular::ARROWS_LEFT_RIGHT, Category::Financial, (250, 215, 110), &["date", "amount", "currency", "from_account", "to_account"], &["transfer", "wire", "remittance"], ValueFormat::Free),
-    k(EntityKind::Loan, "Loan", egui_phosphor::regular::HAND_COINS, Category::Financial, (215, 185, 90), &["amount", "currency", "lender", "borrower", "date", "terms"], &["credit", "debt", "mortgage"], ValueFormat::Free),
-    k(EntityKind::Donation, "Donation", egui_phosphor::regular::GIFT, Category::Financial, (245, 225, 135), &["amount", "currency", "donor", "recipient", "date"], &["contribution", "funding", "grant"], ValueFormat::Free),
-    k(EntityKind::Contract, "Contract", egui_phosphor::regular::SCROLL, Category::Financial, (235, 210, 120), &["parties", "value", "signed", "subject"], &["agreement", "deal", "mou"], ValueFormat::Free),
-    k(EntityKind::Invoice, "Invoice", egui_phosphor::regular::RECEIPT, Category::Financial, (225, 200, 100), &["number", "amount", "currency", "issuer", "billed_to", "date"], &["bill"], ValueFormat::Free),
-    k(EntityKind::RegistryRecord, "Registry record", egui_phosphor::regular::ARCHIVE, Category::Financial, (205, 185, 70), &["registry", "record_no", "filed", "subject"], &["filing", "registration", "incorporation record"], ValueFormat::Free),
-    k(EntityKind::Money, "Money", egui_phosphor::regular::MONEY, Category::Financial, (240, 220, 90), &["amount", "currency"], &["cash", "funds", "sum"], ValueFormat::Free),
-    k(EntityKind::Location, "Location", egui_phosphor::regular::MAP_PIN, Category::Physical, (170, 150, 110), &["country", "country_code", "city", "region", "coordinates"], &["place", "spot", "coordinates", "geo"], ValueFormat::Free),
-    k(EntityKind::Address, "Address", egui_phosphor::regular::HOUSE_LINE, Category::Physical, (190, 165, 125), &["street", "city", "country", "postcode"], &["street", "residence", "domicile"], ValueFormat::Free),
-    k(EntityKind::Property, "Property", egui_phosphor::regular::BUILDING_APARTMENT, Category::Physical, (160, 135, 95), &["address", "type", "value", "registered_owner"], &["real estate", "estate", "building", "land", "villa", "mansion"], ValueFormat::Free),
-    k(EntityKind::Vehicle, "Vehicle", egui_phosphor::regular::CAR, Category::Physical, (200, 175, 135), &["plate", "make_model", "vin", "registered_owner"], &["car", "truck", "auto", "motorcycle"], ValueFormat::Free),
-    k(EntityKind::Vessel, "Vessel", egui_phosphor::regular::BOAT, Category::Physical, (150, 140, 105), &["imo", "mmsi", "flag", "owner"], &["ship", "boat", "yacht"], ValueFormat::Free),
-    k(EntityKind::Aircraft, "Aircraft", egui_phosphor::regular::AIRPLANE, Category::Physical, (205, 185, 150), &["registration", "type", "operator", "owner"], &["plane", "jet", "helicopter"], ValueFormat::Free),
-    k(EntityKind::Shipment, "Shipment", egui_phosphor::regular::PACKAGE, Category::Physical, (180, 155, 115), &["bill_of_lading", "origin", "destination", "cargo", "date"], &["cargo", "container", "freight", "parcel"], ValueFormat::Free),
-    k(EntityKind::Weapon, "Weapon", egui_phosphor::regular::CROSSHAIR, Category::Physical, (140, 115, 85), &["type", "serial_no", "origin"], &["gun", "firearm", "arms", "pistol", "rifle", "knife"], ValueFormat::Free),
-    k(EntityKind::Asset, "Asset", egui_phosphor::regular::DIAMOND, Category::Physical, (210, 180, 140), &["type", "value", "currency", "owner"], &["valuables", "holding", "artwork", "jewelry"], ValueFormat::Free),
-    k(EntityKind::Document, "Document", egui_phosphor::regular::FILE_TEXT, Category::Documents, (200, 200, 200), &["date", "author", "file"], &["file", "paper", "doc", "memo"], ValueFormat::Free),
-    k(EntityKind::Passport, "Passport", egui_phosphor::regular::IDENTIFICATION_CARD, Category::Documents, (185, 190, 205), &["number", "country", "issued", "expires", "holder"], &["travel document", "visa", "id"], ValueFormat::Free),
-    k(EntityKind::Leak, "Leak", egui_phosphor::regular::DROP, Category::Documents, (170, 190, 200), &["date", "size", "origin", "obtained_via"], &["dump", "breach", "disclosure"], ValueFormat::Free),
-    k(EntityKind::Dataset, "Dataset", egui_phosphor::regular::DATABASE, Category::Documents, (175, 175, 185), &["source", "records", "format", "date"], &["data", "database", "records", "spreadsheet"], ValueFormat::Free),
-    k(EntityKind::Photo, "Photo", egui_phosphor::regular::CAMERA, Category::Documents, (190, 190, 190), &["date", "place", "photographer", "file"], &["image", "picture", "photograph"], ValueFormat::Free),
-    k(EntityKind::Video, "Video", egui_phosphor::regular::VIDEO_CAMERA, Category::Documents, (165, 165, 175), &["date", "place", "duration", "file"], &["footage", "recording", "clip"], ValueFormat::Free),
-    k(EntityKind::Article, "Article", egui_phosphor::regular::NEWSPAPER, Category::Documents, (205, 205, 190), &["outlet", "author", "published", "url"], &["story", "report", "news piece"], ValueFormat::Free),
-    k(EntityKind::CourtRecord, "Court record", egui_phosphor::regular::STAMP, Category::Documents, (180, 180, 165), &["case_no", "court", "date", "type"], &["case file", "docket", "ruling", "verdict", "indictment", "deposition"], ValueFormat::Free),
-    k(EntityKind::Event, "Event", egui_phosphor::regular::CALENDAR, Category::Events, (255, 120, 120), &["date", "place"], &["incident", "happening", "occurrence"], ValueFormat::Free),
-    k(EntityKind::Meeting, "Meeting", egui_phosphor::regular::USERS_THREE, Category::Events, (240, 145, 145), &["date", "place", "participants"], &["encounter", "appointment", "summit", "rendezvous"], ValueFormat::Free),
-    k(EntityKind::Payment, "Payment", egui_phosphor::regular::CURRENCY_CIRCLE_DOLLAR, Category::Events, (255, 110, 140), &["date", "amount", "currency", "method"], &["payout", "fee", "bribe", "kickback"], ValueFormat::Free),
-    k(EntityKind::Travel, "Travel", egui_phosphor::regular::SUITCASE_ROLLING, Category::Events, (230, 125, 105), &["date", "from", "to", "traveler", "purpose"], &["trip", "flight", "journey", "visit"], ValueFormat::Free),
-    k(EntityKind::Other, "Other", egui_phosphor::regular::QUESTION, Category::Other, (170, 170, 170), &[], &["misc", "unknown", "custom"], ValueFormat::Free),
-    k(EntityKind::WebPage, "Web page", egui_phosphor::regular::FILE_HTML, Category::Web, (165, 140, 235), &["path", "status_code", "title"], &["url", "page", "path", "route"], ValueFormat::Url),
-    k(EntityKind::Endpoint, "Endpoint", egui_phosphor::regular::WEBHOOKS_LOGO, Category::Web, (190, 125, 220), &["method", "path", "content_type"], &["route", "api endpoint", "form action", "api"], ValueFormat::Url),
-    k(EntityKind::Parameter, "Parameter", egui_phosphor::regular::SLIDERS_HORIZONTAL, Category::Web, (150, 145, 240), &["datatype", "location", "required"], &["param", "field", "post param", "query param", "input"], ValueFormat::Free),
-    k(EntityKind::Technology, "Technology", egui_phosphor::regular::STACK, Category::Web, (200, 140, 210), &["category", "version", "vendor"], &["stack", "tech", "cms", "framework", "library"], ValueFormat::Free),
-    k(EntityKind::Script, "Script", egui_phosphor::regular::FILE_JS, Category::Web, (160, 120, 230), &["sha256", "inline"], &["js", "javascript", "resource", "asset"], ValueFormat::Url),
-    k(EntityKind::Secret, "Secret", egui_phosphor::regular::KEY, Category::Web, (205, 120, 205), &["secret_kind", "context"], &["api key", "token", "credential", "jwt", "key"], ValueFormat::Free),
-    k(EntityKind::TlsCertificate, "TLS certificate", egui_phosphor::regular::CERTIFICATE, Category::Digital, (95, 195, 175), &["sha256", "issuer", "subject", "not_after", "sans"], &["cert", "ssl", "x509", "certificate"], ValueFormat::Free),
-    k(EntityKind::DnsRecord, "DNS record", egui_phosphor::regular::ADDRESS_BOOK, Category::Digital, (80, 200, 190), &["record_type", "name", "value", "ttl"], &["dns", "a record", "mx", "spf", "txt", "ns"], ValueFormat::Free),
-    k(EntityKind::Asn, "ASN", egui_phosphor::regular::SHARE_NETWORK, Category::Digital, (70, 190, 200), &["asn", "as_org", "country"], &["autonomous system", "as number", "netblock", "asn"], ValueFormat::Free),
-    k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free),
+    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
+    k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
+    k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::LawFirm, "Law firm", egui_phosphor::regular::BRIEFCASE, Category::Organizations, (240, 190, 110), &["jurisdiction", "specialty"], &["lawyers", "attorneys", "legal", "counsel"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Bank, "Bank", egui_phosphor::regular::VAULT, Category::Organizations, (225, 155, 70), &["swift_bic", "jurisdiction", "regulator"], &["financial institution", "lender"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::MediaOutlet, "Media outlet", egui_phosphor::regular::BROADCAST, Category::Organizations, (255, 185, 125), &["country", "medium", "owner"], &["news", "press", "tv", "newspaper", "publication"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::CriminalOrg, "Criminal org", egui_phosphor::regular::SKULL, Category::Organizations, (180, 105, 45), &["territory", "activity", "active_since"], &["mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role]),
+    k(EntityKind::Domain, "Domain", egui_phosphor::regular::GLOBE, Category::Digital, (120, 210, 150), &["registrar", "registered_on", "expires", "registrant"], &["dns", "site name"], ValueFormat::Hostname, &[]),
+    k(EntityKind::IpAddress, "IP address", egui_phosphor::regular::NETWORK, Category::Digital, (90, 200, 200), &["asn", "isp", "geolocation"], &["ip", "host", "ipv4", "ipv6"], ValueFormat::Ip, &[]),
+    k(EntityKind::Email, "Email", egui_phosphor::regular::ENVELOPE, Category::Digital, (110, 215, 185), &["holder", "provider", "first_seen"], &["mail", "inbox"], ValueFormat::Email, &[]),
+    k(EntityKind::Phone, "Phone", egui_phosphor::regular::PHONE, Category::Digital, (135, 205, 165), &["country", "carrier", "holder"], &["mobile", "telephone", "number", "cell"], ValueFormat::Free, &[]),
+    k(EntityKind::SocialAccount, "Social account", egui_phosphor::regular::AT, Category::Digital, (80, 210, 170), &["platform", "handle", "holder", "created"], &["twitter", "facebook", "instagram", "telegram", "profile", "x"], ValueFormat::Free, &[]),
+    k(EntityKind::Website, "Website", egui_phosphor::regular::BROWSER, Category::Web, (175, 130, 225), &["platform", "cms", "title", "operator", "first_archived"], &["site", "url", "webpage", "web app", "webapp", "storefront"], ValueFormat::Url, &[]),
+    k(EntityKind::Server, "Server", egui_phosphor::regular::HARD_DRIVES, Category::Digital, (70, 185, 185), &["ip", "hosting_provider", "location"], &["host", "vps", "infrastructure", "machine"], ValueFormat::Hostname, &[]),
+    k(EntityKind::Device, "Device", egui_phosphor::regular::DEVICE_MOBILE, Category::Digital, (105, 220, 205), &["type", "imei", "owner"], &["laptop", "computer", "hardware", "gadget"], ValueFormat::Free, &[]),
+    k(EntityKind::CryptoWallet, "Crypto wallet", egui_phosphor::regular::CURRENCY_BTC, Category::Digital, (60, 195, 155), &["chain", "address", "custodian"], &["bitcoin", "btc", "eth", "blockchain", "crypto"], ValueFormat::Free, &[]),
+    k(EntityKind::BankAccount, "Bank account", egui_phosphor::regular::CREDIT_CARD, Category::Financial, (230, 205, 75), &["iban", "bank", "holder", "currency"], &["iban", "account", "swift"], ValueFormat::Free, &[]),
+    k(EntityKind::Transaction, "Transaction", egui_phosphor::regular::ARROWS_LEFT_RIGHT, Category::Financial, (250, 215, 110), &["date", "amount", "currency", "from_account", "to_account"], &["transfer", "wire", "remittance"], ValueFormat::Free, &[]),
+    k(EntityKind::Loan, "Loan", egui_phosphor::regular::HAND_COINS, Category::Financial, (215, 185, 90), &["amount", "currency", "lender", "borrower", "date", "terms"], &["credit", "debt", "mortgage"], ValueFormat::Free, &[]),
+    k(EntityKind::Donation, "Donation", egui_phosphor::regular::GIFT, Category::Financial, (245, 225, 135), &["amount", "currency", "donor", "recipient", "date"], &["contribution", "funding", "grant"], ValueFormat::Free, &[]),
+    k(EntityKind::Contract, "Contract", egui_phosphor::regular::SCROLL, Category::Financial, (235, 210, 120), &["parties", "value", "signed", "subject"], &["agreement", "deal", "mou"], ValueFormat::Free, &[]),
+    k(EntityKind::Invoice, "Invoice", egui_phosphor::regular::RECEIPT, Category::Financial, (225, 200, 100), &["number", "amount", "currency", "issuer", "billed_to", "date"], &["bill"], ValueFormat::Free, &[]),
+    k(EntityKind::RegistryRecord, "Registry record", egui_phosphor::regular::ARCHIVE, Category::Financial, (205, 185, 70), &["registry", "record_no", "filed", "subject"], &["filing", "registration", "incorporation record"], ValueFormat::Free, &[]),
+    k(EntityKind::Money, "Money", egui_phosphor::regular::MONEY, Category::Financial, (240, 220, 90), &["amount", "currency"], &["cash", "funds", "sum"], ValueFormat::Free, &[]),
+    k(EntityKind::Location, "Location", egui_phosphor::regular::MAP_PIN, Category::Physical, (170, 150, 110), &["country", "country_code", "city", "region", "coordinates"], &["place", "spot", "coordinates", "geo"], ValueFormat::Free, &[]),
+    k(EntityKind::Address, "Address", egui_phosphor::regular::HOUSE_LINE, Category::Physical, (190, 165, 125), &["street", "city", "country", "postcode"], &["street", "residence", "domicile"], ValueFormat::Free, &[]),
+    k(EntityKind::Property, "Property", egui_phosphor::regular::BUILDING_APARTMENT, Category::Physical, (160, 135, 95), &["address", "type", "value", "registered_owner"], &["real estate", "estate", "building", "land", "villa", "mansion"], ValueFormat::Free, &[]),
+    k(EntityKind::Vehicle, "Vehicle", egui_phosphor::regular::CAR, Category::Physical, (200, 175, 135), &["plate", "make_model", "vin", "registered_owner"], &["car", "truck", "auto", "motorcycle"], ValueFormat::Free, &[]),
+    k(EntityKind::Vessel, "Vessel", egui_phosphor::regular::BOAT, Category::Physical, (150, 140, 105), &["imo", "mmsi", "flag", "owner"], &["ship", "boat", "yacht"], ValueFormat::Free, &[]),
+    k(EntityKind::Aircraft, "Aircraft", egui_phosphor::regular::AIRPLANE, Category::Physical, (205, 185, 150), &["registration", "type", "operator", "owner"], &["plane", "jet", "helicopter"], ValueFormat::Free, &[]),
+    k(EntityKind::Shipment, "Shipment", egui_phosphor::regular::PACKAGE, Category::Physical, (180, 155, 115), &["bill_of_lading", "origin", "destination", "cargo", "date"], &["cargo", "container", "freight", "parcel"], ValueFormat::Free, &[]),
+    k(EntityKind::Weapon, "Weapon", egui_phosphor::regular::CROSSHAIR, Category::Physical, (140, 115, 85), &["type", "serial_no", "origin"], &["gun", "firearm", "arms", "pistol", "rifle", "knife"], ValueFormat::Free, &[]),
+    k(EntityKind::Asset, "Asset", egui_phosphor::regular::DIAMOND, Category::Physical, (210, 180, 140), &["type", "value", "currency", "owner"], &["valuables", "holding", "artwork", "jewelry"], ValueFormat::Free, &[]),
+    k(EntityKind::Document, "Document", egui_phosphor::regular::FILE_TEXT, Category::Documents, (200, 200, 200), &["date", "author", "file"], &["file", "paper", "doc", "memo"], ValueFormat::Free, &[]),
+    k(EntityKind::Passport, "Passport", egui_phosphor::regular::IDENTIFICATION_CARD, Category::Documents, (185, 190, 205), &["number", "country", "issued", "expires", "holder"], &["travel document", "visa", "id"], ValueFormat::Free, &[]),
+    k(EntityKind::Leak, "Leak", egui_phosphor::regular::DROP, Category::Documents, (170, 190, 200), &["date", "size", "origin", "obtained_via"], &["dump", "breach", "disclosure"], ValueFormat::Free, &[]),
+    k(EntityKind::Dataset, "Dataset", egui_phosphor::regular::DATABASE, Category::Documents, (175, 175, 185), &["source", "records", "format", "date"], &["data", "database", "records", "spreadsheet"], ValueFormat::Free, &[]),
+    k(EntityKind::Photo, "Photo", egui_phosphor::regular::CAMERA, Category::Documents, (190, 190, 190), &["date", "place", "photographer", "file"], &["image", "picture", "photograph"], ValueFormat::Free, &[]),
+    k(EntityKind::Video, "Video", egui_phosphor::regular::VIDEO_CAMERA, Category::Documents, (165, 165, 175), &["date", "place", "duration", "file"], &["footage", "recording", "clip"], ValueFormat::Free, &[]),
+    k(EntityKind::Article, "Article", egui_phosphor::regular::NEWSPAPER, Category::Documents, (205, 205, 190), &["outlet", "author", "published", "url"], &["story", "report", "news piece"], ValueFormat::Free, &[]),
+    k(EntityKind::CourtRecord, "Court record", egui_phosphor::regular::STAMP, Category::Documents, (180, 180, 165), &["case_no", "court", "date", "type"], &["case file", "docket", "ruling", "verdict", "indictment", "deposition"], ValueFormat::Free, &[]),
+    k(EntityKind::Event, "Event", egui_phosphor::regular::CALENDAR, Category::Events, (255, 120, 120), &["date", "place"], &["incident", "happening", "occurrence"], ValueFormat::Free, &[]),
+    k(EntityKind::Meeting, "Meeting", egui_phosphor::regular::USERS_THREE, Category::Events, (240, 145, 145), &["date", "place", "participants"], &["encounter", "appointment", "summit", "rendezvous"], ValueFormat::Free, &[]),
+    k(EntityKind::Payment, "Payment", egui_phosphor::regular::CURRENCY_CIRCLE_DOLLAR, Category::Events, (255, 110, 140), &["date", "amount", "currency", "method"], &["payout", "fee", "bribe", "kickback"], ValueFormat::Free, &[]),
+    k(EntityKind::Travel, "Travel", egui_phosphor::regular::SUITCASE_ROLLING, Category::Events, (230, 125, 105), &["date", "from", "to", "traveler", "purpose"], &["trip", "flight", "journey", "visit"], ValueFormat::Free, &[]),
+    k(EntityKind::Other, "Other", egui_phosphor::regular::QUESTION, Category::Other, (170, 170, 170), &[], &["misc", "unknown", "custom"], ValueFormat::Free, &[]),
+    k(EntityKind::WebPage, "Web page", egui_phosphor::regular::FILE_HTML, Category::Web, (165, 140, 235), &["path", "status_code", "title"], &["url", "page", "path", "route"], ValueFormat::Url, &[]),
+    k(EntityKind::Endpoint, "Endpoint", egui_phosphor::regular::WEBHOOKS_LOGO, Category::Web, (190, 125, 220), &["method", "path", "content_type"], &["route", "api endpoint", "form action", "api"], ValueFormat::Url, &[]),
+    k(EntityKind::Parameter, "Parameter", egui_phosphor::regular::SLIDERS_HORIZONTAL, Category::Web, (150, 145, 240), &["datatype", "location", "required"], &["param", "field", "post param", "query param", "input"], ValueFormat::Free, &[]),
+    k(EntityKind::Technology, "Technology", egui_phosphor::regular::STACK, Category::Web, (200, 140, 210), &["category", "version", "vendor"], &["stack", "tech", "cms", "framework", "library"], ValueFormat::Free, &[]),
+    k(EntityKind::Script, "Script", egui_phosphor::regular::FILE_JS, Category::Web, (160, 120, 230), &["sha256", "inline"], &["js", "javascript", "resource", "asset"], ValueFormat::Url, &[]),
+    k(EntityKind::Secret, "Secret", egui_phosphor::regular::KEY, Category::Web, (205, 120, 205), &["secret_kind", "context"], &["api key", "token", "credential", "jwt", "key"], ValueFormat::Free, &[]),
+    k(EntityKind::TlsCertificate, "TLS certificate", egui_phosphor::regular::CERTIFICATE, Category::Digital, (95, 195, 175), &["sha256", "issuer", "subject", "not_after", "sans"], &["cert", "ssl", "x509", "certificate"], ValueFormat::Free, &[]),
+    k(EntityKind::DnsRecord, "DNS record", egui_phosphor::regular::ADDRESS_BOOK, Category::Digital, (80, 200, 190), &["record_type", "name", "value", "ttl"], &["dns", "a record", "mx", "spf", "txt", "ns"], ValueFormat::Free, &[]),
+    k(EntityKind::Asn, "ASN", egui_phosphor::regular::SHARE_NETWORK, Category::Digital, (70, 190, 200), &["asn", "as_org", "country"], &["autonomous system", "as number", "netblock", "asn"], ValueFormat::Free, &[]),
+    k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free, &[]),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -537,6 +542,7 @@ mod tests {
 
     #[test]
     fn entity_kind_taxonomy_consistent() {
+        use crate::model::Facet;
         for m in &KIND_META {
             assert!(!m.label.is_empty(), "{:?} label", m.kind);
             assert!(!m.icon.is_empty(), "{:?} icon", m.kind);
@@ -546,12 +552,84 @@ mod tests {
                 "{:?} carries a category absent from CATEGORY_META",
                 m.kind
             );
+            assert!(m.facets.len() <= 2, "{:?} declares more facets than exist", m.kind);
+            let mut seen: Vec<Facet> = Vec::new();
+            for f in m.facets {
+                assert!(!seen.contains(f), "{:?} lists facet {f:?} twice", m.kind);
+                seen.push(*f);
+            }
         }
         for c in &CATEGORY_META {
             assert!(
                 KIND_META.iter().any(|m| m.category == c.category),
                 "category {} owns no kinds and would render an empty header",
                 c.label
+            );
+        }
+    }
+
+    #[test]
+    fn facets_are_kind_scoped_per_semantic_rule() {
+        use crate::model::Facet;
+        for m in &KIND_META {
+            let human = matches!(m.kind, EntityKind::Person | EntityKind::Alias);
+            let actor = human || m.category == Category::Organizations;
+            assert_eq!(
+                m.facets.contains(&Facet::Occupation),
+                human,
+                "{:?}: occupation facet belongs only to individual-human kinds",
+                m.kind
+            );
+            assert_eq!(
+                m.facets.contains(&Facet::Role),
+                actor,
+                "{:?}: role facet belongs to people and organizations only",
+                m.kind
+            );
+            if !actor {
+                assert!(m.facets.is_empty(), "{:?} must declare no facets at all", m.kind);
+            }
+        }
+    }
+
+    #[test]
+    fn facet_sampling_matches_rule() {
+        use crate::model::Facet;
+        for kind in [EntityKind::Person, EntityKind::Alias] {
+            let f = KIND_META[kind as usize].facets;
+            assert!(f.contains(&Facet::Role), "{kind:?} needs Role");
+            assert!(f.contains(&Facet::Occupation), "{kind:?} needs Occupation");
+        }
+        for kind in [
+            EntityKind::Organization,
+            EntityKind::PoliticalParty,
+            EntityKind::Court,
+            EntityKind::LawFirm,
+            EntityKind::Bank,
+            EntityKind::MediaOutlet,
+            EntityKind::CriminalOrg,
+        ] {
+            let f = KIND_META[kind as usize].facets;
+            assert!(f.contains(&Facet::Role), "{kind:?} needs Role");
+            assert!(!f.contains(&Facet::Occupation), "{kind:?} must not carry Occupation");
+        }
+        for kind in [
+            EntityKind::Domain,
+            EntityKind::IpAddress,
+            EntityKind::Email,
+            EntityKind::Website,
+            EntityKind::WebPage,
+            EntityKind::Secret,
+            EntityKind::Money,
+            EntityKind::Vehicle,
+            EntityKind::Document,
+            EntityKind::TlsCertificate,
+            EntityKind::Location,
+            EntityKind::Event,
+        ] {
+            assert!(
+                KIND_META[kind as usize].facets.is_empty(),
+                "{kind:?} is not a person or org — it must declare no facets"
             );
         }
     }

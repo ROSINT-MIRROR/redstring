@@ -3,7 +3,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    Author, CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, OCCUPATION_ICONS, ObsValue,
+    Author, CATEGORY_META, EntityKind, Facet, KIND_META, MAX_CASE_NAME, OCCUPATION_ICONS, ObsValue,
     Observation, Occupation, OccupationIcon, Origin, RELATION_META, ROLE_META, RelationKind, Role,
     SOURCE_META, Source, ValueFormat, Verification, format_hint, pretty_key, slugify, status_color,
     status_label,
@@ -110,18 +110,7 @@ impl RedstringApp {
 
         kind_combo(ui, "insp_kind", &mut e.kind);
 
-        ui.horizontal(|ui| {
-            ui.label("role")
-                .on_hover_text("case-role — painted as a colored badge at the node's top-right");
-            role_combo(ui, "insp_role", &mut e.role);
-        });
-
-        ui.horizontal(|ui| -> Result<(), Error> {
-            ui.label("occupation")
-                .on_hover_text("job / profession — a steel badge at the node's bottom-left; pick its icon on the right");
-            occupation_field(ui, &mut e.occupation)
-        })
-        .inner?;
+        facet_rows(ui, e.kind, &mut e.role, &mut e.occupation)?;
 
         ui.horizontal(|ui| {
             ui.label("label");
@@ -579,6 +568,31 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
         });
 }
 
+fn facet_rows(
+    ui: &mut egui::Ui,
+    kind: EntityKind,
+    role: &mut Role,
+    occupation: &mut Option<Occupation>,
+) -> Result<(), Error> {
+    let facets = KIND_META[kind as usize].facets;
+    if facets.contains(&Facet::Role) {
+        ui.horizontal(|ui| {
+            ui.label("role")
+                .on_hover_text("case-role — painted as a colored badge at the node's top-right");
+            role_combo(ui, "insp_role", role);
+        });
+    }
+    if facets.contains(&Facet::Occupation) {
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.label("occupation")
+                .on_hover_text("job / profession — a steel badge at the node's bottom-left; pick its icon on the right");
+            occupation_field(ui, occupation)
+        })
+        .inner?;
+    }
+    Ok(())
+}
+
 fn occupation_field(ui: &mut egui::Ui, occ: &mut Option<Occupation>) -> Result<(), Error> {
     let mut label = String::new();
     for o in occ.iter() {
@@ -659,4 +673,71 @@ fn kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut EntityKind) {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn painted_texts(kind: EntityKind) -> Vec<String> {
+        let ctx = egui::Context::default();
+        let mut role = Role::Unset;
+        let mut occ: Option<Occupation> = None;
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                facet_rows(ui, kind, &mut role, &mut occ).expect("facet rows render headless");
+            });
+        });
+        let mut texts = Vec::new();
+        for clipped in &out.shapes {
+            collect_text(&clipped.shape, &mut texts);
+        }
+        texts
+    }
+
+    fn collect_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(t) => out.push(t.galley.text().to_owned()),
+            egui::epaint::Shape::Vec(v) => {
+                for s in v {
+                    collect_text(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn has(texts: &[String], needle: &str) -> bool {
+        texts.iter().any(|t| t.contains(needle))
+    }
+
+    #[test]
+    fn domain_form_renders_neither_role_nor_occupation() {
+        let texts = painted_texts(EntityKind::Domain);
+        assert!(!has(&texts, "role"), "Domain must not render a role row: {texts:?}");
+        assert!(
+            !has(&texts, "occupation"),
+            "Domain must not render an occupation field: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn person_form_renders_both_role_and_occupation() {
+        let texts = painted_texts(EntityKind::Person);
+        assert!(has(&texts, "role"), "Person must render a role row: {texts:?}");
+        assert!(
+            has(&texts, "occupation"),
+            "Person must render an occupation field: {texts:?}"
+        );
+    }
+
+    #[test]
+    fn organization_form_renders_role_but_not_occupation() {
+        let texts = painted_texts(EntityKind::Organization);
+        assert!(has(&texts, "role"), "Organization must render a role row: {texts:?}");
+        assert!(
+            !has(&texts, "occupation"),
+            "Organization must not render an occupation field: {texts:?}"
+        );
+    }
 }
