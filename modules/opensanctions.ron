@@ -1,0 +1,63 @@
+// builtin module spec — OpenSanctions sanctions/PEP/watchlist screening: screen a person or an
+// organization against the consolidated sanctions, PEP and crime watchlists at
+// api.opensanctions.org. The hosted API is keyed with an `Authorization: ApiKey <secret>` header,
+// so this reuses verbatim the env-injected header-auth mechanism DeHashed introduced: curl is the
+// bin (called directly, no shell), `keys` declares the `opensanctions` slot, and the secret rides
+// the `headers` field as a `{key:opensanctions}` token — the runner materializes it from the
+// injected REDSTRING_KEY_OPENSANCTIONS env at spawn and pipes `Authorization: ApiKey <secret>` to
+// curl over STDIN (`-H @-`). The secret never touches argv (/proc/pid/cmdline) or a shell.
+//
+// The query is the entity value (a name), URL-encoded by curl via `-G --data-urlencode` so spaces
+// and diacritics survive. The /search/default collection spans every sanctions + PEP + crime
+// dataset. Each result is a matched watchlisted entity: `caption` (its canonical name), `schema`
+// (Person/Company/…), `score` (match confidence), `properties.topics` (risk tags — sanction,
+// role.pep, crime…), `properties.country`, and `datasets` — the watchlists it appears on.
+//
+// datasets fan out to Dataset nodes (appeared_in) — the pivot rule: two screened subjects on the
+// same OFAC/EU list converge onto one Dataset node, so a shared watchlist becomes a red string
+// (the same shape DeHashed uses for breach `leak` nodes). The rest rides the subject as descriptive
+// observations — sanctions_match / match_schema / match_score / topics / country — so a hit is
+// visible without inventing a Sanction/Watchlist kind. A non-JSON or error body has no `results`,
+// matches no shape, and is archived as raw evidence, never parsed — degrade to evidence, never to
+// garbage.
+(
+    id: "opensanctions",
+    label: "OpenSanctions screening",
+    applies_to: ["person", "organization"],
+    bin: "curl",
+    args: [
+        "-sS",
+        "-G",
+        "-H", "@-",
+        "-H", "Accept: application/json",
+        "--data-urlencode", "q={value}",
+        "https://api.opensanctions.org/search/default",
+    ],
+    timeout_secs: 30,
+    keys: ["opensanctions"],
+    headers: [
+        ("Authorization", "ApiKey {key:opensanctions}"),
+    ],
+    shapes: [
+        (
+            id: "opensanctions",
+            extract: (id: "json", config: (array: "results", fields: [
+                ("caption", "caption"),
+                ("schema", "schema"),
+                ("score", "score"),
+                ("topics", "properties.topics"),
+                ("country", "properties.country"),
+                ("dataset", "datasets"),
+            ])),
+            min_hits: 2,
+            emit: [
+                Attr(from: "caption", key: "sanctions_match", kind: Text),
+                Attr(from: "schema", key: "match_schema", kind: Text),
+                Attr(from: "score", key: "match_score", kind: Number),
+                Attr(from: "topics", key: "topics", kind: Text),
+                Attr(from: "country", key: "country", kind: Text),
+                Entity(from: "dataset", kind: "dataset", rel: "appeared_in"),
+            ],
+        ),
+    ],
+)
