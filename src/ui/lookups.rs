@@ -13,7 +13,7 @@ use crate::model::{
 };
 use crate::modules::{Fact, ModuleRun, ModuleStatus, RunInput};
 
-use super::app::RedstringApp;
+use super::app::{RedstringApp, RsGraph};
 use super::layout::LayoutAnim;
 use super::style;
 
@@ -261,7 +261,7 @@ impl RedstringApp {
     }
 
     fn apply_run(&mut self, ui: &egui::Ui, run: ModuleRun) -> Result<(), Error> {
-        let Some(tidx) = self.node_by_slug(&run.target_slug) else {
+        let Some(tidx) = node_by_slug(&self.g, &run.target_slug) else {
             self.status = "lookup target no longer on the board — result dropped".into();
             return Ok(());
         };
@@ -304,6 +304,10 @@ impl RedstringApp {
                         label, value, *kind, attrs, &run.module_id, origin, base, &mut spawned,
                         &mut steps,
                     )?;
+                    if nidx == tidx {
+                        skipped += 1;
+                        continue;
+                    }
                     let (a, b) = if *outbound { (tidx, nidx) } else { (nidx, tidx) };
                     let dup = self
                         .g
@@ -414,64 +418,24 @@ impl RedstringApp {
         spawned: &mut usize,
         steps: &mut Vec<(NodeIndex, Pos2, Pos2)>,
     ) -> Result<NodeIndex, Error> {
-        let slug = slugify(value)?;
-        let existing = self.node_by_slug(&slug);
-        let nidx = self.ensure_node(existing, label, value, kind, origin, base, spawned, steps)?;
+        let (nidx, created) = converge_or_create(&mut self.g, kind, label, value, origin)?;
+        if created {
+            let angle = 0.45 + (base + *spawned) as f32 * 0.9;
+            let target = origin + Vec2::new(170.0 * angle.cos(), 170.0 * angle.sin());
+            *spawned += 1;
+            steps.push((nidx, origin, target));
+        }
         let author = self.author.clone();
         let Some(node) = self.g.node_mut(nidx) else {
             return Ok(nidx);
         };
         let e = node.payload_mut();
-        if e.value.trim().is_empty() {
-            e.value = value.to_owned();
-        }
         let mut set = 0usize;
         let mut skip = 0usize;
         for (k, v) in attrs {
             fill_obs(&mut e.observations, k, v, module_id, &author, &mut set, &mut skip)?;
         }
         Ok(nidx)
-    }
-
-    fn ensure_node(
-        &mut self,
-        existing: Option<NodeIndex>,
-        label: &str,
-        value: &str,
-        kind: EntityKind,
-        origin: Pos2,
-        base: usize,
-        spawned: &mut usize,
-        steps: &mut Vec<(NodeIndex, Pos2, Pos2)>,
-    ) -> Result<NodeIndex, Error> {
-        let Some(idx) = existing else {
-            let angle = 0.45 + (base + *spawned) as f32 * 0.9;
-            let target = origin + Vec2::new(170.0 * angle.cos(), 170.0 * angle.sin());
-            *spawned += 1;
-            let idx = self.add_entity(kind, label.to_owned(), origin)?;
-            self.reslug(idx, value)?;
-            steps.push((idx, origin, target));
-            return Ok(idx);
-        };
-        Ok(idx)
-    }
-
-    fn reslug(&mut self, idx: NodeIndex, value: &str) -> Result<(), Error> {
-        let slug = slugify(value)?;
-        let Some(n) = self.g.node_mut(idx) else {
-            return Ok(());
-        };
-        n.payload_mut().slug = slug;
-        Ok(())
-    }
-
-    fn node_by_slug(&self, slug: &str) -> Option<NodeIndex> {
-        self.g.g().node_indices().find(|i| {
-            let Some(n) = self.g.g().node_weight(*i) else {
-                return false;
-            };
-            n.payload().slug == slug
-        })
     }
 
     fn node_pos(&self, idx: NodeIndex) -> Pos2 {
@@ -514,6 +478,61 @@ impl RedstringApp {
             excerpt: clip(&run.raw, 280),
         })
     }
+}
+
+fn node_by_slug(g: &RsGraph, slug: &str) -> Option<NodeIndex> {
+    g.g().node_indices().find(|i| {
+        let Some(n) = g.g().node_weight(*i) else {
+            return false;
+        };
+        n.payload().slug == slug
+    })
+}
+
+fn node_by_value(g: &RsGraph, kind: EntityKind, value: &str) -> Result<Option<NodeIndex>, Error> {
+    let target = slugify(value)?;
+    if target.is_empty() {
+        return Ok(None);
+    }
+    for i in g.g().node_indices() {
+        let Some(n) = g.g().node_weight(i) else {
+            continue;
+        };
+        let e = n.payload();
+        if e.kind != kind {
+            continue;
+        }
+        let cand = if e.value.trim().is_empty() {
+            slugify(&e.label)?
+        } else {
+            slugify(&e.value)?
+        };
+        if cand == target {
+            return Ok(Some(i));
+        }
+    }
+    Ok(None)
+}
+
+fn converge_or_create(
+    g: &mut RsGraph,
+    kind: EntityKind,
+    label: &str,
+    value: &str,
+    origin: Pos2,
+) -> Result<(NodeIndex, bool), Error> {
+    let Some(idx) = node_by_value(g, kind, value)? else {
+        let idx = super::ops::spawn_node(g, kind, label, value, origin)?;
+        return Ok((idx, true));
+    };
+    let Some(node) = g.node_mut(idx) else {
+        return Ok((idx, false));
+    };
+    let e = node.payload_mut();
+    if e.value.trim().is_empty() {
+        e.value = value.to_owned();
+    }
+    Ok((idx, false))
 }
 
 fn fill_obs(
@@ -586,7 +605,96 @@ fn note_source(run: &ModuleRun) -> Source {
 
 #[cfg(test)]
 mod tests {
+    use egui_graphs::Graph;
+    use petgraph::stable_graph::StableGraph;
+
     use super::*;
+    use crate::model::{DEFAULT_NODE_SIZE, Entity, Role};
+
+    fn domain_node(slug: &str, label: &str, value: &str) -> Entity {
+        Entity {
+            slug: slug.to_owned(),
+            kind: EntityKind::Domain,
+            label: label.to_owned(),
+            value: value.to_owned(),
+            observations: Vec::new(),
+            role: Role::Unset,
+            occupation: None,
+            note: String::new(),
+            image: None,
+            size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        }
+    }
+
+    fn put(g: &mut RsGraph, e: Entity) -> NodeIndex {
+        let label = e.label.clone();
+        g.add_node_with_label_and_location(e, label, Pos2::ZERO)
+    }
+
+    #[test]
+    fn converges_on_value_despite_stale_slug() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let e = put(&mut g, domain_node("domain", "evil.com", ""));
+        assert_eq!(node_by_slug(&g, "domain"), Some(e));
+        assert_eq!(node_by_value(&g, EntityKind::Domain, "evil.com").unwrap(), Some(e));
+        let before = g.g().node_count();
+        let (nidx, created) =
+            converge_or_create(&mut g, EntityKind::Domain, "evil.com", "evil.com", Pos2::ZERO)
+                .unwrap();
+        assert_eq!(nidx, e);
+        assert!(!created);
+        assert_eq!(g.g().node_count(), before);
+    }
+
+    #[test]
+    fn distinct_san_creates_exactly_one_node() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let e = put(&mut g, domain_node("domain", "evil.com", ""));
+        let (a, created_a) =
+            converge_or_create(&mut g, EntityKind::Domain, "evil.com", "evil.com", Pos2::ZERO)
+                .unwrap();
+        assert_eq!(a, e);
+        assert!(!created_a);
+        assert_eq!(g.g().node_count(), 1);
+        let (b, created_b) = converge_or_create(
+            &mut g,
+            EntityKind::Domain,
+            "www.evil.com",
+            "www.evil.com",
+            Pos2::ZERO,
+        )
+        .unwrap();
+        assert_ne!(b, e);
+        assert!(created_b);
+        assert_eq!(g.g().node_count(), 2);
+    }
+
+    #[test]
+    fn different_kind_same_value_does_not_converge() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        put(&mut g, domain_node("domain", "evil.com", ""));
+        assert_eq!(node_by_value(&g, EntityKind::IpAddress, "evil.com").unwrap(), None);
+    }
+
+    #[test]
+    fn created_nodes_that_slugify_alike_get_unique_slugs() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let (a, created_a) =
+            converge_or_create(&mut g, EntityKind::Domain, "Evil Com", "a.example", Pos2::ZERO)
+                .unwrap();
+        let (b, created_b) =
+            converge_or_create(&mut g, EntityKind::Domain, "evil-com", "b.example", Pos2::ZERO)
+                .unwrap();
+        assert!(created_a && created_b);
+        assert_ne!(a, b);
+        let sa = g.node(a).unwrap().payload().slug.clone();
+        let sb = g.node(b).unwrap().payload().slug.clone();
+        assert_eq!(sa, "evil_com");
+        assert_eq!(sb, "evil_com_2");
+    }
 
     #[test]
     fn key_env_builds_only_configured_nonempty_keys() {
