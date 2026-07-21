@@ -1,6 +1,7 @@
 mod app;
 mod board;
 mod chrome;
+mod fold;
 mod inspector;
 mod layout;
 mod links;

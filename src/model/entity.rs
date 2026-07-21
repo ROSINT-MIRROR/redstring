@@ -319,6 +319,12 @@ pub struct Entity {
 
     #[serde(skip, default = "default_boost")]
     pub boost: f32,
+
+    #[serde(skip)]
+    pub collapsed: bool,
+
+    #[serde(skip)]
+    pub hidden: bool,
 }
 
 pub const DEFAULT_NODE_SIZE: f32 = 2.0;
@@ -413,6 +419,8 @@ mod tests {
             image: None,
             size: DEFAULT_NODE_SIZE,
             boost: 1.0,
+            collapsed: false,
+            hidden: false,
         };
         e.observations.push(
             Observation::stamp(
@@ -477,6 +485,8 @@ mod tests {
             image: None,
             size: DEFAULT_NODE_SIZE,
             boost: 1.0,
+            collapsed: false,
+            hidden: false,
         };
         assert_eq!(e.module_value().unwrap(), None, "prose label fails hostname check");
         e.value = "evil.example".into();

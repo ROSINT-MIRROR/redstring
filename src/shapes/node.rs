@@ -66,9 +66,10 @@ pub struct EntityNodeShape {
     
     icon: String,
     name: String,
-    
-    
+
+
     size: f32,
+    hidden: bool,
 }
 
 impl From<NodeProps<Entity>> for EntityNodeShape {
@@ -80,6 +81,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: props.payload.label.clone(),
             size: props.payload.size * props.payload.boost,
+            hidden: props.payload.hidden,
             circle,
             tex_ok: false,
         }
@@ -99,6 +101,9 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
     }
 
     fn shapes(&mut self, ctx: &DrawContext) -> Vec<Shape> {
+        if self.hidden {
+            return Vec::new();
+        }
         let Some(tex) = self.resolve_texture(ctx) else {
             
             self.tex_ok = false;
@@ -116,12 +121,16 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = state.payload.label.clone();
         self.size = state.payload.size * state.payload.boost;
+        self.hidden = state.payload.hidden;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
         
         self.circle.radius = NODE_RADIUS * self.size;
     }
 
     fn is_inside(&self, pos: Pos2) -> bool {
+        if self.hidden {
+            return false;
+        }
         if self.image_active() {
             
             

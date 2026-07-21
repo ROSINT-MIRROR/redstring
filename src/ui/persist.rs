@@ -38,6 +38,9 @@ impl RedstringApp {
             if e.size != DEFAULT_NODE_SIZE {
                 cf.display.sizes.insert(e.slug.clone(), e.size);
             }
+            if e.collapsed {
+                cf.display.collapsed.insert(e.slug.clone());
+            }
         }
         for idx in g.edge_indices() {
             let Some((a, b)) = g.edge_endpoints(idx) else { continue };
@@ -88,8 +91,8 @@ impl RedstringApp {
             let e = n.payload();
             let loc = n.location();
             parts.push(format!(
-                "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}",
-                e.slug, e.kind, e.label, e.value, e.observations, e.image, e.note, loc.x, loc.y, e.size
+                "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}|{}",
+                e.slug, e.kind, e.label, e.value, e.observations, e.image, e.note, loc.x, loc.y, e.size, e.collapsed
             ));
         }
         for idx in g.edge_indices() {
@@ -264,6 +267,8 @@ impl RedstringApp {
                 image: image_abs(&project, &er.image)?,
                 size: size_of(&cf.display, &er.slug),
                 boost: 1.0,
+                collapsed: cf.display.collapsed.contains(&er.slug),
+                hidden: false,
             };
             let idx = g.add_node_with_label_and_location(
                 ent,
@@ -290,6 +295,7 @@ impl RedstringApp {
                     author: rr.author.clone(),
                     created_at: rr.created_at,
                     sources: rr.sources.clone(),
+                    hidden: false,
                 },
                 RELATION_META[rr.kind as usize].label.into(),
             );

@@ -90,11 +90,27 @@ impl RedstringApp {
     }
 
     fn layout_targets(&self) -> Vec<NodeIndex> {
-        let sel = self.g.selected_nodes().to_vec();
+        let sel: Vec<NodeIndex> = self
+            .g
+            .selected_nodes()
+            .iter()
+            .copied()
+            .filter(|idx| !self.node_hidden(*idx))
+            .collect();
         if sel.len() >= 2 {
             return sel;
         }
-        self.g.g().node_indices().collect()
+        self.g
+            .g()
+            .node_indices()
+            .filter(|idx| !self.node_hidden(*idx))
+            .collect()
+    }
+
+    fn node_hidden(&self, idx: NodeIndex) -> bool {
+        self.g
+            .node(idx)
+            .is_some_and(|n| n.payload().hidden)
     }
 
     fn layout_step(&self, ui: &egui::Ui, targets: &[NodeIndex]) -> f32 {
@@ -301,6 +317,9 @@ impl RedstringApp {
                 continue;
             };
             if a == b {
+                continue;
+            }
+            if self.node_hidden(a) || self.node_hidden(b) {
                 continue;
             }
             match (lookup.get(&a).copied(), lookup.get(&b).copied()) {
