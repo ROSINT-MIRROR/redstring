@@ -226,69 +226,12 @@ impl RedstringApp {
         crate::dlog_info!("persist", "load begin {}", project.root.display());
         let cf = project::read_case(&project)?;
 
-        let mut g: RsGraph = Graph::from(&StableGraph::default());
-        let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
-        let mut healed = 0usize;
-        let mut note_errs: Vec<String> = Vec::new();
-        for (i, er) in cf.data.entities.iter().enumerate() {
-            if by_slug.contains_key(&er.slug) {
-                return Err(Error::DuplicateSlug {
-                    slug: er.slug.clone(),
-                });
-            }
-            let pos = healed_pos(&cf.display, &er.slug, i, &mut healed)?;
-            let note = match project::read_note(&project, &er.slug) {
-                Ok(n) => n,
-                Err(err) => {
-                    note_errs.push(format!("{err}"));
-                    String::new()
-                }
-            };
-            let ent = Entity {
-                slug: er.slug.clone(),
-                kind: er.kind,
-                label: er.label.clone(),
-                value: er.value.clone(),
-                observations: er.observations.clone(),
-                role: er.role,
-                occupation: er.occupation.clone(),
-                note,
-                image: image_abs(&project, &er.image)?,
-                size: size_of(&cf.display, &er.slug),
-                boost: 1.0,
-                collapsed: cf.display.collapsed.contains(&er.slug),
-                hidden: false,
-            };
-            let idx = g.add_node_with_label_and_location(
-                ent,
-                format!("{} {}", KIND_META[er.kind as usize].icon, er.label),
-                pos,
-            );
-            by_slug.insert(er.slug.clone(), idx);
-        }
-
-        let mut skipped: Vec<String> = Vec::new();
-        for rr in &cf.data.relations {
-            let (Some(&a), Some(&b)) = (by_slug.get(&rr.from), by_slug.get(&rr.to)) else {
-                skipped.push(format!("{} -> {}", rr.from, rr.to));
-                continue;
-            };
-            g.add_edge_with_label(
-                a,
-                b,
-                Relation {
-                    kind: rr.kind,
-                    origin: rr.origin.clone(),
-                    status: rr.status,
-                    confidence: rr.confidence,
-                    author: rr.author.clone(),
-                    created_at: rr.created_at,
-                    sources: rr.sources.clone(),
-                    hidden: false,
-                },
-                RELATION_META[rr.kind as usize].label.into(),
-            );
-        }
+        let LoadedGraph {
+            g,
+            healed,
+            note_errs,
+            skipped,
+        } = build_graph(&project, &cf)?;
 
         self.g = g;
         self.case_name = cf.meta.name.clone();
@@ -379,6 +322,86 @@ impl RedstringApp {
         };
         Ok(project.root.display().to_string())
     }
+}
+
+pub struct LoadedGraph {
+    pub g: RsGraph,
+    pub healed: usize,
+    pub note_errs: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Error> {
+    let mut g: RsGraph = Graph::from(&StableGraph::default());
+    let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
+    let mut healed = 0usize;
+    let mut note_errs: Vec<String> = Vec::new();
+    for (i, er) in cf.data.entities.iter().enumerate() {
+        if by_slug.contains_key(&er.slug) {
+            return Err(Error::DuplicateSlug {
+                slug: er.slug.clone(),
+            });
+        }
+        let pos = healed_pos(&cf.display, &er.slug, i, &mut healed)?;
+        let note = match project::read_note(project, &er.slug) {
+            Ok(n) => n,
+            Err(err) => {
+                note_errs.push(format!("{err}"));
+                String::new()
+            }
+        };
+        let ent = Entity {
+            slug: er.slug.clone(),
+            kind: er.kind,
+            label: er.label.clone(),
+            value: er.value.clone(),
+            observations: er.observations.clone(),
+            role: er.role,
+            occupation: er.occupation.clone(),
+            note,
+            image: image_abs(project, &er.image)?,
+            size: size_of(&cf.display, &er.slug),
+            boost: 1.0,
+            collapsed: cf.display.collapsed.contains(&er.slug),
+            hidden: false,
+        };
+        let idx = g.add_node_with_label_and_location(
+            ent,
+            format!("{} {}", KIND_META[er.kind as usize].icon, er.label),
+            pos,
+        );
+        by_slug.insert(er.slug.clone(), idx);
+    }
+
+    let mut skipped: Vec<String> = Vec::new();
+    for rr in &cf.data.relations {
+        let (Some(&a), Some(&b)) = (by_slug.get(&rr.from), by_slug.get(&rr.to)) else {
+            skipped.push(format!("{} -> {}", rr.from, rr.to));
+            continue;
+        };
+        g.add_edge_with_label(
+            a,
+            b,
+            Relation {
+                kind: rr.kind,
+                origin: rr.origin.clone(),
+                status: rr.status,
+                confidence: rr.confidence,
+                author: rr.author.clone(),
+                created_at: rr.created_at,
+                sources: rr.sources.clone(),
+                hidden: false,
+            },
+            RELATION_META[rr.kind as usize].label.into(),
+        );
+    }
+
+    Ok(LoadedGraph {
+        g,
+        healed,
+        note_errs,
+        skipped,
+    })
 }
 
 fn image_abs(project: &Project, image: &Option<String>) -> Result<Option<String>, Error> {

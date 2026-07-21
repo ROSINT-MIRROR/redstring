@@ -11,6 +11,12 @@ egui_graphs = "0.30.0"
 # decode entity images (mugshots/logos) → egui textures; formats match the picker filter
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 petgraph = { version = "0.8.3", features = ["serde-1"] }
+# headless offscreen board render (redstring --shot): tessellate one egui frame to an
+# offscreen wgpu texture and read it back to a PNG. eframe already pulls these transitively;
+# named here so shot.rs can use them directly. pollster blocks on wgpu's async adapter/device.
+egui-wgpu = "0.34.3"
+wgpu = "29.0.3"
+pollster = "0.4.0"
 # real regex for the content-extract adapter — tracker ids / emails / hashes out of raw HTML
 regex = "1"
 rfd = "0.17.2"
