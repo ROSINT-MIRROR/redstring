@@ -61,6 +61,7 @@ impl RedstringApp {
                 author: rel.author.clone(),
                 created_at: rel.created_at,
                 sources: rel.sources.clone(),
+                sealed: rel.sealed,
             });
         }
         cf.display.camera = camera_read(ui)?;
@@ -391,6 +392,7 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
                 author: rr.author.clone(),
                 created_at: rr.created_at,
                 sources: rr.sources.clone(),
+                sealed: rr.sealed,
                 hidden: false,
             },
             RELATION_META[rr.kind as usize].label.into(),

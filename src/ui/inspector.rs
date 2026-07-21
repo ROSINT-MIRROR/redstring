@@ -402,6 +402,18 @@ impl RedstringApp {
             ui.colored_label(OK_GREEN, format!("{g} {} source(s)", r.sources.len()));
         }
 
+        ui.add_space(style::GAP);
+        ui.checkbox(
+            &mut r.sealed,
+            format!(
+                "{} sealed — drop this relation from exports & generated files (local copy keeps it)",
+                egui_phosphor::regular::EYE_SLASH
+            ),
+        )
+        .on_hover_text(
+            "redact this relation from the Export bundle (.redstring.zip) and the generated artifacts (graph.md / case.json): the edge, its verb and its sources are dropped. any edge touching a sealed entity is dropped automatically. the on-disk case directory keeps the full data as your working copy.",
+        );
+
         style::section(ui, egui_phosphor::regular::LINK, "sources")?;
         let mut remove: Option<usize> = None;
         for (i, src) in r.sources.iter_mut().enumerate() {

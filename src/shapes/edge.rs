@@ -380,6 +380,7 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources,
+            sealed: false,
             hidden: false,
         }
     }

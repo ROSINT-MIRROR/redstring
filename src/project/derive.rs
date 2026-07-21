@@ -31,8 +31,10 @@ const SEALED_LABEL: &str = "[sealed]";
 pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
     let mut out = cf.clone();
     let mut remap: BTreeMap<String, String> = BTreeMap::new();
+    let mut sealed_slugs: BTreeSet<String> = BTreeSet::new();
     for e in &mut out.data.entities {
         if e.sealed {
+            sealed_slugs.insert(e.slug.clone());
             let alias = sealed_alias(&e.slug)?;
             remap.insert(e.slug.clone(), alias.clone());
             e.slug = alias;
@@ -45,6 +47,9 @@ pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
             e.observations.retain(|o| !o.sealed);
         }
     }
+    out.data
+        .relations
+        .retain(|r| !r.sealed && !sealed_slugs.contains(&r.from) && !sealed_slugs.contains(&r.to));
     for r in &mut out.data.relations {
         r.from = resolve(&remap, &r.from);
         r.to = resolve(&remap, &r.to);
@@ -154,6 +159,7 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: vec![],
+            sealed: false,
         }
     }
 
@@ -196,6 +202,7 @@ mod tests {
                 excerpt: String::new(),
                 ..Default::default()
             }],
+            sealed: false,
         });
         cf.data.relations.push(RelationRec {
             from: "strada_sigur".into(),
@@ -207,6 +214,7 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: vec![],
+            sealed: false,
         });
 
         let md = graph_md(&cf);
@@ -270,8 +278,15 @@ mod tests {
         assert!(redacted.observations.is_empty(), "sealed obs must be omitted");
         assert!(redacted.image.is_none(), "the image path leaks the name — drop it");
 
-        assert_eq!(public.data.relations[0].from, "acme", "the unsealed endpoint is untouched");
-        assert_eq!(public.data.relations[0].to, alias, "the edge still connects, anonymized");
+        assert!(
+            public.data.relations.is_empty(),
+            "an edge touching the sealed entity is withheld — keeping it would re-link the anon node by triangulation: {:?}",
+            public.data.relations
+        );
+        assert!(
+            !md.contains("owns"),
+            "the incident edge's verb must not survive in graph.md: {md}"
+        );
         assert_eq!(
             public.display.positions.get(&alias).copied(),
             Some((10.0, 20.0)),
@@ -360,5 +375,84 @@ mod tests {
         assert!(!json.contains("intercept transcript"), "sealed source excerpt must not leak: {json}");
         assert!(json.contains("public.example/filing"), "an unsealed source survives: {json}");
         assert_eq!(public.data.relations[0].sources.len(), 1, "only the sealed source is dropped");
+    }
+
+    #[test]
+    fn orphanage_assault_edge_never_leaks_verb_or_pairing() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("orphanage").unwrap();
+        cf.data
+            .entities
+            .push(ent("minor", EntityKind::Person, "A. Child", "child@example.org", true));
+        cf.data
+            .entities
+            .push(ent("soldier", EntityKind::Person, "Sgt Marku", "", false));
+        cf.data
+            .relations
+            .push(rel("minor", "soldier", RelationKind::SexuallyAssaulted));
+
+        let public = redact(&cf).unwrap();
+        let md = graph_md(&public);
+        let json = serde_json::to_string_pretty(&public).unwrap();
+        let rel_json = serde_json::to_string(&public.data.relations).unwrap();
+        let alias = sealed_alias("minor").unwrap();
+
+        assert!(
+            public.data.relations.is_empty(),
+            "the assault edge touches a sealed minor — it must not survive: {:?}",
+            public.data.relations
+        );
+        assert!(
+            !md.contains("sexually assaulted"),
+            "graph.md must not render the sensitive verb: {md}"
+        );
+        assert!(
+            !rel_json.contains("SexuallyAssaulted"),
+            "no surviving relation record may carry the sensitive verb: {rel_json}"
+        );
+        assert!(!md.contains("A. Child"), "the victim name must not leak: {md}");
+        assert!(!json.contains("child@example.org"), "the victim value must not leak: {json}");
+        assert!(md.contains("Sgt Marku"), "the named perpetrator node still ships: {md}");
+        for line in md.lines() {
+            assert!(
+                !(line.contains(&alias) && line.contains("soldier")),
+                "no line may re-link the anon victim to the named soldier: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicitly_sealed_relation_dropped_between_named_entities() {
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("hush").unwrap();
+        cf.data
+            .entities
+            .push(ent("acme", EntityKind::Organization, "Acme SRL", "", false));
+        cf.data
+            .entities
+            .push(ent("mark", EntityKind::Person, "Mark", "", false));
+
+        let mut hush = rel("acme", "mark", RelationKind::Paid);
+        hush.sealed = true;
+        hush.sources = vec![Source {
+            kind: SourceKind::Note,
+            reference: "off-books-ledger".into(),
+            excerpt: "settlement kept quiet".into(),
+            ..Default::default()
+        }];
+        cf.data.relations.push(hush);
+        cf.data.relations.push(rel("mark", "acme", RelationKind::EmployeeOf));
+
+        let public = redact(&cf).unwrap();
+        let md = graph_md(&public);
+        let json = serde_json::to_string_pretty(&public).unwrap();
+        let rel_json = serde_json::to_string(&public.data.relations).unwrap();
+
+        assert_eq!(public.data.relations.len(), 1, "only the explicitly-sealed edge is dropped");
+        assert_eq!(public.data.relations[0].kind, RelationKind::EmployeeOf);
+        assert!(!rel_json.contains("Paid"), "the sealed verb must not survive on any relation: {rel_json}");
+        assert!(!md.contains("|paid"), "graph.md must not render the sealed edge: {md}");
+        assert!(!json.contains("off-books-ledger"), "the sealed edge's source ref must not leak: {json}");
+        assert!(!json.contains("settlement kept quiet"), "the sealed edge's excerpt must not leak: {json}");
     }
 }
