@@ -8,11 +8,16 @@ use crate::error::Error;
 use super::entity::{EntityKind, KIND_META};
 use super::occupation::{OCC_BADGE, OCCUPATION_ICONS, Occupation};
 use super::role::{ROLE_META, Role};
+use super::subtype::subtype_value;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum Facet {
     Role,
     Occupation,
+    OrgType,
+    AccountType,
+    DomainType,
+    SiteType,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -25,6 +30,7 @@ pub enum FacetValue {
 pub enum BadgeCorner {
     TopRight,
     BottomLeft,
+    BottomRight,
 }
 
 pub struct FacetBadge {
@@ -39,7 +45,7 @@ pub struct FacetMeta {
     pub corner: BadgeCorner,
 }
 
-pub const FACET_META: [FacetMeta; 2] = [
+pub const FACET_META: [FacetMeta; 6] = [
     FacetMeta {
         facet: Facet::Role,
         label: "role",
@@ -52,28 +58,78 @@ pub const FACET_META: [FacetMeta; 2] = [
         hint: "job / profession — a steel badge at the node's bottom-left; pick its icon on the right",
         corner: BadgeCorner::BottomLeft,
     },
+    FacetMeta {
+        facet: Facet::OrgType,
+        label: "org type",
+        hint: "organization subtype — a colored badge at the node's bottom-right",
+        corner: BadgeCorner::BottomRight,
+    },
+    FacetMeta {
+        facet: Facet::AccountType,
+        label: "account type",
+        hint: "social-account subtype — a colored badge at the node's bottom-right",
+        corner: BadgeCorner::BottomRight,
+    },
+    FacetMeta {
+        facet: Facet::DomainType,
+        label: "domain type",
+        hint: "domain subtype — a colored badge at the node's bottom-right",
+        corner: BadgeCorner::BottomRight,
+    },
+    FacetMeta {
+        facet: Facet::SiteType,
+        label: "site type",
+        hint: "website subtype — a colored badge at the node's bottom-right",
+        corner: BadgeCorner::BottomRight,
+    },
 ];
 
 pub fn facet_badge(facet: Facet, value: &FacetValue) -> Result<Option<FacetBadge>, Error> {
-    match (facet, value) {
-        (Facet::Role, FacetValue::Indexed(i)) => {
-            let idx = *i as usize;
-            if idx == 0 || idx >= ROLE_META.len() {
-                return Ok(None);
-            }
-            let m = &ROLE_META[idx];
-            Ok(Some(FacetBadge {
-                color: m.color,
-                glyph: m.icon,
-            }))
+    match facet {
+        Facet::Role => role_badge(value),
+        Facet::Occupation => occupation_badge(value),
+        Facet::OrgType | Facet::AccountType | Facet::DomainType | Facet::SiteType => {
+            subtype_badge(facet, value)
         }
-        (Facet::Occupation, FacetValue::Freeform(occ)) => Ok(Some(FacetBadge {
-            color: OCC_BADGE,
-            glyph: OCCUPATION_ICONS[occ.icon as usize].glyph,
-        })),
-        (Facet::Role, FacetValue::Freeform(_)) => Ok(None),
-        (Facet::Occupation, FacetValue::Indexed(_)) => Ok(None),
     }
+}
+
+fn role_badge(value: &FacetValue) -> Result<Option<FacetBadge>, Error> {
+    let FacetValue::Indexed(i) = value else {
+        return Ok(None);
+    };
+    let idx = *i as usize;
+    if idx == 0 || idx >= ROLE_META.len() {
+        return Ok(None);
+    }
+    let m = &ROLE_META[idx];
+    Ok(Some(FacetBadge {
+        color: m.color,
+        glyph: m.icon,
+    }))
+}
+
+fn occupation_badge(value: &FacetValue) -> Result<Option<FacetBadge>, Error> {
+    let FacetValue::Freeform(occ) = value else {
+        return Ok(None);
+    };
+    Ok(Some(FacetBadge {
+        color: OCC_BADGE,
+        glyph: OCCUPATION_ICONS[occ.icon as usize].glyph,
+    }))
+}
+
+fn subtype_badge(facet: Facet, value: &FacetValue) -> Result<Option<FacetBadge>, Error> {
+    let FacetValue::Indexed(i) = value else {
+        return Ok(None);
+    };
+    let Some(v) = subtype_value(facet, *i)? else {
+        return Ok(None);
+    };
+    Ok(Some(FacetBadge {
+        color: v.color,
+        glyph: v.icon,
+    }))
 }
 
 pub fn role_of(facets: &BTreeMap<Facet, FacetValue>) -> Result<Role, Error> {
@@ -108,6 +164,26 @@ pub fn set_occupation(
         return Ok(());
     };
     facets.insert(Facet::Occupation, FacetValue::Freeform(occ));
+    Ok(())
+}
+
+pub fn subtype_of(facets: &BTreeMap<Facet, FacetValue>, facet: Facet) -> Result<Option<u16>, Error> {
+    let Some(FacetValue::Indexed(i)) = facets.get(&facet) else {
+        return Ok(None);
+    };
+    Ok(Some(*i))
+}
+
+pub fn set_subtype(
+    facets: &mut BTreeMap<Facet, FacetValue>,
+    facet: Facet,
+    value: Option<u16>,
+) -> Result<(), Error> {
+    let Some(i) = value else {
+        facets.remove(&facet);
+        return Ok(());
+    };
+    facets.insert(facet, FacetValue::Indexed(i));
     Ok(())
 }
 
@@ -225,6 +301,57 @@ mod tests {
         assert!(
             to_domain.is_empty(),
             "a Domain declares no facets — Person→Domain must clear role AND occupation from the store"
+        );
+    }
+
+    #[test]
+    fn subtype_facet_round_trips_through_the_store() {
+        let mut facets = BTreeMap::new();
+        assert_eq!(subtype_of(&facets, Facet::OrgType).unwrap(), None, "empty store has no org type");
+        set_subtype(&mut facets, Facet::OrgType, Some(1)).unwrap();
+        assert_eq!(subtype_of(&facets, Facet::OrgType).unwrap(), Some(1));
+        assert_eq!(facets.get(&Facet::OrgType), Some(&FacetValue::Indexed(1)));
+        set_subtype(&mut facets, Facet::OrgType, None).unwrap();
+        assert!(!facets.contains_key(&Facet::OrgType), "clearing to None removes the entry");
+    }
+
+    #[test]
+    fn subtype_facet_paints_its_vocab_badge() {
+        let want =
+            subtype_value(Facet::OrgType, 1).unwrap().expect("shell-company vocab row at index 1");
+        let badge =
+            facet_badge(Facet::OrgType, &FacetValue::Indexed(1)).unwrap().expect("org-type badge");
+        assert_eq!(badge.color, want.color, "subtype badge takes its vocab color");
+        assert_eq!(badge.glyph, want.icon, "subtype badge takes its vocab icon");
+        assert!(
+            facet_badge(Facet::OrgType, &FacetValue::Indexed(999)).unwrap().is_none(),
+            "an out-of-range subtype index paints no badge"
+        );
+        assert!(
+            facet_badge(
+                Facet::OrgType,
+                &FacetValue::Freeform(Occupation {
+                    label: "x".to_owned(),
+                    icon: OccupationIcon::default(),
+                }),
+            )
+            .unwrap()
+            .is_none(),
+            "a Freeform value on an indexed subtype facet paints no badge"
+        );
+    }
+
+    #[test]
+    fn changing_org_to_person_clears_the_org_type_subtype() {
+        let mut facets = BTreeMap::new();
+        set_role(&mut facets, Role::Suspect).unwrap();
+        set_subtype(&mut facets, Facet::OrgType, Some(1)).unwrap();
+        retain_declared_facets(&mut facets, EntityKind::Person).unwrap();
+        assert_eq!(role_of(&facets).unwrap(), Role::Suspect, "Person keeps the shared role facet");
+        assert_eq!(
+            subtype_of(&facets, Facet::OrgType).unwrap(),
+            None,
+            "Person does not declare OrgType — the org subtype must be dropped at the data layer"
         );
     }
 

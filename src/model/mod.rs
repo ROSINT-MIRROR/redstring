@@ -7,15 +7,17 @@ mod occupation;
 mod relation;
 mod role;
 mod source;
+mod subtype;
 mod value;
 
 pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, MAX_CASE_NAME, RelationRec};
 pub use civil::{days_from_civil, fmt_civil_date, fnv1a};
 pub use entity::{CATEGORY_META, CategoryMeta, DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, KindMeta, pretty_key, slugify};
-pub use facet::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge, occupation_of, retain_declared_facets, role_of, set_occupation, set_role};
+pub use facet::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge, occupation_of, retain_declared_facets, role_of, set_occupation, set_role, set_subtype, subtype_of};
 pub use observation::{Author, DATE_PRECISION_META, DatePrecision, DateVal, ObsValue, Observation, Origin, VERIFICATION_META, Verification, now_unix, resolve_identity, status_color, status_label};
 pub use occupation::{OCCUPATION_ICONS, Occupation, OccupationIcon};
 pub use relation::{RELATION_META, Relation, RelationKind};
 pub use role::{PRESETS, Preset, ROLE_META, Role, apply_preset};
 pub use source::{SOURCE_META, SOURCE_TIER_META, Source, SourceKind, SourceTier};
+pub use subtype::{SubtypeVocab, subtype_value, subtype_vocab};
 pub use value::{ValueFormat, format_hint, url_host};
