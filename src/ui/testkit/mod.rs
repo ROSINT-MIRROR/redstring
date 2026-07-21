@@ -14,3 +14,15 @@ mod tests_roundtrip;
 mod tests_lookups;
 #[cfg(test)]
 mod tests_properties;
+#[cfg(test)]
+mod tests_fold;
+#[cfg(test)]
+mod tests_layout;
+#[cfg(test)]
+mod tests_convergence;
+#[cfg(test)]
+mod tests_persistence;
+#[cfg(test)]
+mod tests_delete;
+#[cfg(test)]
+mod tests_flows;
