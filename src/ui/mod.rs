@@ -12,6 +12,8 @@ mod ops;
 mod palette;
 mod persist;
 mod style;
+#[cfg(test)]
+pub mod testkit;
 mod welcome;
 
 pub use app::RedstringApp;

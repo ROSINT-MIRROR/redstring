@@ -1,0 +1,4 @@
+{"issuer":"C=US, O=Let's Encrypt, CN=R3","san":"evil-corp.example"}
+{"issuer":"C=US, O=Let's Encrypt, CN=R3","san":"mail.evil-corp.example"}
+{"issuer":"C=US, O=Let's Encrypt, CN=R3","san":"vpn.evil-corp.example"}
+{"issuer":"C=US, O=Let's Encrypt, CN=R3","san":"staging.evil-corp.example"}

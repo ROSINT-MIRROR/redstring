@@ -1,0 +1,2 @@
+{"id":"000000000000000000000a01000000000000d0e1","name":"dob","value":{"Text":"1971-03-04"},"origin":"Manual","status":"AnalystAsserted","confidence":100,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[]}
+{"id":"000000000000000000000a02000000000000d0e2","name":"nationality","value":{"Text":"Cyprus"},"origin":"Manual","status":"Unreviewed","confidence":60,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[]}

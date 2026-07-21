@@ -1,0 +1,24 @@
+#
+# ARIN WHOIS data and services are subject to the Terms of Use
+# available at: https://www.arin.net/resources/registry/whois/tou/
+#
+
+NetRange:       203.0.113.0 - 203.0.113.255
+CIDR:           203.0.113.0/24
+NetName:        EVILCORP-NET-1
+NetHandle:      NET-203-0-113-0-1
+Parent:         NET203 (NET-203-0-0-0-0)
+NetType:        Direct Allocation
+OriginAS:       AS64500
+Organization:   Evil Corp Hosting LLC (EVILC-1)
+RegDate:        2018-02-20
+Updated:        2023-11-04
+
+OrgName:        Evil Corp Hosting LLC
+OrgId:          EVILC-1
+Country:        US
+City:           Reno
+StateProv:      NV
+PostalCode:     89501
+
+# end

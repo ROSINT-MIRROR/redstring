@@ -1,0 +1,2 @@
+{"from":"j_doe","to":"shell_co_ltd","kind":"Controls","origin":"Manual","status":"AnalystAsserted","confidence":100,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[{"kind":"Url","reference":"https://registry.example/filings/shell-co-ltd","excerpt":"J. Doe listed as sole director and signatory."}]}
+{"from":"shell_co_ltd","to":"evil_corp_example","kind":"OwnsDomain","origin":"Manual","status":"Unreviewed","confidence":100,"author":{"name":"Test Analyst","email":"analyst@redstring.test"},"created_at":1710000000,"sources":[]}
