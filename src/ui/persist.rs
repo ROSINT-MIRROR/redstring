@@ -141,9 +141,10 @@ impl RedstringApp {
         let Some(project) = &self.project else {
             return Ok(());
         };
-        let (path, n) = project::export(project)?;
+        let (path, n, sealed) = project::export(project)?;
         crate::dlog_info!("persist", "export bundle {n} files -> {}", path.display());
-        self.status = format!("bundled {n} files → {}", path.display());
+        let redacted = if sealed > 0 { format!(" · {sealed} sealed entities redacted from bundle") } else { String::new() };
+        self.status = format!("bundled {n} files → {}{redacted}", path.display());
         Ok(())
     }
 

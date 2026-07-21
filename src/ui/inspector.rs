@@ -159,12 +159,12 @@ impl RedstringApp {
         ui.checkbox(
             &mut e.sealed,
             format!(
-                "{} sealed — redact from public exports",
+                "{} sealed — redact from exports & generated files (local copy keeps the data)",
                 egui_phosphor::regular::EYE_SLASH
             ),
         )
         .on_hover_text(
-            "hide this entity from the derived public artifacts (graph.md / case.json): label, value, note and observations are masked and its id anonymized. the on-disk case files keep the data.",
+            "redact this entity from the Export bundle (.redstring.zip) and the generated artifacts (graph.md / case.json): label, value, note and observations are masked and its id anonymized. the on-disk case directory keeps the full data as your working copy.",
         );
 
         style::section(ui, egui_phosphor::regular::IMAGE, "image")?;

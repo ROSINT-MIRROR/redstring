@@ -28,7 +28,7 @@ pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
 
 const SEALED_LABEL: &str = "[sealed]";
 
-fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
+pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
     let mut out = cf.clone();
     let mut remap: BTreeMap<String, String> = BTreeMap::new();
     for e in &mut out.data.entities {
