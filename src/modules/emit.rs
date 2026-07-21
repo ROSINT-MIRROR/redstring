@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::model::{EntityKind, ObsValue, RelationKind, url_host};
+use crate::model::{DatePrecision, DateVal, EntityKind, ObsValue, RelationKind, url_host};
 
 use super::extract::{Record, Records};
 use super::spec::{AttrRule, EmitRule, LabelMode, ObsKind, Shape, kind_by_slug, rel_by_slug};
@@ -144,13 +144,73 @@ fn coord_or_text(raw: &str) -> ObsValue {
 }
 
 fn date_or_text(raw: &str) -> ObsValue {
-    let Some(secs) = parse_date(raw) else {
+    let Some((secs, precision)) = parse_date(raw) else {
         return ObsValue::Text(raw.to_owned());
     };
-    ObsValue::Date(secs)
+    ObsValue::Date(DateVal { secs, precision })
 }
 
-fn parse_date(raw: &str) -> Option<i64> {
+fn parse_date(raw: &str) -> Option<(i64, DatePrecision)> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let Some(rest) = strip_circa(s) else {
+        return parse_fuzzy_or_ymd(s);
+    };
+    let (secs, _) = parse_ymd(rest)?;
+    Some((secs, DatePrecision::Circa))
+}
+
+fn parse_fuzzy_or_ymd(s: &str) -> Option<(i64, DatePrecision)> {
+    let Some(secs) = parse_century(s) else {
+        let Some(secs) = parse_decade(s) else {
+            return parse_ymd(s);
+        };
+        return Some((secs, DatePrecision::Decade));
+    };
+    Some((secs, DatePrecision::Century))
+}
+
+fn strip_circa(s: &str) -> Option<&str> {
+    let lower = s.to_ascii_lowercase();
+    for pre in ["~", "circa", "ca.", "c."] {
+        if !lower.starts_with(pre) {
+            continue;
+        }
+        let rest = s[pre.len()..].trim_start();
+        if pre == "~" || rest.is_empty() || rest.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(rest);
+        }
+    }
+    None
+}
+
+fn parse_century(s: &str) -> Option<i64> {
+    let lower = s.trim().to_ascii_lowercase();
+    if !(lower.ends_with("century") || lower.ends_with("c.")) {
+        return None;
+    }
+    let digits: String = lower.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let n = to_i64(&digits)?;
+    if !(1..=99).contains(&n) {
+        return None;
+    }
+    Some(days_from_civil((n - 1) * 100 + 1, 1, 1) * 86_400)
+}
+
+fn parse_decade(s: &str) -> Option<i64> {
+    let Some(head) = s.trim().strip_suffix('s') else {
+        return None;
+    };
+    let n = to_i64(head)?;
+    if n % 10 != 0 || !(0..=9999).contains(&n) {
+        return None;
+    }
+    Some(days_from_civil(n, 1, 1) * 86_400)
+}
+
+fn parse_ymd(raw: &str) -> Option<(i64, DatePrecision)> {
     let s = raw.trim();
     if s.is_empty() {
         return None;
@@ -158,19 +218,47 @@ fn parse_date(raw: &str) -> Option<i64> {
     let norm = s.replace(['/', '.'], "-");
     let mut halves = norm.splitn(2, |c: char| c == 'T' || c == 't' || c == ' ');
     let date_part = halves.next()?;
-    let mut d = date_part.split('-');
-    let y = to_i64(d.next()?)?;
-    let mo = to_i64(d.next()?)?;
-    let da = to_i64(d.next()?)?;
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&da) {
+    let time_part = halves.next();
+    let comps: Vec<&str> = date_part.split('-').collect();
+    match comps.as_slice() {
+        [y] => {
+            if time_part.is_some() {
+                return None;
+            }
+            Some((days_from_civil(year_in_range(y)?, 1, 1) * 86_400, DatePrecision::Year))
+        }
+        [y, mo] => {
+            if time_part.is_some() {
+                return None;
+            }
+            let month = to_i64(mo)?;
+            if !(1..=12).contains(&month) {
+                return None;
+            }
+            Some((days_from_civil(year_in_range(y)?, month, 1) * 86_400, DatePrecision::Month))
+        }
+        [y, mo, da] => {
+            let month = to_i64(mo)?;
+            let day = to_i64(da)?;
+            if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+                return None;
+            }
+            let secs = days_from_civil(to_i64(y)?, month, day) * 86_400;
+            let Some(time_part) = time_part else {
+                return Some((secs, DatePrecision::Day));
+            };
+            Some((secs + time_seconds(time_part), DatePrecision::Day))
+        }
+        _other => None,
+    }
+}
+
+fn year_in_range(s: &str) -> Option<i64> {
+    let n = to_i64(s)?;
+    if !(-9999..=9999).contains(&n) {
         return None;
     }
-    let mut secs = days_from_civil(y, mo, da) * 86_400;
-    let Some(time_part) = halves.next() else {
-        return Some(secs);
-    };
-    secs += time_seconds(time_part);
-    Some(secs)
+    Some(n)
 }
 
 fn time_seconds(part: &str) -> i64 {
@@ -398,17 +486,17 @@ mod tests {
         );
         assert_eq!(
             parse_obs_value(ObsKind::Date, "2000-01-01T00:00:00Z").unwrap(),
-            ObsValue::Date(946_684_800),
+            ObsValue::Date(DateVal { secs: 946_684_800, precision: DatePrecision::Day }),
             "iso datetime with Z lands on the known epoch second"
         );
         assert_eq!(
             parse_obs_value(ObsKind::Date, "2000-01-01").unwrap(),
-            ObsValue::Date(946_684_800),
+            ObsValue::Date(DateVal { secs: 946_684_800, precision: DatePrecision::Day }),
             "a bare date is midnight UTC"
         );
         assert_eq!(
             parse_obs_value(ObsKind::Date, "2000-01-01T05:00:00+05:00").unwrap(),
-            ObsValue::Date(946_684_800),
+            ObsValue::Date(DateVal { secs: 946_684_800, precision: DatePrecision::Day }),
             "numeric offset is folded back to UTC"
         );
         assert_eq!(
@@ -437,6 +525,62 @@ mod tests {
             ObsValue::Text("1,2,3".into()),
             "a three-part coordinate is not a lat,lon pair"
         );
+    }
+
+    fn parse_date_str(raw: &str) -> ObsValue {
+        parse_obs_value(ObsKind::Date, raw).unwrap()
+    }
+
+    #[test]
+    fn date_parse_detects_precision_from_input_shape() {
+        assert_eq!(
+            parse_date_str("2012"),
+            ObsValue::Date(DateVal { secs: 1_325_376_000, precision: DatePrecision::Year }),
+            "a bare year keeps year precision anchored to Jan 1"
+        );
+        assert_eq!(
+            parse_date_str("2012-11"),
+            ObsValue::Date(DateVal { secs: 1_351_728_000, precision: DatePrecision::Month }),
+            "year-month keeps month precision anchored to the first"
+        );
+        let ObsValue::Date(day) = parse_date_str("2019-04-12") else {
+            panic!("a full date must stay a Date");
+        };
+        assert_eq!(day.precision, DatePrecision::Day);
+
+        assert_eq!(parse_date_str("2012").text().unwrap(), "2012");
+        assert_eq!(parse_date_str("2012-11").text().unwrap(), "2012-11");
+        assert_eq!(parse_date_str("2019-04-12").text().unwrap(), "2019-04-12");
+        assert_eq!(parse_date_str("~1976").text().unwrap(), "~1976");
+        assert_eq!(parse_date_str("c. 1976").text().unwrap(), "~1976");
+        assert_eq!(parse_date_str("circa 1976").text().unwrap(), "~1976");
+        assert_eq!(parse_date_str("14th century").text().unwrap(), "14th c.");
+        assert_eq!(parse_date_str("14th c.").text().unwrap(), "14th c.");
+        assert_eq!(parse_date_str("2010s").text().unwrap(), "2010s");
+    }
+
+    #[test]
+    fn ambiguous_or_ranged_dates_degrade_to_text_not_a_false_instant() {
+        assert_eq!(
+            parse_date_str("2012-2013"),
+            ObsValue::Text("2012-2013".into()),
+            "a year range is not one instant"
+        );
+        assert_eq!(
+            parse_date_str("600 years"),
+            ObsValue::Text("600 years".into()),
+            "a duration is not a date"
+        );
+        assert_eq!(
+            parse_date_str("November 2014"),
+            ObsValue::Text("November 2014".into()),
+            "a month name we do not parse keeps its literal fidelity"
+        );
+        let ObsValue::Date(pre) = parse_date_str("1969-07-20") else {
+            panic!("a pre-1970 date must still parse to a Date");
+        };
+        assert!(pre.secs < 0, "pre-epoch dates carry negative seconds: {}", pre.secs);
+        assert_eq!(parse_date_str("1969-07-20").text().unwrap(), "1969-07-20");
     }
 
     #[test]

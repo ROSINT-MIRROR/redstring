@@ -80,11 +80,79 @@ pub enum Origin {
 }
 
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum DatePrecision {
+    #[default]
+    Day,
+    Month,
+    Year,
+    Decade,
+    Century,
+    Circa,
+}
+
+pub struct DatePrecisionMeta {
+    pub precision: DatePrecision,
+    pub label: &'static str,
+}
+
+const fn dpm(precision: DatePrecision, label: &'static str) -> DatePrecisionMeta {
+    DatePrecisionMeta { precision, label }
+}
+
+#[rustfmt::skip]
+pub const DATE_PRECISION_META: [DatePrecisionMeta; 6] = [
+    dpm(DatePrecision::Day,     "day"),
+    dpm(DatePrecision::Month,   "month"),
+    dpm(DatePrecision::Year,    "year"),
+    dpm(DatePrecision::Decade,  "decade"),
+    dpm(DatePrecision::Century, "century"),
+    dpm(DatePrecision::Circa,   "circa"),
+];
+
+fn precision_is_day(p: &DatePrecision) -> bool {
+    matches!(p, DatePrecision::Day)
+}
+
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+pub struct DateVal {
+    pub secs: i64,
+    #[serde(skip_serializing_if = "precision_is_day")]
+    pub precision: DatePrecision,
+}
+
+impl<'de> Deserialize<'de> for DateVal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Bare(i64),
+            Full {
+                secs: i64,
+                #[serde(default)]
+                precision: DatePrecision,
+            },
+        }
+        Ok(match Repr::deserialize(deserializer)? {
+            Repr::Bare(secs) => DateVal {
+                secs,
+                precision: DatePrecision::Day,
+            },
+            Repr::Full { secs, precision } => DateVal { secs, precision },
+        })
+    }
+}
+
+
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ObsValue {
     Text(String),
     Number(f64),
-    Date(i64),
+    Date(DateVal),
     Coord { lat: f64, lon: f64 },
     Bool(bool),
 }
@@ -100,11 +168,56 @@ impl ObsValue {
         Ok(match self {
             ObsValue::Text(s) => s.clone(),
             ObsValue::Number(n) => format!("{n}"),
-            ObsValue::Date(d) => format!("{d}"),
+            ObsValue::Date(d) => fmt_date(d.secs, d.precision),
             ObsValue::Coord { lat, lon } => format!("{lat},{lon}"),
             ObsValue::Bool(b) => format!("{b}"),
         })
     }
+}
+
+
+fn fmt_date(secs: i64, precision: DatePrecision) -> String {
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    match precision {
+        DatePrecision::Day => format!("{y:04}-{m:02}-{d:02}"),
+        DatePrecision::Month => format!("{y:04}-{m:02}"),
+        DatePrecision::Year => format!("{y}"),
+        DatePrecision::Decade => format!("{}s", y.div_euclid(10) * 10),
+        DatePrecision::Century => format!("{} c.", ordinal((y - 1).div_euclid(100) + 1)),
+        DatePrecision::Circa => format!("~{y}"),
+    }
+}
+
+fn ordinal(n: i64) -> String {
+    let in_teens = (11..=13).contains(&n.rem_euclid(100));
+    let ones = n.rem_euclid(10);
+    let suffix = if in_teens {
+        "th"
+    } else if ones == 1 {
+        "st"
+    } else if ones == 2 {
+        "nd"
+    } else if ones == 3 {
+        "rd"
+    } else {
+        "th"
+    };
+    format!("{n}{suffix}")
+}
+
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let base = if z >= 0 { z } else { z - 146_096 };
+    let era = base.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { year + 1 } else { year };
+    (year, month, day)
 }
 
 
@@ -298,6 +411,81 @@ mod tests {
             ObsValue::Coord { lat: 1.0, lon: 2.0 }.text().unwrap(),
             "1,2"
         );
+    }
+
+    fn date(secs: i64, precision: DatePrecision) -> ObsValue {
+        ObsValue::Date(DateVal { secs, precision })
+    }
+
+    #[test]
+    fn date_renders_civil_by_precision_not_raw_secs() {
+        let epoch = 946_684_800;
+        assert_eq!(date(epoch, DatePrecision::Day).text().unwrap(), "2000-01-01");
+        assert_eq!(date(epoch, DatePrecision::Month).text().unwrap(), "2000-01");
+        assert_eq!(date(epoch, DatePrecision::Year).text().unwrap(), "2000");
+        assert_eq!(date(epoch, DatePrecision::Decade).text().unwrap(), "2000s");
+        assert_eq!(date(epoch, DatePrecision::Century).text().unwrap(), "20th c.");
+        assert_eq!(date(epoch, DatePrecision::Circa).text().unwrap(), "~2000");
+    }
+
+    #[test]
+    fn pre_1970_date_renders_a_sane_civil_string_not_a_huge_negative_int() {
+        let rendered = date(-2_208_988_800, DatePrecision::Day).text().unwrap();
+        assert_eq!(rendered, "1900-01-01");
+        assert!(
+            !rendered.contains("-22") && !rendered.contains("988"),
+            "the raw negative epoch must never leak: {rendered}"
+        );
+        assert_eq!(date(-2_208_988_800, DatePrecision::Year).text().unwrap(), "1900");
+    }
+
+    #[test]
+    fn ordinal_suffixes_follow_english_rules() {
+        assert_eq!(ordinal(1), "1st");
+        assert_eq!(ordinal(2), "2nd");
+        assert_eq!(ordinal(3), "3rd");
+        assert_eq!(ordinal(4), "4th");
+        assert_eq!(ordinal(11), "11th");
+        assert_eq!(ordinal(12), "12th");
+        assert_eq!(ordinal(13), "13th");
+        assert_eq!(ordinal(14), "14th");
+        assert_eq!(ordinal(21), "21st");
+        assert_eq!(ordinal(22), "22nd");
+        assert_eq!(ordinal(23), "23rd");
+    }
+
+    #[test]
+    fn old_bare_int_date_line_still_deserializes_as_day_precision() {
+        let old: ObsValue = serde_json::from_str("{\"Date\":946684800}").unwrap();
+        assert_eq!(old, date(946_684_800, DatePrecision::Day));
+        assert_eq!(old.text().unwrap(), "2000-01-01");
+    }
+
+    #[test]
+    fn precision_round_trips_and_day_stays_lean() {
+        let year = date(946_684_800, DatePrecision::Year);
+        let json = serde_json::to_string(&year).unwrap();
+        assert!(json.contains("Year"), "precision must persist: {json}");
+        let back: ObsValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, year);
+
+        let day = date(946_684_800, DatePrecision::Day);
+        let json = serde_json::to_string(&day).unwrap();
+        assert!(!json.contains("precision"), "day is the lean default: {json}");
+        let back: ObsValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, day);
+    }
+
+    #[test]
+    fn date_precision_table_pins_order_and_stays_distinct() {
+        for (i, m) in DATE_PRECISION_META.iter().enumerate() {
+            assert_eq!(m.precision as usize, i, "DATE_PRECISION_META[{i}] is {:?}", m.precision);
+        }
+        assert_eq!(DATE_PRECISION_META.len(), 6, "six precision levels");
+        let mut labels: Vec<&str> = DATE_PRECISION_META.iter().map(|m| m.label).collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), 6, "every precision label is distinct");
     }
 
     #[test]

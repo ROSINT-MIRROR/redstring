@@ -564,7 +564,7 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, Entity, ObsValue, Role};
+    use crate::model::{DEFAULT_NODE_SIZE, DatePrecision, DateVal, Entity, ObsValue, Role};
 
     fn domain_node(slug: &str, label: &str, value: &str) -> Entity {
         Entity {
@@ -703,7 +703,11 @@ mod tests {
         fill_obs(&mut obs, "expires", ObsKind::Date, "2000-01-01T00:00:00Z", "whois", &author, &mut set, &mut skip).unwrap();
         fill_obs(&mut obs, "revenue", ObsKind::Number, "180199672", "propublica", &author, &mut set, &mut skip).unwrap();
         fill_obs(&mut obs, "when", ObsKind::Date, "sometime last spring", "m", &author, &mut set, &mut skip).unwrap();
-        assert_eq!(obs[0].value, ObsValue::Date(946_684_800), "a parseable date stamps a typed Date");
+        assert_eq!(
+            obs[0].value,
+            ObsValue::Date(DateVal { secs: 946_684_800, precision: DatePrecision::Day }),
+            "a parseable date stamps a typed Date"
+        );
         assert_eq!(obs[1].value, ObsValue::Number(180199672.0), "revenue stamps a typed Number");
         assert_eq!(
             obs[2].value,

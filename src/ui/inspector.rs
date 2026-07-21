@@ -3,11 +3,12 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    Author, CATEGORY_META, EntityKind, Facet, KIND_META, MAX_CASE_NAME, OCCUPATION_ICONS, ObsValue,
-    Observation, Occupation, OccupationIcon, Origin, RELATION_META, ROLE_META, RelationKind, Role,
-    SOURCE_META, Source, VERIFICATION_META, ValueFormat, Verification, format_hint, pretty_key,
-    slugify, status_color, status_label,
+    Author, CATEGORY_META, DATE_PRECISION_META, EntityKind, Facet, KIND_META, MAX_CASE_NAME,
+    OCCUPATION_ICONS, ObsValue, Observation, Occupation, OccupationIcon, Origin, RELATION_META,
+    ROLE_META, RelationKind, Role, SOURCE_META, Source, VERIFICATION_META, ValueFormat,
+    Verification, format_hint, pretty_key, slugify, status_color, status_label,
 };
+use crate::modules::{ObsKind, parse_obs_value};
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
 use super::evidence;
@@ -478,12 +479,19 @@ fn observation_row(
                 ui.add(egui::TextEdit::singleline(s).desired_width(w).hint_text("value"));
             }
             other => {
+                let is_date = matches!(other, ObsValue::Date(_));
                 let mut buf = other.text()?;
+                let tw = if is_date { (w - 82.0).max(40.0) } else { w };
                 let resp =
-                    ui.add(egui::TextEdit::singleline(&mut buf).desired_width(w).hint_text("value"));
+                    ui.add(egui::TextEdit::singleline(&mut buf).desired_width(tw).hint_text("value"));
                 if resp.changed() {
-                    *other = ObsValue::Text(buf);
+                    *other = if is_date {
+                        parse_obs_value(ObsKind::Date, &buf)?
+                    } else {
+                        ObsValue::Text(buf)
+                    };
                 }
+                date_precision_combo(ui, i, other);
             }
         }
         if style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "remove attribute")? {
@@ -525,6 +533,18 @@ fn verification_combo(ui: &mut egui::Ui, id: usize, status: &mut Verification) -
             }
         });
     Ok(())
+}
+
+
+fn date_precision_combo(ui: &mut egui::Ui, id: usize, v: &mut ObsValue) {
+    let ObsValue::Date(dv) = v else { return };
+    egui::ComboBox::from_id_salt(("obs_prec", id))
+        .selected_text(RichText::new(DATE_PRECISION_META[dv.precision as usize].label).small())
+        .show_ui(ui, |ui| {
+            for m in &DATE_PRECISION_META {
+                ui.selectable_value(&mut dv.precision, m.precision, m.label);
+            }
+        });
 }
 
 
