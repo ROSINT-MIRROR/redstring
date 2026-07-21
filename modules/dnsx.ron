@@ -1,0 +1,29 @@
+// builtin module spec — dnsx DNS resolution for a domain.
+// A/AAAA fan out to IP nodes, NS/MX to infrastructure servers, CNAME to a
+// canonical domain — every record becomes its own pivotable node so shared
+// IPs / nameservers / CNAME targets converge the board.
+// dnsx -json already emits one flat object per host with string arrays
+// (a/aaaa/ns/mx/cname), so ndjson reads it directly — no jq needed.
+// Nameservers use resolves_to to converge with whois name-server nodes.
+(
+    id: "dnsx",
+    label: "dnsx DNS resolve",
+    applies_to: ["domain"],
+    bin: "sh",
+    args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -silent"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "dnsx",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "a", kind: "ip_address", rel: "resolves_to"),
+                Entity(from: "aaaa", kind: "ip_address", rel: "resolves_to"),
+                Entity(from: "ns", kind: "server", rel: "resolves_to"),
+                Entity(from: "mx", kind: "server", rel: "points_to"),
+                Entity(from: "cname", kind: "domain", rel: "points_to"),
+            ],
+        ),
+    ],
+)

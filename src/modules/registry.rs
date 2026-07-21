@@ -7,9 +7,13 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 2] = [
+const BUILTIN: [(&str, &str); 6] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
+    ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
+    ("builtin:tlsx", include_str!("../../modules/tlsx.ron")),
+    ("builtin:katana", include_str!("../../modules/katana.ron")),
+    ("builtin:crtsh", include_str!("../../modules/crtsh.ron")),
 ];
 
 
@@ -144,7 +148,7 @@ mod tests {
     use super::*;
     use crate::model::RelationKind;
     use crate::modules::emit::{Fact, emit};
-    use crate::modules::extract::sniff;
+    use crate::modules::extract::{extractor, sniff};
 
     const APNIC: &str = "\
 % [whois.apnic.net]
@@ -189,6 +193,117 @@ OrgName:        Google LLC
             let problems = entry.spec.validate().unwrap();
             assert!(problems.is_empty(), "{origin}: {problems:?}");
         }
+    }
+
+    #[test]
+    fn tech_specs_validate_and_resolve_extractors() {
+        for origin in ["builtin:dnsx", "builtin:tlsx", "builtin:katana", "builtin:crtsh"] {
+            let Some((_, text)) = BUILTIN.iter().find(|(o, _)| *o == origin) else {
+                panic!("BUILTIN missing {origin}");
+            };
+            let entry = entry_from_str(origin, text).unwrap();
+            let problems = entry.spec.validate().unwrap();
+            assert!(problems.is_empty(), "{origin}: {problems:?}");
+            assert!(!entry.spec.shapes.is_empty(), "{origin}: no shapes");
+            for shape in &entry.spec.shapes {
+                assert!(
+                    extractor(&shape.extract.id, &shape.extract.config).is_ok(),
+                    "{origin} shape '{}': extractor '{}' does not resolve",
+                    shape.id,
+                    shape.extract.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dnsx_ndjson_fans_records_into_infra_pivots() {
+        let entry = entry_from_str("builtin:dnsx", BUILTIN[2].1).unwrap();
+        let text = "{\"host\":\"example.com\",\"a\":[\"93.184.216.34\"],\"aaaa\":[\"2606:2800:220:1:248:1893:25c8:1946\"],\"ns\":[\"a.iana-servers.net\",\"b.iana-servers.net\"],\"cname\":[\"example.map.cdn.example.\"]}\n";
+        let (shape, records) = sniff(&entry.spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::IpAddress,
+            label: "93.184.216.34".into(),
+            value: "93.184.216.34".into(),
+            rel: RelationKind::ResolvesTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        let servers = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Server, rel: RelationKind::ResolvesTo, .. }))
+            .count();
+        assert_eq!(servers, 2, "both nameservers fan out to server nodes");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "example.map.cdn.example.".into(),
+            value: "example.map.cdn.example.".into(),
+            rel: RelationKind::PointsTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn tlsx_ndjson_emits_cert_and_covers_sans() {
+        let entry = entry_from_str("builtin:tlsx", BUILTIN[3].1).unwrap();
+        let text = "{\"host\":\"example.com\",\"fingerprint\":\"deadbeef\",\"issuer_cn\":\"R3\",\"subject_cn\":\"example.com\",\"subject_an\":[\"example.com\",\"www.example.com\"]}\n";
+        let (shape, records) = sniff(&entry.spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::TlsCertificate,
+            label: "deadbeef".into(),
+            value: "deadbeef".into(),
+            rel: RelationKind::PresentsCert,
+            outbound: true,
+            attrs: vec![
+                ("sha256".into(), "deadbeef".into()),
+                ("issuer".into(), "R3".into()),
+                ("subject".into(), "example.com".into()),
+            ],
+        }));
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "www.example.com".into(),
+            value: "www.example.com".into(),
+            rel: RelationKind::Covers,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn katana_ndjson_links_to_crawled_pages() {
+        let entry = entry_from_str("builtin:katana", BUILTIN[4].1).unwrap();
+        let text = "{\"url\":\"https://example.com/login\"}\n{\"url\":\"https://example.com/about\"}\n";
+        let (shape, records) = sniff(&entry.spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let pages = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::WebPage, rel: RelationKind::LinksTo, .. }))
+            .count();
+        assert_eq!(pages, 2, "one web page per crawled url");
+    }
+
+    #[test]
+    fn crtsh_ndjson_covers_each_san() {
+        let entry = entry_from_str("builtin:crtsh", BUILTIN[5].1).unwrap();
+        let text = "{\"issuer\":\"C=US, O=Let's Encrypt\",\"san\":\"api.example.com\"}\n{\"issuer\":\"C=US, O=Let's Encrypt\",\"san\":\"mail.example.com\"}\n";
+        let (shape, records) = sniff(&entry.spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "api.example.com".into(),
+            value: "api.example.com".into(),
+            rel: RelationKind::Covers,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "ct_issuer".into(),
+            value: "C=US, O=Let's Encrypt".into(),
+        }));
     }
 
     #[test]
