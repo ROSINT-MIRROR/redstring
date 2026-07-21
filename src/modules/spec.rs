@@ -3,6 +3,8 @@ use serde::Deserialize;
 use crate::error::Error;
 use crate::model::{EntityKind, KIND_META, RELATION_META, RelationKind, slugify};
 
+use super::extract::extractor;
+
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ModuleSpec {
@@ -35,13 +37,14 @@ pub struct Shape {
 
 
 #[derive(Clone, Debug, Deserialize)]
-pub enum Extract {
-    KeyValue {
-        sep: String,
-        #[serde(default)]
-        comments: String,
-    },
-    Ndjson,
+pub struct Extract {
+    pub id: String,
+    #[serde(default = "default_config")]
+    pub config: ron::Value,
+}
+
+fn default_config() -> ron::Value {
+    ron::Value::Unit
 }
 
 
@@ -117,6 +120,9 @@ impl ModuleSpec {
             }
         }
         for shape in &self.shapes {
+            if let Err(err) = extractor(&shape.extract.id, &shape.extract.config) {
+                problems.push(format!("shape '{}': {err}", shape.id));
+            }
             for rule in &shape.emit {
                 let EmitRule::Entity { kind, rel, .. } = rule else {
                     continue;

@@ -13,7 +13,7 @@
         // ICANN / Verisign style — domain registrations
         (
             id: "icann",
-            extract: KeyValue(sep: ":"),
+            extract: (id: "keyvalue", config: (sep: ":")),
             min_hits: 3,
             emit: [
                 Attr(from: "registrar", key: "registrar"),
@@ -27,7 +27,7 @@
         // RPSL — APNIC/RIPE style IP blocks
         (
             id: "rpsl",
-            extract: KeyValue(sep: ":", comments: "%"),
+            extract: (id: "keyvalue", config: (sep: ":", comments: "%")),
             min_hits: 3,
             emit: [
                 Attr(from: "netname", key: "netname"),
@@ -42,7 +42,7 @@
         // ARIN style IP blocks
         (
             id: "arin",
-            extract: KeyValue(sep: ":", comments: "#"),
+            extract: (id: "keyvalue", config: (sep: ":", comments: "#")),
             min_hits: 3,
             emit: [
                 Attr(from: "netrange", key: "range"),

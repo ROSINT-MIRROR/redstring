@@ -206,8 +206,8 @@ OrgName:        Google LLC
     #[test]
     fn icann_shape_emits_registrar_and_nameservers() {
         let spec = whois_spec();
-        let (shape, vars) = sniff(&spec.shapes, ICANN).unwrap().unwrap();
-        let facts = emit(shape, &vars).unwrap();
+        let (shape, records) = sniff(&spec.shapes, ICANN).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Attr {
             key: "registrar".into(),
             value: "MarkMonitor Inc.".into()
@@ -230,8 +230,8 @@ OrgName:        Google LLC
     #[test]
     fn rpsl_shape_emits_org_abuse_contact_and_location() {
         let spec = whois_spec();
-        let (shape, vars) = sniff(&spec.shapes, APNIC).unwrap().unwrap();
-        let facts = emit(shape, &vars).unwrap();
+        let (shape, records) = sniff(&spec.shapes, APNIC).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Organization,
             label: "APNIC Research and Development".into(),
@@ -262,9 +262,9 @@ OrgName:        Google LLC
     fn arin_shape_coalesces_geo_into_location() {
         let spec = whois_spec();
         let arin_with_city = format!("{ARIN}City:           Mountain View\nStateProv:      CA\n");
-        let (shape, vars) = sniff(&spec.shapes, &arin_with_city).unwrap().unwrap();
+        let (shape, records) = sniff(&spec.shapes, &arin_with_city).unwrap().unwrap();
         assert_eq!(shape.id, "arin");
-        let facts = emit(shape, &vars).unwrap();
+        let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Location,
             label: "US".into(),

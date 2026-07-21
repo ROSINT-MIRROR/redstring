@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use crate::error::Error;
 
 use super::emit::{Fact, emit};
-use super::extract::extract;
-use super::spec::{Extract, Shape};
+use super::extract::extractor;
+use super::spec::Shape;
 
 
 pub struct ModuleRun {
@@ -82,7 +82,7 @@ pub fn streaming(shapes: &[Shape]) -> Result<bool, Error> {
     let Some(first) = shapes.first() else {
         return Ok(false);
     };
-    Ok(matches!(first.extract, Extract::Ndjson))
+    Ok(first.extract.id == "ndjson")
 }
 
 fn execute(input: &RunInput) -> ModuleRun {
@@ -126,10 +126,10 @@ fn finish(input: &RunInput, raw: String, stderr_tail: String, ok: bool, cancelle
 }
 
 fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<Fact>), Error> {
-    let Some((shape, vars)) = super::extract::sniff(&input.shapes, raw)? else {
+    let Some((shape, records)) = super::extract::sniff(&input.shapes, raw)? else {
         return Ok((String::new(), Vec::new()));
     };
-    let facts = super::emit::emit(shape, &vars)?;
+    let facts = super::emit::emit(shape, &records)?;
     Ok((shape.id.clone(), facts))
 }
 
@@ -317,10 +317,13 @@ fn stream_line(input: &RunInput, shape: Option<&Shape>, line: &str) -> Option<Mo
     if trimmed.is_empty() {
         return None;
     }
-    let Ok(vars) = extract(&shape.extract, trimmed) else {
+    let Ok(built) = extractor(&shape.extract.id, &shape.extract.config) else {
         return None;
     };
-    let Ok(facts) = emit(shape, &vars) else {
+    let Ok(records) = built.extract(trimmed) else {
+        return None;
+    };
+    let Ok(facts) = emit(shape, &records) else {
         return None;
     };
     if facts.is_empty() {
@@ -445,7 +448,10 @@ mod tests {
     fn ndjson_shape() -> Shape {
         Shape {
             id: "candel".into(),
-            extract: Extract::Ndjson,
+            extract: super::super::spec::Extract {
+                id: "ndjson".into(),
+                config: ron::Value::Unit,
+            },
             min_hits: 1,
             emit: vec![super::super::spec::EmitRule::Entity {
                 from: "url".into(),
