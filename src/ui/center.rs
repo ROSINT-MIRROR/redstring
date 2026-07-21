@@ -8,11 +8,24 @@ use crate::model::Camera;
 use crate::shapes::base_radius;
 
 use super::app::RsGraph;
-use super::board::fit_box_to_board;
+use super::board::{clamp_zoom, fit_box_to_board};
 use super::graphalg;
 
 const CENTER_MARGIN: f32 = 0.85;
 const CENTER_MAX_ZOOM: f32 = 1.5;
+
+pub fn center_on_node(loc: Pos2, board: Vec2, zoom: f32) -> Result<Camera, Error> {
+    let z = clamp_zoom(zoom)?;
+    if board.x < 1.0 || board.y < 1.0 {
+        return Ok(Camera { x: 0.0, y: 0.0, zoom: z });
+    }
+    let pan = board / 2.0 - loc.to_vec2() * z;
+    Ok(Camera {
+        x: pan.x,
+        y: pan.y,
+        zoom: z,
+    })
+}
 
 fn visible_set(g: &RsGraph) -> HashSet<NodeIndex> {
     let mut set = HashSet::new();
@@ -79,7 +92,7 @@ mod tests {
 
     use super::super::app::RsGraph;
     use super::super::board::{MAX_ZOOM, MIN_ZOOM};
-    use super::{CENTER_MAX_ZOOM, center_camera};
+    use super::{CENTER_MAX_ZOOM, center_camera, center_on_node};
     use crate::model::{
         Author, Camera, Origin, Relation, RelationKind, Verification,
     };
@@ -195,6 +208,30 @@ mod tests {
         let mut zero: RsGraph = Graph::from(&StableGraph::default());
         let _z = spawn_at(&mut zero, "z", 0.0, 0.0);
         assert!(matches!(center_camera(&zero, Vec2::ZERO), Ok(None)));
+    }
+
+    #[test]
+    fn center_on_node_frames_the_node_at_the_given_zoom() {
+        let board = Vec2::new(800.0, 600.0);
+        let loc = Pos2::new(320.0, -140.0);
+        for z in [0.5f32, 1.0, 2.5] {
+            let cam = center_on_node(loc, board, z).expect("camera");
+            assert!((cam.zoom - z).abs() < 1e-4, "zoom kept {z} got {}", cam.zoom);
+            let c = framed_center(cam, board);
+            assert!(
+                (c.x - loc.x).abs() < 1e-3 && (c.y - loc.y).abs() < 1e-3,
+                "node must land at board center: framed {c:?} vs {loc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn center_on_node_respects_the_zoom_clamp() {
+        let board = Vec2::new(800.0, 600.0);
+        let hi = center_on_node(Pos2::ZERO, board, 9_000.0).expect("camera");
+        assert!((hi.zoom - MAX_ZOOM).abs() < 1e-4, "over-zoom clamps to MAX");
+        let lo = center_on_node(Pos2::ZERO, board, 0.0).expect("camera");
+        assert!((lo.zoom - MIN_ZOOM).abs() < 1e-4, "zero zoom clamps to MIN");
     }
 
     #[test]

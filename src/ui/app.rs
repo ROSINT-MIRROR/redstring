@@ -105,6 +105,11 @@ pub struct RedstringApp {
 
     pub active_path: Option<Vec<super::graphalg::PathHop>>,
 
+    pub find_open: bool,
+    pub find_query: String,
+    pub find_focus: bool,
+    pub find_selected: usize,
+
     pub ns_kind: SourceKind,
     pub ns_ref: String,
     pub ns_excerpt: String,
@@ -156,6 +161,10 @@ impl RedstringApp {
             panning: false,
             layout_anim: None,
             active_path: None,
+            find_open: false,
+            find_query: String::new(),
+            find_focus: false,
+            find_selected: 0,
             prefs_open: false,
             settings_tab: super::chrome::SettingsTab::General,
             registry,
@@ -305,6 +314,11 @@ impl RedstringApp {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
             self.open_dialog(ui)?;
         }
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
+            self.find_open = true;
+            self.find_focus = true;
+            self.find_selected = 0;
+        }
         if !ui.ctx().egui_wants_keyboard_input()
             && ui.input(|i| i.key_pressed(egui::Key::Delete))
             && self.delete_confirm.is_none()
@@ -328,6 +342,7 @@ impl RedstringApp {
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
         self.welcome_window(ui)?;
+        self.find_window(ui)?;
         super::logview::window(ui.ctx())?;
 
         let strip = egui::Panel::left("left_strip")
