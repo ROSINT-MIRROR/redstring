@@ -22,6 +22,10 @@ pub enum Role {
     Enabler,
     Broker,
     Facilitator,
+    Patron,
+    Frontman,
+    Informant,
+    Whistleblower,
 }
 
 pub struct RoleMeta {
@@ -40,7 +44,7 @@ const fn rm(role: Role, label: &'static str, icon: &'static str, rgb: (u8, u8, u
     }
 }
 
-pub const ROLE_META: [RoleMeta; 11] = [
+pub const ROLE_META: [RoleMeta; 15] = [
     rm(Role::Unset, "none", egui_phosphor::regular::CIRCLE_DASHED, (150, 150, 150)),
     rm(Role::Suspect, "suspect", egui_phosphor::regular::USER_FOCUS, (235, 165, 60)),
     rm(Role::Perpetrator, "perpetrator", egui_phosphor::regular::HAND_FIST, (225, 70, 70)),
@@ -52,6 +56,10 @@ pub const ROLE_META: [RoleMeta; 11] = [
     rm(Role::Enabler, "enabler", egui_phosphor::regular::PLUGS_CONNECTED, (205, 165, 95)),
     rm(Role::Broker, "broker", egui_phosphor::regular::SWAP, (200, 140, 110)),
     rm(Role::Facilitator, "facilitator", egui_phosphor::regular::FLOW_ARROW, (150, 185, 130)),
+    rm(Role::Patron, "patron", egui_phosphor::regular::CROWN, (215, 175, 90)),
+    rm(Role::Frontman, "frontman", egui_phosphor::regular::SUNGLASSES, (190, 145, 200)),
+    rm(Role::Informant, "informant", egui_phosphor::regular::EAR, (135, 175, 200)),
+    rm(Role::Whistleblower, "whistleblower", egui_phosphor::regular::MEGAPHONE, (100, 195, 175)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -86,7 +94,7 @@ const fn ps(
 }
 
 #[rustfmt::skip]
-pub const PRESETS: [Preset; 60] = [
+pub const PRESETS: [Preset; 66] = [
     ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None, None, None),
     ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None, None, None),
     ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None, None, None),
@@ -108,10 +116,16 @@ pub const PRESETS: [Preset; 60] = [
     ps("Media outlet", egui_phosphor::regular::BROADCAST, EntityKind::Organization, None, None, Some((Facet::OrgType, 8)), None),
     ps("Political party", egui_phosphor::regular::FLAG_BANNER, EntityKind::Organization, None, None, Some((Facet::OrgType, 9)), None),
     ps("Criminal org", egui_phosphor::regular::SKULL, EntityKind::Organization, None, None, Some((Facet::OrgType, 10)), None),
+    ps("Hospital", egui_phosphor::regular::HOSPITAL, EntityKind::Organization, None, None, Some((Facet::OrgType, 11)), None),
+    ps("Clinic", egui_phosphor::regular::STETHOSCOPE, EntityKind::Organization, None, None, Some((Facet::OrgType, 12)), None),
+    ps("Pharmacy", egui_phosphor::regular::PILL, EntityKind::Organization, None, None, Some((Facet::OrgType, 13)), None),
+    ps("Esoteric order", egui_phosphor::regular::EYE, EntityKind::Organization, None, None, Some((Facet::OrgType, 14)), None),
+    ps("Ad platform", egui_phosphor::regular::TARGET, EntityKind::Organization, None, None, Some((Facet::OrgType, 15)), None),
     ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 0)), None),
     ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 1)), None),
     ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, None, Some((Facet::DomainType, 0)), None),
     ps("Typosquat", egui_phosphor::regular::WARNING, EntityKind::Domain, None, None, Some((Facet::DomainType, 1)), None),
+    ps("Drop-caught", egui_phosphor::regular::HAND_GRABBING, EntityKind::Domain, None, None, Some((Facet::DomainType, 2)), None),
     ps("A", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "A"))),
     ps("AAAA", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "AAAA"))),
     ps("MX", egui_phosphor::regular::ENVELOPE, EntityKind::DnsRecord, None, None, None, Some(("record_type", "MX"))),
@@ -223,6 +237,22 @@ mod tests {
             assert_eq!(m.label, label);
             assert!(!m.icon.is_empty(), "{role:?} needs a glyph");
             assert_ne!(role, Role::default(), "{role:?} is a network role, not the default");
+        }
+    }
+
+    #[test]
+    fn round2_investigation_roles_present_and_indexed() {
+        for (role, label) in [
+            (Role::Patron, "patron"),
+            (Role::Frontman, "frontman"),
+            (Role::Informant, "informant"),
+            (Role::Whistleblower, "whistleblower"),
+        ] {
+            let m = &ROLE_META[role as usize];
+            assert_eq!(m.role, role, "discriminant indexes its own ROLE_META row");
+            assert_eq!(m.label, label);
+            assert!(!m.icon.is_empty(), "{role:?} needs a glyph");
+            assert_ne!(role, Role::default(), "{role:?} is a real role, not the default");
         }
     }
 

@@ -120,6 +120,8 @@ pub enum EntityKind {
     Statute,
     Offense,
     EmailMessage,
+    AdCreative,
+    Book,
 }
 
 pub struct KindMeta {
@@ -162,7 +164,7 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 61] = [
+pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority", "law firm", "lawyers", "attorneys", "legal", "counsel", "media outlet", "news", "press", "tv", "newspaper", "publication", "political party", "party", "criminal org", "mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role, Facet::OrgType]),
@@ -219,11 +221,13 @@ pub const KIND_META: [KindMeta; 61] = [
     k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free, &[]),
     k(EntityKind::Product, "Product", egui_phosphor::regular::PILL, Category::Commerce, (224, 128, 168), &["brand", "claimed_cure", "category", "price", "currency", "registry_status"], &["supplement", "drug", "medicine", "sku", "pill", "remedy"], ValueFormat::Free, &[]),
     k(EntityKind::Favicon, "Favicon", egui_phosphor::regular::IMAGE, Category::Digital, (120, 210, 205), &["mmh3_hash", "sha256", "source_url"], &["favicon", "icon", "favicon-hash"], ValueFormat::Free, &[]),
-    k(EntityKind::Claim, "Claim", egui_phosphor::regular::SEAL_QUESTION, Category::Documents, (185, 180, 205), &["statement", "status", "verdict", "confidence"], &["claim", "assertion", "allegation", "finding"], ValueFormat::Free, &[]),
+    k(EntityKind::Claim, "Claim", egui_phosphor::regular::SEAL_QUESTION, Category::Documents, (185, 180, 205), &["statement", "status", "verdict", "confidence"], &["claim", "assertion", "allegation", "finding"], ValueFormat::Free, &[Facet::ClaimType]),
     k(EntityKind::CareInstitution, "Care institution", egui_phosphor::regular::FIRST_AID, Category::Organizations, (245, 150, 110), &["operator", "oversight_body", "capacity", "license_no", "accreditation"], &["orphanage", "placement center", "shelter", "care home", "children's home", "group home"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Statute, "Statute", egui_phosphor::regular::SCROLL, Category::Documents, (205, 195, 175), &["jurisdiction", "citation", "year"], &["law", "statute", "regulation", "treaty", "sofa", "legal instrument"], ValueFormat::Free, &[]),
     k(EntityKind::Offense, "Offense", egui_phosphor::regular::PROHIBIT, Category::Documents, (210, 160, 160), &["category", "severity", "statute_ref"], &["offense", "charge", "crime", "count"], ValueFormat::Free, &[]),
     k(EntityKind::EmailMessage, "Email message", egui_phosphor::regular::ENVELOPE_SIMPLE, Category::Documents, (190, 195, 190), &["from", "to", "subject", "sent_date", "bates_id"], &["email message", "correspondence", "message", "memo"], ValueFormat::Free, &[]),
+    k(EntityKind::AdCreative, "Ad creative", egui_phosphor::regular::IMAGES, Category::Commerce, (224, 128, 175), &["format", "platform", "advertiser", "first_seen", "landing_url"], &["ad", "creative", "advert", "ad creative", "banner", "deepfake"], ValueFormat::Free, &[]),
+    k(EntityKind::Book, "Book", egui_phosphor::regular::BOOK, Category::Documents, (200, 188, 170), &["author", "publisher", "year", "isbn", "edition", "language"], &["book", "publication", "volume", "monograph", "scripture", "corpus"], ValueFormat::Free, &[]),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -490,12 +494,19 @@ mod tests {
                 "{:?}: SiteType is the Website subtype only",
                 m.kind
             );
+            assert_eq!(
+                m.facets.contains(&Facet::ClaimType),
+                m.kind == EntityKind::Claim,
+                "{:?}: ClaimType is the Claim subtype only",
+                m.kind
+            );
             let subtype = matches!(
                 m.kind,
                 EntityKind::Organization
                     | EntityKind::SocialAccount
                     | EntityKind::Domain
                     | EntityKind::Website
+                    | EntityKind::Claim
             );
             if !actor && !subtype {
                 assert!(m.facets.is_empty(), "{:?} must declare no facets at all", m.kind);
@@ -748,18 +759,29 @@ mod tests {
             !KIND_META[EntityKind::CareInstitution as usize].facets.contains(&Facet::Occupation),
             "an institution is not an individual — no occupation facet"
         );
+        let cf = KIND_META[EntityKind::Claim as usize].facets;
+        assert!(cf.len() == 1 && cf.contains(&Facet::ClaimType), "Claim carries only ClaimType");
+        for kind in [EntityKind::Statute, EntityKind::Offense, EntityKind::EmailMessage] {
+            assert!(KIND_META[kind as usize].facets.is_empty(), "{kind:?} is not an actor — no facets");
+        }
         for kind in
             [EntityKind::Claim, EntityKind::Statute, EntityKind::Offense, EntityKind::EmailMessage]
         {
-            assert!(
-                KIND_META[kind as usize].facets.is_empty(),
-                "{kind:?} is an analysis/legal/evidence artifact, not an actor — no facets"
-            );
-            assert_eq!(
-                KIND_META[kind as usize].value_format,
-                ValueFormat::Free,
-                "{kind:?} value is free text"
-            );
+            assert_eq!(KIND_META[kind as usize].value_format, ValueFormat::Free, "{kind:?} free value");
+        }
+    }
+
+    #[test]
+    fn round2_kinds_resolve_by_slug_in_expected_categories() {
+        let by_slug =
+            |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("ad_creative"), Some(EntityKind::AdCreative));
+        assert_eq!(by_slug("book"), Some(EntityKind::Book));
+        assert_eq!(KIND_META[EntityKind::AdCreative as usize].category, Category::Commerce);
+        assert_eq!(KIND_META[EntityKind::Book as usize].category, Category::Documents);
+        for kind in [EntityKind::AdCreative, EntityKind::Book] {
+            assert!(KIND_META[kind as usize].facets.is_empty(), "{kind:?} no facets");
+            assert_eq!(KIND_META[kind as usize].value_format, ValueFormat::Free);
         }
     }
 }
