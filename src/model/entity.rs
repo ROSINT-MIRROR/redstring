@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::observation::Observation;
+use super::occupation::Occupation;
 use super::role::Role;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -252,7 +253,7 @@ const fn k(
 
 #[rustfmt::skip]
 pub const KIND_META: [KindMeta; 58] = [
-    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality", "occupation"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
+    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority"], ValueFormat::Free),
     k(EntityKind::PoliticalParty, "Political party", egui_phosphor::regular::FLAG_BANNER, Category::Organizations, (255, 135, 85), &["country", "ideology", "founded"], &["party"], ValueFormat::Free),
@@ -324,6 +325,8 @@ pub struct Entity {
     pub observations: Vec<Observation>,
     #[serde(default)]
     pub role: Role,
+    #[serde(default)]
+    pub occupation: Option<Occupation>,
     pub note: String,
     pub image: Option<String>,
     #[serde(default = "default_node_size")]
@@ -429,6 +432,7 @@ mod tests {
             value: String::new(),
             observations: Vec::new(),
             role: Role::Unset,
+            occupation: None,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -496,6 +500,7 @@ mod tests {
             value: String::new(),
             observations: Vec::new(),
             role: Role::Unset,
+            occupation: None,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -623,5 +628,14 @@ mod tests {
                 "Organization aliases must fold in '{term}' so search still finds it"
             );
         }
+    }
+
+    #[test]
+    fn occupation_is_a_facet_not_a_suggested_attr() {
+        let p = &KIND_META[EntityKind::Person as usize];
+        assert!(
+            !p.attrs.contains(&"occupation"),
+            "occupation is now the Entity.occupation facet — it must not double as a suggested observation"
+        );
     }
 }

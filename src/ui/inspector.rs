@@ -3,9 +3,10 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    Author, CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, ObsValue, Observation, Origin,
-    RELATION_META, ROLE_META, RelationKind, Role, SOURCE_META, Source, ValueFormat, Verification,
-    format_hint, pretty_key, slugify, status_color, status_label,
+    Author, CATEGORY_META, EntityKind, KIND_META, MAX_CASE_NAME, OCCUPATION_ICONS, ObsValue,
+    Observation, Occupation, OccupationIcon, Origin, RELATION_META, ROLE_META, RelationKind, Role,
+    SOURCE_META, Source, ValueFormat, Verification, format_hint, pretty_key, slugify, status_color,
+    status_label,
 };
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
@@ -111,9 +112,16 @@ impl RedstringApp {
 
         ui.horizontal(|ui| {
             ui.label("role")
-                .on_hover_text("case-role — painted as a colored badge on the node");
+                .on_hover_text("case-role — painted as a colored badge at the node's top-right");
             role_combo(ui, "insp_role", &mut e.role);
         });
+
+        ui.horizontal(|ui| -> Result<(), Error> {
+            ui.label("occupation")
+                .on_hover_text("job / profession — a steel badge at the node's bottom-left; pick its icon on the right");
+            occupation_field(ui, &mut e.occupation)
+        })
+        .inner?;
 
         ui.horizontal(|ui| {
             ui.label("label");
@@ -569,6 +577,58 @@ fn relation_kind_combo(ui: &mut egui::Ui, id: &str, kind: &mut RelationKind) {
                 ui.selectable_value(kind, m.kind, m.label);
             }
         });
+}
+
+fn occupation_field(ui: &mut egui::Ui, occ: &mut Option<Occupation>) -> Result<(), Error> {
+    let mut label = String::new();
+    for o in occ.iter() {
+        label = o.label.clone();
+    }
+    let resp = ui.add(
+        egui::TextEdit::singleline(&mut label)
+            .desired_width(140.0)
+            .hint_text("occupation"),
+    );
+    if resp.changed() {
+        let trimmed = label.trim().to_owned();
+        if trimmed.is_empty() {
+            *occ = None;
+        } else {
+            let mut icon = OccupationIcon::default();
+            for o in occ.iter() {
+                icon = o.icon;
+            }
+            *occ = Some(Occupation { label: trimmed, icon });
+        }
+    }
+    let Some(o) = occ.as_mut() else {
+        return Ok(());
+    };
+    occupation_icon_combo(ui, &mut o.icon)?;
+    let clear = style::danger_btn(ui, egui_phosphor::regular::TRASH, "", "clear occupation")?;
+    if clear {
+        *occ = None;
+    }
+    Ok(())
+}
+
+fn occupation_icon_combo(ui: &mut egui::Ui, icon: &mut OccupationIcon) -> Result<(), Error> {
+    let cur = &OCCUPATION_ICONS[*icon as usize];
+    egui::ComboBox::from_id_salt("insp_occ_icon")
+        .selected_text(RichText::new(cur.glyph).size(16.0))
+        .show_ui(ui, |ui| {
+            for m in &OCCUPATION_ICONS {
+                ui.selectable_value(
+                    icon,
+                    m.icon,
+                    RichText::new(format!("{}  {}", m.glyph, m.label)),
+                )
+                .on_hover_text(m.label);
+            }
+        })
+        .response
+        .on_hover_text("pick the occupation badge icon");
+    Ok(())
 }
 
 fn role_combo(ui: &mut egui::Ui, id: &str, role: &mut Role) {

@@ -112,6 +112,7 @@ impl RedstringApp {
             value: String::new(),
             observations: Vec::new(),
             role: Role::Unset,
+            occupation: None,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

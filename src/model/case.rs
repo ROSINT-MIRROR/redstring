@@ -16,6 +16,7 @@ use crate::error::Error;
 
 use super::entity::{EntityKind, KIND_META};
 use super::observation::{Author, DEFAULT_CONFIDENCE, Observation, Origin, Verification};
+use super::occupation::Occupation;
 use super::relation::{RELATION_META, RelationKind};
 use super::role::Role;
 use super::source::Source;
@@ -113,6 +114,9 @@ pub struct EntityRec {
     #[serde(default, skip_serializing_if = "role_is_unset")]
     pub role: Role,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occupation: Option<Occupation>,
+
     #[serde(default)]
     pub image: Option<String>,
 }
@@ -203,6 +207,7 @@ mod tests {
         let cf: CaseFile = ron::from_str(s).expect("minimal file must parse");
         assert_eq!(cf.data.entities.len(), 2);
         assert_eq!(cf.data.relations.len(), 1);
+        assert!(cf.data.entities[0].occupation.is_none(), "occupation omitted → None");
         assert!(cf.data.entities[0].image.is_none());
         assert!(cf.data.relations[0].sources.is_empty());
         assert!(cf.display.positions.is_empty());
@@ -253,6 +258,10 @@ mod tests {
                 .unwrap(),
             ],
             role: Role::Suspect,
+            occupation: Some(crate::model::Occupation {
+                label: "Judge".into(),
+                icon: crate::model::OccupationIcon::Scales,
+            }),
             image: Some("entities/doe/portrait.png".into()),
         });
         cf.data.relations.push(RelationRec {
@@ -283,5 +292,13 @@ mod tests {
         assert_eq!(cf, back);
         assert_eq!(back.display.sizes.get("doe").copied(), Some(3.5));
         assert_eq!(back.data.entities[0].role, Role::Suspect, "role must round-trip");
+        assert_eq!(
+            back.data.entities[0].occupation,
+            Some(crate::model::Occupation {
+                label: "Judge".into(),
+                icon: crate::model::OccupationIcon::Scales,
+            }),
+            "occupation facet must round-trip"
+        );
     }
 }
