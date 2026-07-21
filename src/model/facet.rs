@@ -18,6 +18,7 @@ pub enum Facet {
     AccountType,
     DomainType,
     SiteType,
+    ClaimType,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -45,7 +46,7 @@ pub struct FacetMeta {
     pub corner: BadgeCorner,
 }
 
-pub const FACET_META: [FacetMeta; 6] = [
+pub const FACET_META: [FacetMeta; 7] = [
     FacetMeta {
         facet: Facet::Role,
         label: "role",
@@ -82,15 +83,23 @@ pub const FACET_META: [FacetMeta; 6] = [
         hint: "website subtype — a colored badge at the node's bottom-right",
         corner: BadgeCorner::BottomRight,
     },
+    FacetMeta {
+        facet: Facet::ClaimType,
+        label: "claim type",
+        hint: "epistemic type of the claim — a colored badge at the node's bottom-right",
+        corner: BadgeCorner::BottomRight,
+    },
 ];
 
 pub fn facet_badge(facet: Facet, value: &FacetValue) -> Result<Option<FacetBadge>, Error> {
     match facet {
         Facet::Role => role_badge(value),
         Facet::Occupation => occupation_badge(value),
-        Facet::OrgType | Facet::AccountType | Facet::DomainType | Facet::SiteType => {
-            subtype_badge(facet, value)
-        }
+        Facet::OrgType
+        | Facet::AccountType
+        | Facet::DomainType
+        | Facet::SiteType
+        | Facet::ClaimType => subtype_badge(facet, value),
     }
 }
 

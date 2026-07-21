@@ -129,6 +129,20 @@ pub enum RelationKind {
     Contradicts,
     Refutes,
     Cites,
+    Defrauded,
+    CoveredUp,
+    SuppressedRecordOf,
+    Redacted,
+    Shielded,
+    Dismissed,
+    GrantedImmunity,
+    ModeledOn,
+    ReplicaOf,
+    Resembles,
+    Translated,
+    Thanked,
+    Credited,
+    Endorsed,
 }
 
 pub struct RelMeta {
@@ -146,7 +160,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 122] = [
+pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -269,6 +283,20 @@ pub const RELATION_META: [RelMeta; 122] = [
     r(RelationKind::Contradicts, "contradicts", "evidence"),
     r(RelationKind::Refutes, "refutes", "evidence"),
     r(RelationKind::Cites, "cites", "evidence"),
+    r(RelationKind::Defrauded, "defrauded", "fraud"),
+    r(RelationKind::CoveredUp, "covered up", "suppression"),
+    r(RelationKind::SuppressedRecordOf, "suppressed record of", "suppression"),
+    r(RelationKind::Redacted, "redacted", "suppression"),
+    r(RelationKind::Shielded, "shielded", "impunity"),
+    r(RelationKind::Dismissed, "dismissed", "impunity"),
+    r(RelationKind::GrantedImmunity, "granted immunity", "impunity"),
+    r(RelationKind::ModeledOn, "modeled on", "resemblance"),
+    r(RelationKind::ReplicaOf, "replica of", "resemblance"),
+    r(RelationKind::Resembles, "resembles", "resemblance"),
+    r(RelationKind::Translated, "translated", "resemblance"),
+    r(RelationKind::Thanked, "thanked", "endorsement"),
+    r(RelationKind::Credited, "credited", "endorsement"),
+    r(RelationKind::Endorsed, "endorsed", "endorsement"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -345,7 +373,7 @@ mod tests {
                 seen_cats.push(m.category);
             }
         }
-        assert_eq!(seen_cats.len(), 17, "expected the 17 verb families");
+        assert_eq!(seen_cats.len(), 22, "expected the 22 verb families");
     }
 
     #[test]
@@ -427,6 +455,34 @@ mod tests {
                 "evidence",
                 "{k:?} is a signed evidence-polarity verb pointing source/document -> claim"
             );
+        }
+    }
+
+    #[test]
+    fn round2_verbs_resolve_by_slug_in_their_new_families() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("defrauded"), Some(RelationKind::Defrauded));
+        assert_eq!(by_slug("covered_up"), Some(RelationKind::CoveredUp));
+        assert_eq!(by_slug("suppressed_record_of"), Some(RelationKind::SuppressedRecordOf));
+        assert_eq!(by_slug("granted_immunity"), Some(RelationKind::GrantedImmunity));
+        assert_eq!(by_slug("modeled_on"), Some(RelationKind::ModeledOn));
+        assert_eq!(by_slug("translated"), Some(RelationKind::Translated));
+        assert_eq!(by_slug("endorsed"), Some(RelationKind::Endorsed));
+
+        for (k, fam) in [
+            (RelationKind::Defrauded, "fraud"),
+            (RelationKind::CoveredUp, "suppression"),
+            (RelationKind::Redacted, "suppression"),
+            (RelationKind::Shielded, "impunity"),
+            (RelationKind::Dismissed, "impunity"),
+            (RelationKind::ReplicaOf, "resemblance"),
+            (RelationKind::Resembles, "resemblance"),
+            (RelationKind::Thanked, "endorsement"),
+            (RelationKind::Credited, "endorsement"),
+        ] {
+            assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
         }
     }
 }

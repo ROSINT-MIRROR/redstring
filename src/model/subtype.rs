@@ -20,7 +20,7 @@ const fn sv(label: &'static str, icon: &'static str, rgb: (u8, u8, u8)) -> Subty
 }
 
 #[rustfmt::skip]
-pub const ORG_TYPE_VALUES: [SubtypeValue; 11] = [
+pub const ORG_TYPE_VALUES: [SubtypeValue; 16] = [
     sv("Company", egui_phosphor::regular::BUILDING_OFFICE, (120, 160, 210)),
     sv("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, (215, 95, 95)),
     sv("NGO", egui_phosphor::regular::HAND_HEART, (110, 190, 140)),
@@ -32,6 +32,11 @@ pub const ORG_TYPE_VALUES: [SubtypeValue; 11] = [
     sv("Media outlet", egui_phosphor::regular::BROADCAST, (255, 185, 125)),
     sv("Political party", egui_phosphor::regular::FLAG_BANNER, (255, 135, 85)),
     sv("Criminal org", egui_phosphor::regular::SKULL, (180, 105, 45)),
+    sv("Hospital", egui_phosphor::regular::HOSPITAL, (225, 100, 110)),
+    sv("Clinic", egui_phosphor::regular::STETHOSCOPE, (110, 190, 180)),
+    sv("Pharmacy", egui_phosphor::regular::PILL, (120, 185, 120)),
+    sv("Esoteric order", egui_phosphor::regular::EYE, (150, 110, 190)),
+    sv("Ad platform", egui_phosphor::regular::TARGET, (235, 155, 90)),
 ];
 
 #[rustfmt::skip]
@@ -41,9 +46,10 @@ pub const ACCOUNT_TYPE_VALUES: [SubtypeValue; 2] = [
 ];
 
 #[rustfmt::skip]
-pub const DOMAIN_TYPE_VALUES: [SubtypeValue; 2] = [
+pub const DOMAIN_TYPE_VALUES: [SubtypeValue; 3] = [
     sv("Parked", egui_phosphor::regular::PARK, (130, 175, 120)),
     sv("Typosquat", egui_phosphor::regular::WARNING, (225, 165, 60)),
+    sv("Drop-caught", egui_phosphor::regular::HAND_GRABBING, (200, 150, 90)),
 ];
 
 #[rustfmt::skip]
@@ -55,17 +61,28 @@ pub const SITE_TYPE_VALUES: [SubtypeValue; 5] = [
     sv("Blog", egui_phosphor::regular::ARTICLE, (200, 150, 90)),
 ];
 
+#[rustfmt::skip]
+pub const CLAIM_TYPE_VALUES: [SubtypeValue; 6] = [
+    sv("Fact", egui_phosphor::regular::SEAL_CHECK, (110, 190, 140)),
+    sv("Documentary", egui_phosphor::regular::FILES, (120, 160, 210)),
+    sv("Historical", egui_phosphor::regular::HOURGLASS, (210, 175, 95)),
+    sv("Traditional", egui_phosphor::regular::BOOK_OPEN, (200, 150, 110)),
+    sv("Interpretation", egui_phosphor::regular::MAGNIFYING_GLASS, (175, 140, 215)),
+    sv("Thesis", egui_phosphor::regular::LIGHTBULB, (110, 195, 195)),
+];
+
 #[derive(Clone, Copy)]
 pub struct SubtypeVocab {
     pub facet: Facet,
     pub values: &'static [SubtypeValue],
 }
 
-pub const SUBTYPE_VOCABS: [SubtypeVocab; 4] = [
+pub const SUBTYPE_VOCABS: [SubtypeVocab; 5] = [
     SubtypeVocab { facet: Facet::OrgType, values: &ORG_TYPE_VALUES },
     SubtypeVocab { facet: Facet::AccountType, values: &ACCOUNT_TYPE_VALUES },
     SubtypeVocab { facet: Facet::DomainType, values: &DOMAIN_TYPE_VALUES },
     SubtypeVocab { facet: Facet::SiteType, values: &SITE_TYPE_VALUES },
+    SubtypeVocab { facet: Facet::ClaimType, values: &CLAIM_TYPE_VALUES },
 ];
 
 pub fn subtype_vocab(facet: Facet) -> Result<Option<SubtypeVocab>, Error> {
@@ -114,6 +131,11 @@ mod tests {
                 "Media outlet",
                 "Political party",
                 "Criminal org",
+                "Hospital",
+                "Clinic",
+                "Pharmacy",
+                "Esoteric order",
+                "Ad platform",
             ],
             "org-type vocab order pins the preset indices"
         );
@@ -132,9 +154,10 @@ mod tests {
     #[test]
     fn domain_type_vocab_is_pinned() {
         let labels: Vec<&str> = DOMAIN_TYPE_VALUES.iter().map(|v| v.label).collect();
-        assert_eq!(labels, vec!["Parked", "Typosquat"]);
+        assert_eq!(labels, vec!["Parked", "Typosquat", "Drop-caught"]);
         assert_eq!(DOMAIN_TYPE_VALUES[0].icon, egui_phosphor::regular::PARK);
         assert_eq!(DOMAIN_TYPE_VALUES[1].icon, egui_phosphor::regular::WARNING);
+        assert_eq!(DOMAIN_TYPE_VALUES[2].icon, egui_phosphor::regular::HAND_GRABBING);
         assert_glyphs_distinct(&DOMAIN_TYPE_VALUES);
     }
 
@@ -153,7 +176,13 @@ mod tests {
         let facets: Vec<Facet> = SUBTYPE_VOCABS.iter().map(|v| v.facet).collect();
         assert_eq!(
             facets,
-            vec![Facet::OrgType, Facet::AccountType, Facet::DomainType, Facet::SiteType],
+            vec![
+                Facet::OrgType,
+                Facet::AccountType,
+                Facet::DomainType,
+                Facet::SiteType,
+                Facet::ClaimType,
+            ],
             "SUBTYPE_VOCABS order mirrors the subtype Facet declaration order"
         );
         for v in &SUBTYPE_VOCABS {
@@ -162,14 +191,30 @@ mod tests {
     }
 
     #[test]
+    fn claim_type_vocab_is_pinned() {
+        let labels: Vec<&str> = CLAIM_TYPE_VALUES.iter().map(|v| v.label).collect();
+        assert_eq!(
+            labels,
+            vec!["Fact", "Documentary", "Historical", "Traditional", "Interpretation", "Thesis"],
+            "claim-type epistemic taxonomy order is pinned"
+        );
+        assert_glyphs_distinct(&CLAIM_TYPE_VALUES);
+        let vocab = subtype_vocab(Facet::ClaimType).unwrap().expect("claim-type vocab");
+        assert_eq!(vocab.values.len(), 6);
+        assert_eq!(subtype_value(Facet::ClaimType, 5).unwrap().expect("thesis row").label, "Thesis");
+    }
+
+    #[test]
     fn lookup_resolves_and_bounds_check() {
         let vocab = subtype_vocab(Facet::OrgType).unwrap().expect("org-type vocab");
-        assert_eq!(vocab.values.len(), 11);
+        assert_eq!(vocab.values.len(), 16);
         let shell = subtype_value(Facet::OrgType, 1).unwrap().expect("index 1");
         assert_eq!(shell.label, "Shell company");
         let crim = subtype_value(Facet::OrgType, 10).unwrap().expect("index 10");
         assert_eq!(crim.label, "Criminal org");
         assert_eq!(crim.icon, egui_phosphor::regular::SKULL);
+        let pharmacy = subtype_value(Facet::OrgType, 13).unwrap().expect("index 13");
+        assert_eq!(pharmacy.label, "Pharmacy");
         assert!(subtype_value(Facet::OrgType, 99).unwrap().is_none(), "out-of-range index");
         assert!(subtype_vocab(Facet::Role).unwrap().is_none(), "Role is not a subtype facet");
         assert!(

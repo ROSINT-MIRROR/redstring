@@ -35,7 +35,11 @@ pub fn facet_rows(
                 })
                 .inner?;
             }
-            Facet::OrgType | Facet::AccountType | Facet::DomainType | Facet::SiteType => {
+            Facet::OrgType
+            | Facet::AccountType
+            | Facet::DomainType
+            | Facet::SiteType
+            | Facet::ClaimType => {
                 ui.horizontal(|ui| -> Result<(), Error> {
                     ui.label(meta.label).on_hover_text(meta.hint);
                     subtype_field(ui, facets, *facet)
