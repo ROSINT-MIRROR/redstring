@@ -16,7 +16,7 @@ use crate::error::Error;
 
 use super::entity::{EntityKind, KIND_META};
 use super::facet::{Facet, FacetValue};
-use super::observation::{Author, DEFAULT_CONFIDENCE, Observation, Origin, Verification};
+use super::observation::{Author, DEFAULT_CONFIDENCE, DateVal, Observation, Origin, Verification};
 use super::relation::{RELATION_META, RelationKind};
 use super::source::Source;
 
@@ -145,6 +145,10 @@ pub struct RelationRec {
     pub created_at: i64,
     #[serde(default)]
     pub sources: Vec<Source>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<DateVal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<DateVal>,
     #[serde(default, skip_serializing_if = "sealed_is_false")]
     pub sealed: bool,
 }
@@ -306,6 +310,14 @@ mod tests {
                 tier: crate::model::SourceTier::Primary,
                 sealed: true,
             }],
+            valid_from: Some(DateVal {
+                secs: 1_325_376_000,
+                precision: crate::model::DatePrecision::Year,
+            }),
+            valid_to: Some(DateVal {
+                secs: 1_356_998_400,
+                precision: crate::model::DatePrecision::Year,
+            }),
             sealed: true,
         });
         cf.display.positions.insert("doe".into(), (12.5, -40.0));
@@ -376,15 +388,67 @@ mod tests {
             author: Author::default(),
             created_at: 0,
             sources: vec![],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         };
         let json = serde_json::to_string(&rec).unwrap();
         assert!(!json.contains("sealed"), "an unsealed relation line must not gain a sealed key: {json}");
+        assert!(
+            !json.contains("valid_from") && !json.contains("valid_to"),
+            "a relation with no validity window must not bloat the line: {json}"
+        );
         let mut sealed = rec.clone();
         sealed.sealed = true;
         let json = serde_json::to_string(&sealed).unwrap();
         assert!(json.contains("sealed"), "a sealed relation line must carry the flag: {json}");
         let back: RelationRec = serde_json::from_str(&json).unwrap();
         assert!(back.sealed, "a sealed relation must survive save→load");
+    }
+
+    #[test]
+    fn temporal_validity_round_trips_through_the_relation_line_byte_stable() {
+        let rec = RelationRec {
+            from: "colonel".into(),
+            to: "base".into(),
+            kind: RelationKind::Manages,
+            origin: Origin::Manual,
+            status: Verification::AnalystAsserted,
+            confidence: DEFAULT_CONFIDENCE,
+            author: Author::default(),
+            created_at: 0,
+            sources: vec![],
+            valid_from: Some(DateVal {
+                secs: 1_325_376_000,
+                precision: crate::model::DatePrecision::Year,
+            }),
+            valid_to: Some(DateVal {
+                secs: 1_356_998_400,
+                precision: crate::model::DatePrecision::Year,
+            }),
+            sealed: false,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("valid_from"), "a windowed relation carries valid_from: {json}");
+        assert!(json.contains("valid_to"), "a windowed relation carries valid_to: {json}");
+        let back: RelationRec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, rec, "the validity window must survive an ndjson round-trip");
+        assert_eq!(
+            serde_json::to_string(&back).unwrap(),
+            json,
+            "re-serializing the reloaded relation is byte-identical"
+        );
+
+        let open = RelationRec {
+            valid_to: None,
+            ..rec.clone()
+        };
+        let json = serde_json::to_string(&open).unwrap();
+        assert!(
+            json.contains("valid_from") && !json.contains("valid_to"),
+            "an open-ended window keeps the known bound and omits the absent one: {json}"
+        );
+        let back: RelationRec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, open, "an open-ended window must survive an ndjson round-trip");
     }
 }

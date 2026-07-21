@@ -417,6 +417,8 @@ mod tests {
                 sealed: true,
                 ..Default::default()
             }],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         };
         let employ = RelationRec {
@@ -433,6 +435,8 @@ mod tests {
                 reference: "https://public.example/filing".into(),
                 ..Default::default()
             }],
+            valid_from: None,
+            valid_to: None,
             sealed: false,
         };
         let hush = RelationRec {
@@ -450,6 +454,8 @@ mod tests {
                 excerpt: "off-books settlement".into(),
                 ..Default::default()
             }],
+            valid_from: None,
+            valid_to: None,
             sealed: true,
         };
 
@@ -610,6 +616,8 @@ mod tests {
                 excerpt: "kept strictly off record".into(),
                 ..Default::default()
             }],
+            valid_from: None,
+            valid_to: None,
             sealed: true,
         });
         io::write_case(&p, &cf).unwrap();

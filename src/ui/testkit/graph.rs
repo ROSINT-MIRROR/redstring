@@ -37,6 +37,8 @@ pub fn relation_rec(
         author: author.clone(),
         created_at: 0,
         sources: Vec::new(),
+        valid_from: None,
+        valid_to: None,
         sealed: false,
     })
 }

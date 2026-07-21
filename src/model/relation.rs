@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-use super::observation::{Author, DEFAULT_CONFIDENCE, Origin, Verification, now_unix};
+use super::observation::{Author, DEFAULT_CONFIDENCE, DateVal, Origin, Verification, now_unix};
 use super::source::Source;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -315,6 +315,11 @@ pub struct Relation {
     #[serde(default)]
     pub sources: Vec<Source>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<DateVal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<DateVal>,
+
     #[serde(default, skip_serializing_if = "sealed_is_false")]
     pub sealed: bool,
 
@@ -345,6 +350,8 @@ impl Relation {
             author,
             created_at: now_unix()?,
             sources: Vec::new(),
+            valid_from: None,
+            valid_to: None,
             sealed: false,
             hidden: false,
         })

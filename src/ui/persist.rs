@@ -61,6 +61,8 @@ impl RedstringApp {
                 author: rel.author.clone(),
                 created_at: rel.created_at,
                 sources: rel.sources.clone(),
+                valid_from: rel.valid_from,
+                valid_to: rel.valid_to,
                 sealed: rel.sealed,
             });
         }
@@ -392,6 +394,8 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
                 author: rr.author.clone(),
                 created_at: rr.created_at,
                 sources: rr.sources.clone(),
+                valid_from: rr.valid_from,
+                valid_to: rr.valid_to,
                 sealed: rr.sealed,
                 hidden: false,
             },

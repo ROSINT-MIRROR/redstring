@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-use super::civil::{fmt_civil_date, fnv1a};
+use super::civil::{fmt_civil_date, fmt_civil_range, fnv1a};
 use super::source::Source;
 
 
@@ -154,6 +154,12 @@ pub enum ObsValue {
     Text(String),
     Number(f64),
     Date(DateVal),
+    DateRange {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start: Option<DateVal>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end: Option<DateVal>,
+    },
     Coord { lat: f64, lon: f64 },
     Bool(bool),
 }
@@ -170,6 +176,7 @@ impl ObsValue {
             ObsValue::Text(s) => s.clone(),
             ObsValue::Number(n) => format!("{n}"),
             ObsValue::Date(d) => fmt_civil_date(d.secs, d.precision)?,
+            ObsValue::DateRange { start, end } => fmt_civil_range(*start, *end)?,
             ObsValue::Coord { lat, lon } => format!("{lat},{lon}"),
             ObsValue::Bool(b) => format!("{b}"),
         })
@@ -390,6 +397,49 @@ mod tests {
         let old: ObsValue = serde_json::from_str("{\"Date\":946684800}").unwrap();
         assert_eq!(old, date(946_684_800, DatePrecision::Day));
         assert_eq!(old.text().unwrap(), "2000-01-01");
+    }
+
+    fn range(start: Option<DateVal>, end: Option<DateVal>) -> ObsValue {
+        ObsValue::DateRange { start, end }
+    }
+
+    #[test]
+    fn date_range_renders_a_civil_span_at_mixed_precisions() {
+        let dv = |secs, precision| DateVal { secs, precision };
+        let y2012 = dv(1_325_376_000, DatePrecision::Year);
+        let y2013 = dv(1_356_998_400, DatePrecision::Year);
+        assert_eq!(range(Some(y2012), Some(y2013)).text().unwrap(), "2012–2013");
+
+        let m2012_11 = dv(1_351_728_000, DatePrecision::Month);
+        let d2013_04_12 = dv(1_365_724_800, DatePrecision::Day);
+        assert_eq!(
+            range(Some(m2012_11), Some(d2013_04_12)).text().unwrap(),
+            "2012-11–2013-04-12",
+            "each end respects its own precision"
+        );
+
+        let y2017 = dv(1_483_228_800, DatePrecision::Year);
+        assert_eq!(range(Some(y2017), None).text().unwrap(), "2017–…", "open end renders sanely");
+        assert_eq!(range(None, Some(y2017)).text().unwrap(), "…–2017", "open start renders sanely");
+        assert_eq!(range(None, None).text().unwrap(), "…", "a fully-open range never panics");
+    }
+
+    #[test]
+    fn date_range_round_trips_and_open_end_omits_the_key() {
+        let dv = |secs, precision| DateVal { secs, precision };
+        let full = range(
+            Some(dv(1_325_376_000, DatePrecision::Year)),
+            Some(dv(1_356_998_400, DatePrecision::Year)),
+        );
+        let json = serde_json::to_string(&full).unwrap();
+        let back: ObsValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, full, "a closed range must survive save→load");
+
+        let open = range(Some(dv(1_483_228_800, DatePrecision::Year)), None);
+        let json = serde_json::to_string(&open).unwrap();
+        assert!(!json.contains("end"), "an open end must not serialize a null key: {json}");
+        let back: ObsValue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, open, "an open-ended range must survive save→load");
     }
 
     #[test]
