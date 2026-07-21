@@ -63,8 +63,6 @@ pub enum RelationKind {
     LicensedBy,
     RegisteredAt,
     IncorporatedIn,
-    Impersonates,
-    HarmedBy,
     OwnsDomain,
     Hosts,
     ResolvesTo,
@@ -121,6 +119,7 @@ pub enum RelationKind {
     SexuallyAssaulted,
     Killed,
     Kidnapped,
+    HarmedBy,
     Accused,
     Denounced,
     ComplainedAgainst,
@@ -130,6 +129,7 @@ pub enum RelationKind {
     Refutes,
     Cites,
     Defrauded,
+    Impersonates,
     CoveredUp,
     SuppressedRecordOf,
     Redacted,
@@ -217,8 +217,6 @@ pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::LicensedBy, "licensed by", "legal/state"),
     r(RelationKind::RegisteredAt, "registered at", "legal/state"),
     r(RelationKind::IncorporatedIn, "incorporated in", "legal/state"),
-    r(RelationKind::Impersonates, "impersonates", "legal/state"),
-    r(RelationKind::HarmedBy, "harmed by", "legal/state"),
     r(RelationKind::OwnsDomain, "owns domain", "digital/infra"),
     r(RelationKind::Hosts, "hosts", "digital/infra"),
     r(RelationKind::ResolvesTo, "resolves to", "digital/infra"),
@@ -275,6 +273,7 @@ pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::SexuallyAssaulted, "sexually assaulted", "abuse/violence"),
     r(RelationKind::Killed, "killed", "abuse/violence"),
     r(RelationKind::Kidnapped, "kidnapped", "abuse/violence"),
+    r(RelationKind::HarmedBy, "harmed by", "abuse/violence"),
     r(RelationKind::Accused, "accused", "accusation"),
     r(RelationKind::Denounced, "denounced", "accusation"),
     r(RelationKind::ComplainedAgainst, "complained against", "accusation"),
@@ -284,6 +283,7 @@ pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::Refutes, "refutes", "evidence"),
     r(RelationKind::Cites, "cites", "evidence"),
     r(RelationKind::Defrauded, "defrauded", "fraud"),
+    r(RelationKind::Impersonates, "impersonates", "fraud"),
     r(RelationKind::CoveredUp, "covered up", "suppression"),
     r(RelationKind::SuppressedRecordOf, "suppressed record of", "suppression"),
     r(RelationKind::Redacted, "redacted", "suppression"),
@@ -393,8 +393,8 @@ mod tests {
         assert_eq!(by_slug("sells"), Some(RelationKind::Sells));
         assert_eq!(by_slug("advertised_on"), Some(RelationKind::AdvertisedOn));
 
-        assert_eq!(RELATION_META[RelationKind::Impersonates as usize].category, "legal/state");
-        assert_eq!(RELATION_META[RelationKind::HarmedBy as usize].category, "legal/state");
+        assert_eq!(RELATION_META[RelationKind::Impersonates as usize].category, "fraud");
+        assert_eq!(RELATION_META[RelationKind::HarmedBy as usize].category, "abuse/violence");
         assert_eq!(RELATION_META[RelationKind::Sells as usize].category, "commerce");
         assert_eq!(RELATION_META[RelationKind::AdvertisedOn as usize].category, "commerce");
     }
