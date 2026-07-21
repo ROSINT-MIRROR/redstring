@@ -133,6 +133,7 @@ impl RedstringApp {
         }
         project::write_json(project, cf)?;
         project::write_graph_md(project, cf)?;
+        project::write_dossiers(project, cf)?;
         Ok(())
     }
 
