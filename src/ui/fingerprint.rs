@@ -86,29 +86,16 @@ mod tests {
         RsGraph, compute_fingerprint, display_fp, dirty_state, edge_fp_line, node_fp_line,
     };
     use crate::model::{
-        Author, Camera, CaseDisplay, DEFAULT_NODE_SIZE, Entity, EntityKind, Facet, FacetValue,
+        Author, Camera, CaseDisplay, Entity, EntityKind, Facet, FacetValue,
         Occupation, OccupationIcon, Origin, Relation, RelationKind, Verification,
     };
+    use crate::ui::testkit::nodes;
     use egui::Pos2;
     use egui_graphs::Graph;
     use petgraph::stable_graph::StableGraph;
 
     fn bare_person() -> Entity {
-        Entity {
-            slug: "p".into(),
-            kind: EntityKind::Person,
-            label: "P".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
+        nodes::entity(EntityKind::Person, "p", "P", "")
     }
 
     fn person(slug: &str) -> Entity {

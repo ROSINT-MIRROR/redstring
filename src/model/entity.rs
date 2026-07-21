@@ -271,6 +271,26 @@ fn sealed_is_false(sealed: &bool) -> bool {
     !*sealed
 }
 
+impl Default for Entity {
+    fn default() -> Self {
+        Entity {
+            slug: String::new(),
+            kind: EntityKind::Person,
+            label: String::new(),
+            value: String::new(),
+            sealed: false,
+            observations: Vec::new(),
+            facets: BTreeMap::new(),
+            note: String::new(),
+            image: None,
+            size: DEFAULT_NODE_SIZE,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        }
+    }
+}
+
 pub fn slugify(s: &str) -> Result<String, Error> {
     Ok(s.to_lowercase()
         .chars()
@@ -347,16 +367,7 @@ mod tests {
             slug: "j_doe".into(),
             kind: EntityKind::Person,
             label: "J. Doe".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
+            ..Default::default()
         };
         e.observations.push(
             Observation::stamp(
@@ -389,16 +400,7 @@ mod tests {
             slug: "x".into(),
             kind: EntityKind::Domain,
             label: "the suspicious site evil.example".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
+            ..Default::default()
         };
         assert_eq!(e.module_value().unwrap(), None, "prose label fails hostname check");
         e.value = "evil.example".into();
@@ -669,16 +671,7 @@ mod tests {
             slug: "acme_legal".into(),
             kind: EntityKind::Organization,
             label: "Acme Legal".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
+            ..Default::default()
         };
         e.facets.insert(Facet::OrgType, FacetValue::Indexed(7));
 

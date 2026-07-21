@@ -187,26 +187,9 @@ pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<
 mod tests {
     use super::*;
     use crate::model::{
-        DEFAULT_NODE_SIZE, Facet, KIND_META, OCCUPATION_ICONS, role_of, subtype_of, subtype_value,
+        Facet, KIND_META, OCCUPATION_ICONS, role_of, subtype_of, subtype_value,
     };
-
-    fn person(slug: &str) -> Entity {
-        Entity {
-            slug: slug.to_owned(),
-            kind: EntityKind::Person,
-            label: slug.to_owned(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
-    }
+    use crate::ui::testkit::nodes::person;
 
     #[test]
     fn role_meta_mirrors_declaration_order() {

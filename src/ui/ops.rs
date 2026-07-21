@@ -3,7 +3,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
 use crate::model::{
-    DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, Origin, Preset, RELATION_META, Relation,
+    Entity, EntityKind, KIND_META, Origin, Preset, RELATION_META, Relation,
     RelationKind, Source, SourceKind, Verification, apply_preset,
 };
 
@@ -135,15 +135,7 @@ pub fn spawn_node(
         kind,
         label: label.to_owned(),
         value: value.to_owned(),
-        sealed: false,
-        observations: Vec::new(),
-        facets: Default::default(),
-        note: String::new(),
-        image: None,
-        size: DEFAULT_NODE_SIZE,
-        boost: 1.0,
-        collapsed: false,
-        hidden: false,
+        ..Default::default()
     };
     let idx = g.add_node_with_label_and_location(ent, format!("{} {}", meta.icon, label), pos);
     Ok(idx)

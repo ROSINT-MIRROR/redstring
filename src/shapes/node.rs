@@ -434,16 +434,9 @@ mod tests {
             slug: "n".into(),
             kind: EntityKind::Person,
             label: "Node Label".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
             size,
-            boost: 1.0,
             collapsed,
-            hidden: false,
+            ..Default::default()
         };
         let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(ent);
         let mut out = Vec::new();
@@ -511,16 +504,8 @@ mod tests {
             slug: "n".into(),
             kind: EntityKind::Person,
             label: "Node Label".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
             size,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
+            ..Default::default()
         };
         let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(ent);
         let ctx = egui::Context::default();
@@ -608,16 +593,8 @@ mod tests {
             slug: "n".into(),
             kind: EntityKind::Person,
             label: label.into(),
-            value: String::new(),
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
             size: (LABEL_MIN_PX * 2.0) / LABEL_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-            sealed: false,
+            ..Default::default()
         };
         Node::new(ent)
     }

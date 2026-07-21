@@ -363,9 +363,8 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
             note,
             image: image_abs(project, &er.image)?,
             size: size_of(&cf.display, &er.slug),
-            boost: 1.0,
             collapsed: cf.display.collapsed.contains(&er.slug),
-            hidden: false,
+            ..Default::default()
         };
         let idx = g.add_node_with_label_and_location(
             ent,

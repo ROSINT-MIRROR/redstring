@@ -3,6 +3,8 @@ pub mod fixtures;
 pub mod graph;
 pub mod harness;
 pub mod invariant;
+#[cfg(test)]
+pub mod nodes;
 
 #[cfg(test)]
 mod tests_tables;

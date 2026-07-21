@@ -564,24 +564,11 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, DatePrecision, DateVal, Entity, ObsValue};
+    use crate::model::{DatePrecision, DateVal, Entity, ObsValue};
+    use crate::ui::testkit::nodes;
 
     fn domain_node(slug: &str, label: &str, value: &str) -> Entity {
-        Entity {
-            slug: slug.to_owned(),
-            kind: EntityKind::Domain,
-            label: label.to_owned(),
-            value: value.to_owned(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
+        nodes::entity(EntityKind::Domain, slug, label, value)
     }
 
     fn put(g: &mut RsGraph, e: Entity) -> NodeIndex {

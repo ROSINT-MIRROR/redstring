@@ -60,30 +60,12 @@ mod tests {
     use super::super::app::RsGraph;
     use super::{components, largest};
     use crate::model::{
-        Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Relation, RelationKind,
-        Verification,
+        Author, Origin, Relation, RelationKind, Verification,
     };
-
-    fn node(slug: &str) -> Entity {
-        Entity {
-            slug: slug.into(),
-            kind: EntityKind::Person,
-            label: slug.into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
-    }
+    use crate::ui::testkit::nodes::person;
 
     fn spawn(g: &mut RsGraph, name: &str) -> NodeIndex {
-        g.add_node_with_label_and_location(node(name), name.into(), Pos2::ZERO)
+        g.add_node_with_label_and_location(person(name), name.into(), Pos2::ZERO)
     }
 
     fn link(g: &mut RsGraph, a: NodeIndex, b: NodeIndex) {
