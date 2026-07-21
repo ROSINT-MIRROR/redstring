@@ -352,6 +352,7 @@ mod tests {
             kind: SourceKind::Note,
             reference: "n".into(),
             excerpt: String::new(),
+            ..Default::default()
         }];
         let texts = text_shapes(&edge_shapes(rel(RelationKind::Controls, src)));
         assert!(

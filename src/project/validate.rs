@@ -150,16 +150,19 @@ mod tests {
                     kind: SourceKind::Document,
                     reference: "evidence/docs/contract.pdf".into(), 
                     excerpt: String::new(),
+                    ..Default::default()
                 },
                 Source {
                     kind: SourceKind::Transcript,
                     reference: "12:34".into(), 
                     excerpt: String::new(),
+                    ..Default::default()
                 },
                 Source {
                     kind: SourceKind::Url,
                     reference: "https://example.com/article".into(),
                     excerpt: String::new(),
+                    ..Default::default()
                 },
             ],
         });

@@ -44,7 +44,30 @@ pub enum Verification {
     AnalystAsserted,
     Corroborated,
     Rejected,
+    DeniedByTarget,
+    NoPublicRecord,
 }
+
+pub struct VerificationMeta {
+    pub status: Verification,
+    pub label: &'static str,
+    pub color: Color32,
+}
+
+const fn vm(status: Verification, label: &'static str, color: Color32) -> VerificationMeta {
+    VerificationMeta { status, label, color }
+}
+
+#[rustfmt::skip]
+pub const VERIFICATION_META: [VerificationMeta; 7] = [
+    vm(Verification::Unreviewed,       "unreviewed",   Color32::from_rgb(235, 150, 70)),
+    vm(Verification::MachineSuggested, "machine",      Color32::from_rgb(230, 200, 90)),
+    vm(Verification::AnalystAsserted,  "asserted",     Color32::from_rgb(110, 190, 200)),
+    vm(Verification::Corroborated,     "corroborated", Color32::from_rgb(120, 200, 140)),
+    vm(Verification::Rejected,         "rejected",     Color32::from_rgb(235, 80, 80)),
+    vm(Verification::DeniedByTarget,   "denied",       Color32::from_rgb(200, 120, 210)),
+    vm(Verification::NoPublicRecord,   "no record",    Color32::from_rgb(150, 165, 180)),
+];
 
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -133,24 +156,12 @@ impl Observation {
 
 
 pub fn status_color(status: Verification) -> Result<Color32, Error> {
-    Ok(match status {
-        Verification::Rejected => Color32::from_rgb(235, 80, 80),
-        Verification::Unreviewed => Color32::from_rgb(235, 150, 70),
-        Verification::MachineSuggested => Color32::from_rgb(230, 200, 90),
-        Verification::AnalystAsserted => Color32::from_rgb(110, 190, 200),
-        Verification::Corroborated => Color32::from_rgb(120, 200, 140),
-    })
+    Ok(VERIFICATION_META[status as usize].color)
 }
 
 
 pub fn status_label(status: Verification) -> Result<&'static str, Error> {
-    Ok(match status {
-        Verification::Unreviewed => "unreviewed",
-        Verification::MachineSuggested => "machine",
-        Verification::AnalystAsserted => "asserted",
-        Verification::Corroborated => "corroborated",
-        Verification::Rejected => "rejected",
-    })
+    Ok(VERIFICATION_META[status as usize].label)
 }
 
 
@@ -257,5 +268,41 @@ mod tests {
             ObsValue::Coord { lat: 1.0, lon: 2.0 }.text().unwrap(),
             "1,2"
         );
+    }
+
+    #[test]
+    fn verification_table_pins_order_and_stays_distinct() {
+        for (i, m) in VERIFICATION_META.iter().enumerate() {
+            assert_eq!(m.status as usize, i, "VERIFICATION_META[{i}] is {:?}", m.status);
+        }
+        assert_eq!(VERIFICATION_META.len(), 7, "seven verification states");
+        let mut labels: Vec<&str> = VERIFICATION_META.iter().map(|m| m.label).collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), 7, "every verification label is distinct");
+        let mut colors: Vec<(u8, u8, u8)> = VERIFICATION_META
+            .iter()
+            .map(|m| (m.color.r(), m.color.g(), m.color.b()))
+            .collect();
+        colors.sort();
+        colors.dedup();
+        assert_eq!(colors.len(), 7, "every verification color is distinct");
+    }
+
+    #[test]
+    fn new_epistemic_states_resolve_and_are_not_rejection() {
+        let denied = status_label(Verification::DeniedByTarget).unwrap();
+        let no_record = status_label(Verification::NoPublicRecord).unwrap();
+        let rejected = status_label(Verification::Rejected).unwrap();
+        assert_ne!(denied, no_record);
+        assert_ne!(denied, rejected, "a target's denial is not a rejection");
+        assert_ne!(no_record, rejected, "searched-but-absent is not a rejection");
+
+        let denied_c = status_color(Verification::DeniedByTarget).unwrap();
+        let no_record_c = status_color(Verification::NoPublicRecord).unwrap();
+        let rejected_c = status_color(Verification::Rejected).unwrap();
+        assert_ne!(denied_c, rejected_c);
+        assert_ne!(no_record_c, rejected_c);
+        assert_ne!(denied_c, no_record_c);
     }
 }

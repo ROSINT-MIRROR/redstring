@@ -102,6 +102,7 @@ pub fn source(kind: SourceKind, reference: &str, excerpt: &str) -> Result<Source
         kind,
         reference: reference.to_owned(),
         excerpt: excerpt.to_owned(),
+        ..Default::default()
     })
 }
 

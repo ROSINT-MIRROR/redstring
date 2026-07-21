@@ -57,6 +57,7 @@ mod tests {
                 kind: m.kind,
                 reference: format!("ref/for/{}", m.label),
                 excerpt: "supporting excerpt".to_owned(),
+                ..Default::default()
             };
             let json = serde_json::to_string(&s).unwrap();
             let back: Source = serde_json::from_str(&json).unwrap();

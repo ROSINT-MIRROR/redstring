@@ -2,6 +2,7 @@ mod app;
 mod board;
 mod center;
 mod chrome;
+mod evidence;
 mod fold;
 mod inspector;
 mod layout;
