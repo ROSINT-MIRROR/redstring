@@ -765,4 +765,19 @@ OrgName:        Google LLC
         assert_eq!(args[0], "-c");
         assert_eq!(args[1], "sha256sum \"evidence/docs/real.pdf\"");
     }
+
+    #[test]
+    fn sherlock_regex_emits_social_accounts_with_platform_and_host_label() {
+        let spec = builtin("builtin:sherlock");
+        assert!(spec.kinds().unwrap().contains(&EntityKind::Alias));
+        assert!(spec.kinds().unwrap().contains(&EntityKind::SocialAccount));
+        let text = "[*] Checking username johndoe on:\n[+] GitHub: https://github.com/johndoe\n[+] Reddit: https://www.reddit.com/user/johndoe\n[+] Instagram: https://instagram.com/johndoe\n[*] Search completed\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let accounts = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::SocialAccount, rel: RelationKind::UsesAccount, .. })).count();
+        assert_eq!(accounts, 3, "one social account per [+] hit, header/footer lines ignored");
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::SocialAccount, label: "github.com".into(), value: "https://github.com/johndoe".into(), rel: RelationKind::UsesAccount, outbound: true, attrs: vec![("platform".into(), "GitHub".into(), ObsKind::Text)] }));
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::SocialAccount, label: "reddit.com".into(), value: "https://www.reddit.com/user/johndoe".into(), rel: RelationKind::UsesAccount, outbound: true, attrs: vec![("platform".into(), "Reddit".into(), ObsKind::Text)] }));
+        assert!(!facts.iter().any(|f| matches!(f, Fact::Entity { label, .. } if label == "johndoe")), "the header line must never emit an account");
+    }
 }

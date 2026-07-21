@@ -1,0 +1,28 @@
+// builtin module spec — sherlock: which of ~400 social sites a username exists on (KEYLESS).
+// requires sherlock (pipx install sherlock-project); the requires-gate hides this until on PATH.
+// sherlock prints each found profile as `[+] <Site>: <url>`; --print-found drops the misses,
+// --output /dev/null suppresses sherlock's stray <username>.txt in the case dir, 2>/dev/null
+// drops the progress noise, and sed strips its colorama ANSI so the regex sees clean text.
+// The regex captures the site name and the profile url per hit; each url becomes a social
+// account the alias uses_account, labeled by host with the pretty site name as its platform
+// attr — username -> profiles is the second half of the identity pivot holehe opens on email,
+// the full url kept as the node value so two people sharing a profile converge by slug upsert.
+(
+    id: "sherlock",
+    label: "sherlock username sites",
+    applies_to: ["alias", "social_account"],
+    bin: "sh",
+    requires: ["sherlock"],
+    args: ["-c", "sherlock '{value}' --print-found --output /dev/null 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
+    timeout_secs: 120,
+    shapes: [
+        (
+            id: "sherlock",
+            extract: (id: "regex", config: (pattern: "\\[\\+\\]\\s+(?<site>[^:]+):\\s+(?<url>https?://\\S+)")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "url", kind: "social_account", rel: "uses_account", attrs: [("site", "platform")], label: Host),
+            ],
+        ),
+    ],
+)
