@@ -6,7 +6,7 @@
 (
     id: "candel",
     label: "candel username sweep",
-    applies_to: ["alias"],
+    applies_to: ["alias", "social_account"],
     bin: "candel",
     requires: [],
     args: ["{value}", "--json"],

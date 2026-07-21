@@ -1,0 +1,25 @@
+// builtin module spec — dnsx reverse DNS (PTR) for an IP address.
+// echo pipes the IP into dnsx -ptr; -json emits one flat ndjson object with a
+// ptr string array, so the ndjson adapter reads it directly — no jq needed.
+// The discovered hostname points_to the IP (outbound: false) so the reverse
+// lookup reads the same direction as a forward A record (name -> address) and
+// converges with dnsx / whois forward-resolution nodes on the shared IP.
+(
+    id: "dnsxptr",
+    label: "dnsx reverse DNS",
+    applies_to: ["ip_address"],
+    bin: "sh",
+    requires: ["dnsx"],
+    args: ["-c", "echo '{value}' | dnsx -ptr -json -silent"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "dnsxptr",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "ptr", kind: "domain", rel: "points_to", outbound: false),
+            ],
+        ),
+    ],
+)

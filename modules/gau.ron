@@ -1,0 +1,25 @@
+// builtin module spec — gau (GetAllUrls) historical URL sweep for a domain.
+// Pulls archived URLs (Wayback / CommonCrawl / OTX); --subs includes subdomains.
+// head -150 is a HARD flood cap so a noisy domain can't bury the board — when
+// head closes the pipe, gau tears down on SIGPIPE. Each URL becomes a web page
+// the domain related_to (no historical verb yet); shared URLs converge by slug.
+// gau is NOT bundled; the requires-gate hides this module until it is on PATH.
+(
+    id: "gau",
+    label: "gau historical URLs",
+    applies_to: ["domain"],
+    bin: "sh",
+    requires: ["gau"],
+    args: ["-c", "gau --subs '{value}' | head -150"],
+    timeout_secs: 120,
+    shapes: [
+        (
+            id: "gau",
+            extract: (id: "lines", config: (field: "url")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "url", kind: "web_page", rel: "related_to"),
+            ],
+        ),
+    ],
+)
