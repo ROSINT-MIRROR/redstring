@@ -56,10 +56,10 @@ pub const ROLE_META: [RoleMeta; 15] = [
     rm(Role::Enabler, "enabler", egui_phosphor::regular::PLUGS_CONNECTED, (205, 165, 95)),
     rm(Role::Broker, "broker", egui_phosphor::regular::SWAP, (200, 140, 110)),
     rm(Role::Facilitator, "facilitator", egui_phosphor::regular::FLOW_ARROW, (150, 185, 130)),
-    rm(Role::Patron, "patron", egui_phosphor::regular::CROWN, (215, 175, 90)),
+    rm(Role::Patron, "patron", egui_phosphor::regular::CROWN, (120, 85, 200)),
     rm(Role::Frontman, "frontman", egui_phosphor::regular::SUNGLASSES, (190, 145, 200)),
-    rm(Role::Informant, "informant", egui_phosphor::regular::EAR, (135, 175, 200)),
-    rm(Role::Whistleblower, "whistleblower", egui_phosphor::regular::MEGAPHONE, (100, 195, 175)),
+    rm(Role::Informant, "informant (tipster)", egui_phosphor::regular::EAR, (55, 165, 205)),
+    rm(Role::Whistleblower, "whistleblower", egui_phosphor::regular::MEGAPHONE, (220, 70, 160)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -119,7 +119,7 @@ pub const PRESETS: [Preset; 66] = [
     ps("Hospital", egui_phosphor::regular::HOSPITAL, EntityKind::Organization, None, None, Some((Facet::OrgType, 11)), None),
     ps("Clinic", egui_phosphor::regular::STETHOSCOPE, EntityKind::Organization, None, None, Some((Facet::OrgType, 12)), None),
     ps("Pharmacy", egui_phosphor::regular::PILL, EntityKind::Organization, None, None, Some((Facet::OrgType, 13)), None),
-    ps("Esoteric order", egui_phosphor::regular::EYE, EntityKind::Organization, None, None, Some((Facet::OrgType, 14)), None),
+    ps("Cult / secret society", egui_phosphor::regular::EYE, EntityKind::Organization, None, None, Some((Facet::OrgType, 14)), None),
     ps("Ad platform", egui_phosphor::regular::TARGET, EntityKind::Organization, None, None, Some((Facet::OrgType, 15)), None),
     ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 0)), None),
     ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 1)), None),
@@ -245,7 +245,7 @@ mod tests {
         for (role, label) in [
             (Role::Patron, "patron"),
             (Role::Frontman, "frontman"),
-            (Role::Informant, "informant"),
+            (Role::Informant, "informant (tipster)"),
             (Role::Whistleblower, "whistleblower"),
         ] {
             let m = &ROLE_META[role as usize];
@@ -253,6 +253,45 @@ mod tests {
             assert_eq!(m.label, label);
             assert!(!m.icon.is_empty(), "{role:?} needs a glyph");
             assert_ne!(role, Role::default(), "{role:?} is a real role, not the default");
+        }
+    }
+
+    fn color_dist(a: Color32, b: Color32) -> f32 {
+        let dr = a.r() as f32 - b.r() as f32;
+        let dg = a.g() as f32 - b.g() as f32;
+        let db = a.b() as f32 - b.b() as f32;
+        (dr * dr + dg * dg + db * db).sqrt()
+    }
+
+    #[test]
+    fn role_meta_colors_pairwise_distinct() {
+        for (i, a) in ROLE_META.iter().enumerate() {
+            assert!(a.color.a() > 0, "{:?} needs a visible badge color", a.role);
+            for b in ROLE_META.iter().skip(i + 1) {
+                let d = color_dist(a.color, b.color);
+                assert!(
+                    d > 25.0,
+                    "roles {:?}/{:?} badge colors are too close to tell apart on the board: {d:.1} \
+                     (rgb {:?} vs {:?})",
+                    a.role,
+                    b.role,
+                    (a.color.r(), a.color.g(), a.color.b()),
+                    (b.color.r(), b.color.g(), b.color.b()),
+                );
+            }
+        }
+        for r in [Role::Patron, Role::Informant, Role::Whistleblower] {
+            let rc = ROLE_META[r as usize].color;
+            let nearest = ROLE_META
+                .iter()
+                .filter(|m| m.role != r)
+                .map(|m| color_dist(rc, m.color))
+                .fold(f32::INFINITY, f32::min);
+            assert!(
+                nearest > 45.0,
+                "{r:?} was recolored to break a collision and must clear every other role by a \
+                 wide margin, got {nearest:.1}"
+            );
         }
     }
 
