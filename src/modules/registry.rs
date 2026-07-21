@@ -7,7 +7,7 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 18] = [
+const BUILTIN: [(&str, &str); 20] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
     ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
@@ -26,6 +26,8 @@ const BUILTIN: [(&str, &str); 18] = [
     ("builtin:hackertarget", include_str!("../../modules/hackertarget.ron")),
     ("builtin:blockchain_btc", include_str!("../../modules/blockchain_btc.ron")),
     ("builtin:holehe", include_str!("../../modules/holehe.ron")),
+    ("builtin:wayback", include_str!("../../modules/wayback.ron")),
+    ("builtin:trackers", include_str!("../../modules/trackers.ron")),
 ];
 
 
@@ -204,6 +206,16 @@ CIDR:           8.8.8.0/24
 NetName:        GOGL
 Country:        US
 OrgName:        Google LLC
+";
+
+    const ROTLD: &str = "\
+% ROTLD legal preamble, no colon on this line
+  Domain Name: google.ro
+  Registered On: 2000-07-17
+  Registrar: MarkMonitor Inc.
+  DNSSEC: Inactive
+  Nameserver: ns1.google.com
+  Nameserver: ns2.google.com
 ";
 
     fn whois_spec() -> ModuleSpec {
@@ -739,5 +751,49 @@ OrgName:        Google LLC
             !facts.iter().any(|f| matches!(f, Fact::Entity { value, .. } if value == "github.com" || value == "twitter.com")),
             "[-] and [x] lines must never emit an account"
         );
+    }
+
+    #[test]
+    fn rotld_shape_extracts_ro_dates_and_nameservers() {
+        let spec = whois_spec();
+        let (shape, records) = sniff(&spec.shapes, ROTLD).unwrap().unwrap();
+        assert_eq!(shape.id, "rotld", "a .ro reply must not fall through to icann");
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr { key: "registered_on".into(), value: "2000-07-17".into() }));
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Organization, label: "MarkMonitor Inc.".into(), value: "MarkMonitor Inc.".into(), rel: RelationKind::RegisteredAt, outbound: true, attrs: Vec::new() }));
+        let ns = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Server, rel: RelationKind::ResolvesTo, .. })).count();
+        assert_eq!(ns, 2, "both .ro nameservers fan out to server nodes");
+    }
+
+    #[test]
+    fn dnsx_txt_emits_dns_records_and_spf_origin_ip() {
+        let spec = builtin("builtin:dnsx");
+        let text = "{\"host\":\"cf.example\",\"a\":[\"104.16.1.1\"],\"txt\":[\"v=spf1 ip4:199.15.212.0 -all\",\"g=x\"],\"spf_ip4\":[\"199.15.212.0\"]}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let dns = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::DnsRecord, rel: RelationKind::HasDnsRecord, .. })).count();
+        assert_eq!(dns, 2, "each txt record becomes a dns_record node");
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::IpAddress, label: "199.15.212.0".into(), value: "199.15.212.0".into(), rel: RelationKind::ResolvesTo, outbound: true, attrs: Vec::new() }));
+    }
+
+    #[test]
+    fn wayback_lines_relate_domain_to_archived_pages() {
+        let spec = builtin("builtin:wayback");
+        assert!(spec.kinds().unwrap().contains(&EntityKind::Website));
+        let (shape, records) = sniff(&spec.shapes, "http://a.example/\nhttps://a.example/x\n").unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let n = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::WebPage, rel: RelationKind::RelatedTo, .. })).count();
+        assert_eq!(n, 2, "one web page per archived url line");
+    }
+
+    #[test]
+    fn trackers_lines_converge_sites_on_shared_ids() {
+        let spec = builtin("builtin:trackers");
+        assert!(spec.kinds().unwrap().contains(&EntityKind::Domain));
+        let (shape, records) = sniff(&spec.shapes, "GTM-KJZD388\nG-ABCDEF1234\nUA-12345-1\n").unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let n = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::TrackerId, rel: RelationKind::UsesTracker, .. })).count();
+        assert_eq!(n, 3, "one tracker node per id line");
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::TrackerId, label: "GTM-KJZD388".into(), value: "GTM-KJZD388".into(), rel: RelationKind::UsesTracker, outbound: true, attrs: Vec::new() }));
     }
 }
