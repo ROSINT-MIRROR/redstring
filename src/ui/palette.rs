@@ -1,14 +1,18 @@
 use egui::{Color32, RichText, Vec2};
 
 use crate::error::Error;
-use crate::model::{CATEGORY_META, CategoryMeta, KIND_META, KindMeta, PRESETS, Preset};
+use crate::model::{
+    CATEGORY_META, CategoryMeta, KIND_META, KindMeta, PRESETS, Preset, ROLE_META,
+};
 
 use super::app::RedstringApp;
 use super::style;
 
-const PRESET_ACCENT: Color32 = Color32::from_rgb(210, 180, 240);
-
 const SEARCH_TEXT: f32 = 19.0;
+
+const CHEVRON_W: f32 = 30.0;
+
+const PRESET_INDENT: f32 = 34.0;
 
 impl RedstringApp {
     pub fn sidebar_strip(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
@@ -65,12 +69,14 @@ impl RedstringApp {
             .id_salt("ne_kind_grid")
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                self.preset_group(ui, &needle, searching);
                 for cat in &CATEGORY_META {
                     let ci = cat.category as usize;
                     let hits: Vec<&KindMeta> = KIND_META
                         .iter()
-                        .filter(|m| m.category == cat.category && kind_matches(m, cat.label, &needle))
+                        .filter(|m| {
+                            m.category == cat.category
+                                && kind_or_preset_matches(m, cat.label, &needle)
+                        })
                         .collect();
                     if hits.is_empty() {
                         continue;
@@ -83,84 +89,50 @@ impl RedstringApp {
                         continue;
                     }
                     for m in hits {
-                        if kind_row(ui, m, cat, self.ne_kind == m.kind && self.ne_preset.is_none()) {
-                            self.ne_kind = m.kind;
-                            self.ne_preset = None;
-                        }
+                        self.kind_tree_row(ui, m, cat, &needle, searching);
                     }
                 }
             });
     }
 
-    fn preset_group(&mut self, ui: &mut egui::Ui, needle: &str, searching: bool) {
-        let hits: Vec<&Preset> = PRESETS.iter().filter(|p| preset_matches(p, needle)).collect();
-        if hits.is_empty() {
+    fn kind_tree_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        m: &KindMeta,
+        cat: &CategoryMeta,
+        needle: &str,
+        searching: bool,
+    ) {
+        let ki = m.kind as usize;
+        let has_presets = PRESETS.iter().any(|p| p.base_kind == m.kind);
+        let presets: Vec<&Preset> = PRESETS
+            .iter()
+            .filter(|p| p.base_kind == m.kind && (needle.is_empty() || preset_matches(p, needle)))
+            .collect();
+        let expanded = if searching {
+            !presets.is_empty()
+        } else {
+            self.kind_expanded[ki]
+        };
+        let selected = self.ne_kind == m.kind && self.ne_preset.is_none();
+        let (armed, toggled) = kind_row(ui, m, cat, selected, has_presets, expanded);
+        if toggled {
+            self.kind_expanded[ki] = !self.kind_expanded[ki];
+        }
+        if armed {
+            self.ne_kind = m.kind;
+            self.ne_preset = None;
+        }
+        if !expanded {
             return;
         }
-        let open = searching || self.presets_open;
-        if presets_header(ui, open, hits.len()) {
-            self.presets_open = !self.presets_open;
-        }
-        if !open {
-            return;
-        }
-        for p in hits {
-            if preset_row(ui, p, self.ne_preset.as_ref() == Some(p)) {
+        for &p in &presets {
+            if preset_row(ui, p, cat, self.ne_preset == Some(*p)) {
                 self.ne_preset = Some(*p);
             }
         }
     }
 }
-
-fn presets_header(ui: &mut egui::Ui, open: bool, count: usize) -> bool {
-    let caret = if open {
-        egui_phosphor::regular::CARET_DOWN
-    } else {
-        egui_phosphor::regular::CARET_RIGHT
-    };
-    let resp = ui.add(
-        egui::Button::new((
-            RichText::new(format!("{caret}  {}", egui_phosphor::regular::STAR))
-                .color(PRESET_ACCENT)
-                .size(16.0f32),
-            RichText::new("Presets").color(PRESET_ACCENT).strong().size(14.0f32),
-            egui::Atom::grow(),
-            RichText::new(count.to_string())
-                .color(PRESET_ACCENT.gamma_multiply(0.7f32))
-                .size(12.0f32),
-        ))
-        .fill(PRESET_ACCENT.gamma_multiply(0.10f32))
-        .stroke(egui::Stroke::new(1.0f32, PRESET_ACCENT.gamma_multiply(0.6f32)))
-        .min_size(Vec2::new(ui.available_width(), style::ROW_H)),
-    );
-    resp.clicked()
-}
-
-fn preset_row(ui: &mut egui::Ui, p: &Preset, selected: bool) -> bool {
-    let resp = ui.add(
-        egui::Button::selectable(
-            selected,
-            (
-                RichText::new(p.icon).color(p.color).size(24.0f32),
-                RichText::new(p.label).color(p.color).size(12.0f32),
-                egui::Atom::grow(),
-            ),
-        )
-        .stroke(egui::Stroke::new(1.0f32, PRESET_ACCENT.gamma_multiply(0.5f32)))
-        .sense(egui::Sense::click_and_drag())
-        .min_size(Vec2::new(ui.available_width(), 40.0)),
-    );
-    resp.dnd_set_drag_payload(*p);
-    resp.clicked()
-}
-
-fn preset_matches(p: &Preset, needle: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    fuzzy(needle, p.label) || p.occupation.is_some_and(|occ| fuzzy(needle, occ))
-}
-
 
 fn category_header(ui: &mut egui::Ui, cat: &CategoryMeta, open: bool, count: usize) -> bool {
     let caret = if open {
@@ -186,25 +158,109 @@ fn category_header(ui: &mut egui::Ui, cat: &CategoryMeta, open: bool, count: usi
     resp.clicked()
 }
 
-
-fn kind_row(ui: &mut egui::Ui, m: &KindMeta, cat: &CategoryMeta, selected: bool) -> bool {
-    let resp = ui.add(
-        egui::Button::selectable(
-            selected,
-            (
-                RichText::new(m.icon).color(m.color).size(24.0f32),
-                RichText::new(m.label).color(m.color).size(12.0f32),
-                egui::Atom::grow(),
-            ),
-        )
-        .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.5f32)))
-        .sense(egui::Sense::click_and_drag())
-        .min_size(Vec2::new(ui.available_width(), 40.0)),
-    );
-    resp.dnd_set_drag_payload(m.kind);
-    resp.clicked()
+fn kind_row(
+    ui: &mut egui::Ui,
+    m: &KindMeta,
+    cat: &CategoryMeta,
+    selected: bool,
+    has_presets: bool,
+    expanded: bool,
+) -> (bool, bool) {
+    let mut armed = false;
+    let mut toggled = false;
+    ui.horizontal(|ui| {
+        if has_presets {
+            let caret = if expanded {
+                egui_phosphor::regular::CARET_DOWN
+            } else {
+                egui_phosphor::regular::CARET_RIGHT
+            };
+            let c = ui.add(
+                egui::Button::new(RichText::new(caret).color(cat.color).size(16.0f32))
+                    .frame(false)
+                    .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
+            );
+            if c.clicked() {
+                toggled = true;
+            }
+        } else {
+            ui.add(
+                egui::Button::new("")
+                    .frame(false)
+                    .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
+            );
+        }
+        let resp = ui.add(
+            egui::Button::selectable(
+                selected,
+                (
+                    RichText::new(m.icon).color(m.color).size(24.0f32),
+                    RichText::new(m.label).color(m.color).size(12.0f32),
+                    egui::Atom::grow(),
+                ),
+            )
+            .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.5f32)))
+            .sense(egui::Sense::click_and_drag())
+            .min_size(Vec2::new(ui.available_width(), 40.0f32)),
+        );
+        resp.dnd_set_drag_payload(m.kind);
+        if resp.clicked() {
+            armed = true;
+        }
+    });
+    (armed, toggled)
 }
 
+fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool) -> bool {
+    let color = preset_color(p);
+    let mut armed = false;
+    ui.horizontal(|ui| {
+        ui.add_space(PRESET_INDENT);
+        let resp = ui.add(
+            egui::Button::selectable(
+                selected,
+                (
+                    RichText::new(p.icon).color(color).size(20.0f32),
+                    RichText::new(p.label).color(color).size(12.0f32),
+                    egui::Atom::grow(),
+                ),
+            )
+            .stroke(egui::Stroke::new(1.0f32, cat.color.gamma_multiply(0.35f32)))
+            .sense(egui::Sense::click_and_drag())
+            .min_size(Vec2::new(ui.available_width(), 34.0f32)),
+        );
+        resp.dnd_set_drag_payload(*p);
+        if resp.clicked() {
+            armed = true;
+        }
+    });
+    armed
+}
+
+fn preset_color(p: &Preset) -> Color32 {
+    let mut color = KIND_META[p.base_kind as usize].color;
+    for r in p.role.iter() {
+        color = ROLE_META[*r as usize].color;
+    }
+    color
+}
+
+fn kind_or_preset_matches(m: &KindMeta, cat_label: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    kind_matches(m, cat_label, needle)
+        || PRESETS
+            .iter()
+            .any(|p| p.base_kind == m.kind && preset_matches(p, needle))
+}
+
+fn preset_matches(p: &Preset, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    fuzzy(needle, p.label) || p.attr.is_some_and(|(_, val)| fuzzy(needle, val))
+}
 
 fn kind_matches(m: &KindMeta, cat_label: &str, needle: &str) -> bool {
     if needle.is_empty() {
@@ -214,8 +270,6 @@ fn kind_matches(m: &KindMeta, cat_label: &str, needle: &str) -> bool {
         || fuzzy(needle, cat_label)
         || m.aliases.iter().any(|a| fuzzy(needle, a))
 }
-
-
 
 fn fuzzy(needle: &str, hay: &str) -> bool {
     let hay: Vec<char> = hay.to_lowercase().chars().collect();
@@ -356,5 +410,36 @@ mod tests {
         let ip = &KIND_META[EntityKind::IpAddress as usize];
         assert!(kind_matches(ip, "Digital", "ipv4"));
         assert!(!kind_matches(weapon, "Physical", "newspaper"));
+    }
+
+    #[test]
+    fn collapsed_subtypes_surface_as_org_presets() {
+        let org = &KIND_META[EntityKind::Organization as usize];
+        for term in ["shell company", "ngo", "government agency", "company"] {
+            assert!(
+                kind_or_preset_matches(org, "Organizations", term),
+                "'{term}' must surface Organization"
+            );
+        }
+        assert!(!kind_or_preset_matches(org, "Organizations", "airplane"));
+    }
+
+    #[test]
+    fn preset_matches_hit_label_and_attr_value() {
+        let shell = PRESETS.iter().find(|p| p.label == "Shell company").expect("shell preset");
+        assert_eq!(shell.base_kind, EntityKind::Organization);
+        assert!(preset_matches(shell, "shell"));
+        let judge = PRESETS.iter().find(|p| p.label == "Judge").expect("judge preset");
+        assert!(preset_matches(judge, "judge"), "occupation attr value matches");
+        assert!(!preset_matches(judge, "zzzq"));
+    }
+
+    #[test]
+    fn preset_color_indexes_safely() {
+        let mut sum = 0u32;
+        for p in &PRESETS {
+            sum += preset_color(p).r() as u32;
+        }
+        assert!(sum > 0, "presets must carry a visible color");
     }
 }

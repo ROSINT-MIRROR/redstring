@@ -12,7 +12,7 @@ use super::app::RedstringApp;
 impl RedstringApp {
     pub fn seed_demo(&mut self) -> Result<(), Error> {
         let doe = self.add_entity(EntityKind::Person, "J. Doe".into(), spiral(0)?)?;
-        let shell = self.add_entity(EntityKind::ShellCompany, "Shell Co Ltd".into(), spiral(1)?)?;
+        let shell = self.add_entity(EntityKind::Organization, "Shell Co Ltd".into(), spiral(1)?)?;
         let domain = self.add_entity(EntityKind::Domain, "evil.example".into(), spiral(2)?)?;
         let minister = self.add_entity(EntityKind::Person, "Minister X".into(), spiral(3)?)?;
 

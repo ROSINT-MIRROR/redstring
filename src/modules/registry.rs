@@ -213,7 +213,7 @@ OrgName:        Google LLC
             value: "MarkMonitor Inc.".into()
         }));
         assert!(facts.contains(&Fact::Entity {
-            kind: EntityKind::Company,
+            kind: EntityKind::Organization,
             label: "MarkMonitor Inc.".into(),
             value: "MarkMonitor Inc.".into(),
             rel: RelationKind::RegisteredAt,
