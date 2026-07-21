@@ -36,9 +36,9 @@
                 Attr(from: "ntee", key: "ntee"),
                 Attr(from: "state", key: "state"),
                 Attr(from: "city", key: "city"),
-                Attr(from: "revenue", key: "revenue"),
-                Attr(from: "expenses", key: "total_expenses"),
-                Attr(from: "assets", key: "total_assets"),
+                Attr(from: "revenue", key: "revenue", kind: Number),
+                Attr(from: "expenses", key: "total_expenses", kind: Number),
+                Attr(from: "assets", key: "total_assets", kind: Number),
                 Attr(from: "fiscal_year", key: "fiscal_year"),
                 Entity(from: "city", kind: "location", rel: "located_at", attrs: [
                     ("state", "region"),

@@ -4,6 +4,7 @@ mod tests {
     use crate::model::RelationKind;
     use crate::modules::emit::{Fact, emit};
     use crate::modules::extract::{extractor, sniff};
+    use crate::modules::ObsKind;
 
     const APNIC: &str = "\
 % [whois.apnic.net]
@@ -123,9 +124,9 @@ OrgName:        Google LLC
             rel: RelationKind::PresentsCert,
             outbound: true,
             attrs: vec![
-                ("sha256".into(), "deadbeef".into()),
-                ("issuer".into(), "R3".into()),
-                ("subject".into(), "example.com".into()),
+                ("sha256".into(), "deadbeef".into(), ObsKind::Text),
+                ("issuer".into(), "R3".into(), ObsKind::Text),
+                ("subject".into(), "example.com".into(), ObsKind::Text),
             ],
         }));
         assert!(facts.contains(&Fact::Entity {
@@ -167,8 +168,7 @@ OrgName:        Google LLC
         }));
         assert!(facts.contains(&Fact::Attr {
             key: "ct_issuer".into(),
-            value: "C=US, O=Let's Encrypt".into(),
-        }));
+            value: "C=US, O=Let's Encrypt".into(), kind: ObsKind::Text, }));
     }
 
     #[test]
@@ -190,8 +190,7 @@ OrgName:        Google LLC
         let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Attr {
             key: "registrar".into(),
-            value: "MarkMonitor Inc.".into()
-        }));
+            value: "MarkMonitor Inc.".into(), kind: ObsKind::Text }));
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Organization,
             label: "MarkMonitor Inc.".into(),
@@ -234,7 +233,7 @@ OrgName:        Google LLC
             value: "AU".into(),
             rel: RelationKind::LocatedAt,
             outbound: true,
-            attrs: vec![("country_code".into(), "AU".into())],
+            attrs: vec![("country_code".into(), "AU".into(), ObsKind::Text)],
         }));
     }
 
@@ -252,12 +251,12 @@ OrgName:        Google LLC
             rel: RelationKind::LocatedAt,
             outbound: true,
             attrs: vec![
-                ("country_code".into(), "US".into()),
-                ("city".into(), "Mountain View".into()),
-                ("region".into(), "CA".into()),
+                ("country_code".into(), "US".into(), ObsKind::Text),
+                ("city".into(), "Mountain View".into(), ObsKind::Text),
+                ("region".into(), "CA".into(), ObsKind::Text),
             ],
         }));
-        assert!(facts.contains(&Fact::Attr { key: "cidr".into(), value: "8.8.8.0/24".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "cidr".into(), value: "8.8.8.0/24".into(), kind: ObsKind::Text }));
     }
 
     #[test]
@@ -343,9 +342,9 @@ OrgName:        Google LLC
             rel: RelationKind::Serves,
             outbound: true,
             attrs: vec![
-                ("status_code".into(), "200".into()),
-                ("title".into(), "ACME Home".into()),
-                ("final_url".into(), "https://acme.example/".into()),
+                ("status_code".into(), "200".into(), ObsKind::Text),
+                ("title".into(), "ACME Home".into(), ObsKind::Text),
+                ("final_url".into(), "https://acme.example/".into(), ObsKind::Text),
             ],
         }));
     }
@@ -415,9 +414,9 @@ OrgName:        Google LLC
             rel: RelationKind::LocatedAt,
             outbound: true,
             attrs: vec![
-                ("city".into(), "Mountain View".into()),
-                ("region".into(), "California".into()),
-                ("country_code".into(), "US".into()),
+                ("city".into(), "Mountain View".into(), ObsKind::Text),
+                ("region".into(), "California".into(), ObsKind::Text),
+                ("country_code".into(), "US".into(), ObsKind::Text),
             ],
         }));
         assert!(facts.contains(&Fact::Entity {
@@ -438,8 +437,7 @@ OrgName:        Google LLC
         }));
         assert!(facts.contains(&Fact::Attr {
             key: "reverse_dns".into(),
-            value: "dns.google".into(),
-        }));
+            value: "dns.google".into(), kind: ObsKind::Text, }));
     }
 
     #[test]
@@ -466,16 +464,13 @@ OrgName:        Google LLC
         let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Attr {
             key: "author".into(),
-            value: "Jane Photographer".into(),
-        }));
+            value: "Jane Photographer".into(), kind: ObsKind::Text, }));
         assert!(facts.contains(&Fact::Attr {
             key: "created_at".into(),
-            value: "2021:06:15 14:23:01".into(),
-        }));
+            value: "2021:06:15 14:23:01".into(), kind: ObsKind::Text, }));
         assert!(facts.contains(&Fact::Attr {
             key: "device_model".into(),
-            value: "Canon EOS 5D".into(),
-        }));
+            value: "Canon EOS 5D".into(), kind: ObsKind::Text, }));
         assert!(facts.contains(&Fact::Entity {
             kind: EntityKind::Location,
             label: "37.774900 N, 122.419400 W".into(),
@@ -502,16 +497,13 @@ OrgName:        Google LLC
         let facts = emit(shape, &records).unwrap();
         assert!(facts.contains(&Fact::Attr {
             key: "lei".into(),
-            value: "HWUPKR0MPOU8FGXBT394".into(),
-        }));
+            value: "HWUPKR0MPOU8FGXBT394".into(), kind: ObsKind::Text, }));
         assert!(facts.contains(&Fact::Attr {
             key: "registration_status".into(),
-            value: "ISSUED".into(),
-        }));
+            value: "ISSUED".into(), kind: ObsKind::Text, }));
         assert!(facts.contains(&Fact::Attr {
             key: "jurisdiction".into(),
-            value: "US".into(),
-        }));
+            value: "US".into(), kind: ObsKind::Text, }));
     }
 
     #[test]
@@ -587,7 +579,7 @@ OrgName:        Google LLC
         let (shape, records) = sniff(&spec.shapes, ROTLD).unwrap().unwrap();
         assert_eq!(shape.id, "rotld", "a .ro reply must not fall through to icann");
         let facts = emit(shape, &records).unwrap();
-        assert!(facts.contains(&Fact::Attr { key: "registered_on".into(), value: "2000-07-17".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "registered_on".into(), value: "2000-07-17".into(), kind: ObsKind::Date }));
         assert!(facts.contains(&Fact::Entity { kind: EntityKind::Organization, label: "MarkMonitor Inc.".into(), value: "MarkMonitor Inc.".into(), rel: RelationKind::RegisteredAt, outbound: true, attrs: Vec::new() }));
         let ns = facts.iter().filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Server, rel: RelationKind::ResolvesTo, .. })).count();
         assert_eq!(ns, 2, "both .ro nameservers fan out to server nodes");
@@ -644,13 +636,13 @@ OrgName:        Google LLC
         let text = "{\"organization\":{\"ein\":200049703,\"name\":\"Wikimedia Foundation Org\",\"ntee_code\":\"B60\",\"state\":\"CA\",\"city\":\"San Francisco\"},\"filings_with_data\":[{\"tax_prd_yr\":2023,\"totrevenue\":180199672,\"totfuncexpns\":168305333,\"totassetsend\":274123369}]}";
         let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
         let facts = emit(shape, &records).unwrap();
-        assert!(facts.contains(&Fact::Attr { key: "legal_name".into(), value: "Wikimedia Foundation Org".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "B60".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "revenue".into(), value: "180199672".into() }), "array-index pointer filings_with_data.0.totrevenue");
-        assert!(facts.contains(&Fact::Attr { key: "total_expenses".into(), value: "168305333".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "total_assets".into(), value: "274123369".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "fiscal_year".into(), value: "2023".into() }));
-        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "San Francisco".into(), value: "San Francisco".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "CA".into())] }));
+        assert!(facts.contains(&Fact::Attr { key: "legal_name".into(), value: "Wikimedia Foundation Org".into(), kind: ObsKind::Text }));
+        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "B60".into(), kind: ObsKind::Text }));
+        assert!(facts.contains(&Fact::Attr { key: "revenue".into(), value: "180199672".into(), kind: ObsKind::Number }), "array-index pointer filings_with_data.0.totrevenue");
+        assert!(facts.contains(&Fact::Attr { key: "total_expenses".into(), value: "168305333".into(), kind: ObsKind::Number }));
+        assert!(facts.contains(&Fact::Attr { key: "total_assets".into(), value: "274123369".into(), kind: ObsKind::Number }));
+        assert!(facts.contains(&Fact::Attr { key: "fiscal_year".into(), value: "2023".into(), kind: ObsKind::Text }));
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "San Francisco".into(), value: "San Francisco".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "CA".into(), ObsKind::Text)] }));
     }
 
     #[test]
@@ -659,9 +651,9 @@ OrgName:        Google LLC
         let text = "{\"organization\":{\"ein\":263416850,\"name\":\"Everyday Heroes Like You Inc\",\"ntee_code\":\"P58\",\"state\":\"AZ\",\"city\":\"Scottsdale\"},\"filings_with_data\":[]}";
         let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
         let facts = emit(shape, &records).unwrap();
-        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "P58".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "ntee".into(), value: "P58".into(), kind: ObsKind::Text }));
         assert!(!facts.iter().any(|f| matches!(f, Fact::Attr { key, .. } if key == "revenue")), "empty filings_with_data yields no revenue observation");
-        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "Scottsdale".into(), value: "Scottsdale".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "AZ".into())] }));
+        assert!(facts.contains(&Fact::Entity { kind: EntityKind::Location, label: "Scottsdale".into(), value: "Scottsdale".into(), rel: RelationKind::LocatedAt, outbound: true, attrs: vec![("region".into(), "AZ".into(), ObsKind::Text)] }));
     }
 
     #[test]
@@ -670,9 +662,9 @@ OrgName:        Google LLC
         let text = "magic_type: ISO Media, MP4 v2 [ISO 14496-14]\nembedded_count: 2\nanomaly: pdf extension but libmagic sees: ISO Media, MP4 v2 [ISO 14496-14]\n";
         let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
         let facts = emit(shape, &records).unwrap();
-        assert!(facts.contains(&Fact::Attr { key: "magic_type".into(), value: "ISO Media, MP4 v2 [ISO 14496-14]".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "embedded_count".into(), value: "2".into() }));
-        assert!(facts.contains(&Fact::Attr { key: "anomaly".into(), value: "pdf extension but libmagic sees: ISO Media, MP4 v2 [ISO 14496-14]".into() }), "first-colon split keeps the colon inside the anomaly note");
+        assert!(facts.contains(&Fact::Attr { key: "magic_type".into(), value: "ISO Media, MP4 v2 [ISO 14496-14]".into(), kind: ObsKind::Text }));
+        assert!(facts.contains(&Fact::Attr { key: "embedded_count".into(), value: "2".into(), kind: ObsKind::Text }));
+        assert!(facts.contains(&Fact::Attr { key: "anomaly".into(), value: "pdf extension but libmagic sees: ISO Media, MP4 v2 [ISO 14496-14]".into(), kind: ObsKind::Text }), "first-colon split keeps the colon inside the anomaly note");
     }
 
     #[test]
@@ -681,7 +673,7 @@ OrgName:        Google LLC
         let text = "df257009b71f175a22e3023f79908078345cdef341f1b4fe58811dcc8ebb8c0c  evidence/docs/real.pdf\n";
         let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
         let facts = emit(shape, &records).unwrap();
-        assert!(facts.contains(&Fact::Attr { key: "sha256".into(), value: "df257009b71f175a22e3023f79908078345cdef341f1b4fe58811dcc8ebb8c0c".into() }));
+        assert!(facts.contains(&Fact::Attr { key: "sha256".into(), value: "df257009b71f175a22e3023f79908078345cdef341f1b4fe58811dcc8ebb8c0c".into(), kind: ObsKind::Text }));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::model::{EntityKind, Origin, RelationKind, Verification};
-    use crate::modules::Fact;
+    use crate::modules::{Fact, ObsKind};
     use crate::ui::testkit::{apply, fixtures, graph, harness, invariant};
 
     fn ent(
@@ -17,14 +17,22 @@ mod tests {
             value: value.to_owned(),
             rel,
             outbound: true,
-            attrs,
+            attrs: attrs
+                .into_iter()
+                .map(|(k, v)| (k, v, ObsKind::Text))
+                .collect(),
         }
     }
 
     fn attr(key: &str, value: &str) -> Fact {
+        attrk(key, value, ObsKind::Text)
+    }
+
+    fn attrk(key: &str, value: &str, kind: ObsKind) -> Fact {
         Fact::Attr {
             key: key.to_owned(),
             value: value.to_owned(),
+            kind,
         }
     }
 
@@ -40,8 +48,8 @@ mod tests {
         assert_eq!(shape, "icann");
         assert_eq!(facts.len(), 7, "4 attrs + 1 org + 2 nameservers");
         assert!(facts.contains(&attr("registrar", "MarkMonitor Inc.")));
-        assert!(facts.contains(&attr("registered_on", "2019-04-12T10:22:31Z")));
-        assert!(facts.contains(&attr("expires", "2025-04-12T10:22:31Z")));
+        assert!(facts.contains(&attrk("registered_on", "2019-04-12T10:22:31Z", ObsKind::Date)));
+        assert!(facts.contains(&attrk("expires", "2025-04-12T10:22:31Z", ObsKind::Date)));
         assert!(facts.contains(&attr("dnssec", "unsigned")));
         assert!(facts.contains(&ent(
             EntityKind::Organization,
