@@ -103,7 +103,7 @@ fn check_path(
 mod tests {
     use super::*;
     use crate::model::{
-        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Source,
+        Author, CaseMeta, EntityKind, EntityRec, Origin, RelationKind, RelationRec, Role, Source,
         SourceKind, Verification,
     };
 
@@ -120,6 +120,7 @@ mod tests {
             label: slug.into(),
             value: String::new(),
             observations: vec![],
+            role: Role::Unset,
             image: None,
         }
     }

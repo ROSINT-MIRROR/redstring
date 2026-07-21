@@ -5,7 +5,7 @@ use egui_graphs::{
 use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
-use crate::model::{Camera, EntityKind, KIND_META};
+use crate::model::{Camera, EntityKind, KIND_META, Preset};
 use crate::shapes::{IMG_RADIUS, NODE_RADIUS, SourcedEdgeShape};
 
 use super::app::{BOARD_META_ID, RedstringApp};
@@ -127,6 +127,7 @@ impl RedstringApp {
         self.edge_drag_overlay(ui, rect)?;
         self.resize_handle(ui, rect)?;
         self.kind_drop(ui, rect)?;
+        self.preset_drop(ui, rect)?;
         self.verb_picker(ui)?;
         self.fold_menu(ui)?;
         self.label_editor(ui, rect)?;
@@ -447,6 +448,33 @@ impl RedstringApp {
         let canvas = meta(ui)?.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
         let idx = self.add_entity(kind, KIND_META[kind as usize].label.to_owned(), canvas)?;
         self.ne_kind = kind;
+        self.ne_preset = None;
+        self.start_label_edit(idx)
+    }
+
+    fn preset_drop(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
+        if !egui::DragAndDrop::has_payload_of_type::<Preset>(ui.ctx()) {
+            return Ok(());
+        }
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let over = pointer.is_some_and(|p| rect.contains(p));
+        if over {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+        }
+        if !ui.input(|i| i.pointer.any_released()) {
+            return Ok(());
+        }
+
+        let Some(preset) = egui::DragAndDrop::take_payload::<Preset>(ui.ctx()) else {
+            return Ok(());
+        };
+        let (Some(p), true) = (pointer, over) else {
+            return Ok(());
+        };
+        let preset = *preset;
+        let canvas = meta(ui)?.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
+        let idx = self.add_preset(&preset, canvas)?;
+        self.ne_preset = Some(preset);
         self.start_label_edit(idx)
     }
 }

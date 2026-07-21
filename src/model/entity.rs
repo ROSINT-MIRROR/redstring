@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::observation::Observation;
+use super::role::Role;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
@@ -53,8 +54,6 @@ pub const CATEGORY_META: [CategoryMeta; 8] = [
 pub enum EntityKind {
     Person,
     Alias,
-    Official,
-    Judge,
     Organization,
     Company,
     ShellCompany,
@@ -244,11 +243,9 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 54] = [
-    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality", "occupation"], &["individual", "human", "people", "name"], ValueFormat::Free),
+pub const KIND_META: [KindMeta; 52] = [
+    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality", "occupation"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free),
-    k(EntityKind::Official, "Official", egui_phosphor::regular::IDENTIFICATION_BADGE, Category::People, (70, 135, 225), &["office", "jurisdiction", "party", "term"], &["politician", "minister", "mp", "bureaucrat", "public servant"], ValueFormat::Free),
-    k(EntityKind::Judge, "Judge", egui_phosphor::regular::SCALES, Category::People, (110, 120, 215), &["court", "jurisdiction", "appointed"], &["magistrate", "justice"], ValueFormat::Free),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association"], ValueFormat::Free),
     k(EntityKind::Company, "Company", egui_phosphor::regular::BUILDING_OFFICE, Category::Organizations, (250, 150, 60), &["reg_no", "jurisdiction", "incorporated", "status"], &["corporation", "business", "firm", "llc", "enterprise"], ValueFormat::Free),
     k(EntityKind::ShellCompany, "Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, Category::Organizations, (205, 145, 100), &["reg_no", "jurisdiction", "incorporated", "registered_agent"], &["offshore", "front", "spv", "letterbox"], ValueFormat::Free),
@@ -311,6 +308,8 @@ pub struct Entity {
     pub value: String,
     #[serde(default)]
     pub observations: Vec<Observation>,
+    #[serde(default)]
+    pub role: Role,
     pub note: String,
     pub image: Option<String>,
     #[serde(default = "default_node_size")]
@@ -415,6 +414,7 @@ mod tests {
             label: "J. Doe".into(),
             value: String::new(),
             observations: Vec::new(),
+            role: Role::Unset,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -481,6 +481,7 @@ mod tests {
             label: "the suspicious site evil.example".into(),
             value: String::new(),
             observations: Vec::new(),
+            role: Role::Unset,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

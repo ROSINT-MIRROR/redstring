@@ -255,7 +255,8 @@ mod tests {
     use super::super::app::RsGraph;
     use super::{collect_subtree, derive_hidden, fold_target, menu_should_close};
     use crate::model::{
-        Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind, Verification,
+        Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind, Role,
+        Verification,
     };
 
     fn node(slug: &str) -> Entity {
@@ -265,6 +266,7 @@ mod tests {
             label: slug.into(),
             value: String::new(),
             observations: Vec::new(),
+            role: Role::Unset,
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
