@@ -81,30 +81,12 @@ mod tests {
     use super::super::board::{MAX_ZOOM, MIN_ZOOM};
     use super::{CENTER_MAX_ZOOM, center_camera};
     use crate::model::{
-        Author, Camera, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Relation, RelationKind,
-        Verification,
+        Author, Camera, Origin, Relation, RelationKind, Verification,
     };
-
-    fn node(slug: &str) -> Entity {
-        Entity {
-            slug: slug.into(),
-            kind: EntityKind::Person,
-            label: slug.into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
-    }
+    use crate::ui::testkit::nodes::person;
 
     fn spawn_at(g: &mut RsGraph, name: &str, x: f32, y: f32) -> NodeIndex {
-        g.add_node_with_label_and_location(node(name), name.into(), Pos2::new(x, y))
+        g.add_node_with_label_and_location(person(name), name.into(), Pos2::new(x, y))
     }
 
     fn link(g: &mut RsGraph, a: NodeIndex, b: NodeIndex) {

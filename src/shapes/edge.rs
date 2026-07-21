@@ -361,27 +361,14 @@ fn dist_point_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Author, DEFAULT_NODE_SIZE, Entity, EntityKind, Origin, Source, SourceKind};
+    use crate::model::{Author, Entity, EntityKind, Origin, Source, SourceKind};
+    use crate::ui::testkit::nodes;
     use crate::shapes::EntityNodeShape;
     use egui_graphs::{MetadataFrame, SettingsStyle};
     use petgraph::{Directed, stable_graph::DefaultIx};
 
     fn ent() -> Entity {
-        Entity {
-            slug: "n".into(),
-            kind: EntityKind::Person,
-            label: "N".into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
+        nodes::entity(EntityKind::Person, "n", "N", "")
     }
 
     fn rel(kind: RelationKind, sources: Vec<Source>) -> Relation {

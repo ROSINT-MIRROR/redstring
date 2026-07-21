@@ -420,27 +420,9 @@ mod tests {
         stale_collapsed,
     };
     use crate::model::{
-        Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind,
-        Verification,
+        Author, Origin, Relation, RelationKind, Verification,
     };
-
-    fn node(slug: &str) -> Entity {
-        Entity {
-            slug: slug.into(),
-            kind: EntityKind::Person,
-            label: slug.into(),
-            value: String::new(),
-            sealed: false,
-            observations: Vec::new(),
-            facets: Default::default(),
-            note: String::new(),
-            image: None,
-            size: DEFAULT_NODE_SIZE,
-            boost: 1.0,
-            collapsed: false,
-            hidden: false,
-        }
-    }
+    use crate::ui::testkit::nodes::person;
 
     fn link(g: &mut RsGraph, a: NodeIndex, b: NodeIndex) {
         g.add_edge_with_label(
@@ -458,7 +440,7 @@ mod tests {
     }
 
     fn spawn(g: &mut RsGraph, name: &str) -> NodeIndex {
-        g.add_node_with_label_and_location(node(name), name.into(), Pos2::ZERO)
+        g.add_node_with_label_and_location(person(name), name.into(), Pos2::ZERO)
     }
 
     fn chain() -> (RsGraph, Vec<NodeIndex>) {
