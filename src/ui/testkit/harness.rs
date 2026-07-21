@@ -93,8 +93,8 @@ pub fn frame<R>(
 ) -> Result<R, Error> {
     let ctx = egui::Context::default();
     let mut slot: Option<Result<R, Error>> = None;
-    let _full = ctx.run(egui::RawInput::default(), |c| {
-        egui::CentralPanel::default().show(c, |ui| {
+    let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             slot = Some(body(app, ui));
         });
     });
@@ -111,8 +111,8 @@ pub fn frame_input<R>(
 ) -> Result<R, Error> {
     let ctx = egui::Context::default();
     let mut slot: Option<Result<R, Error>> = None;
-    let _full = ctx.run(input, |c| {
-        egui::CentralPanel::default().show(c, |ui| {
+    let _full = ctx.run_ui(input, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             slot = Some(body(app, ui));
         });
     });

@@ -755,8 +755,8 @@ mod tests {
         let mut input = egui::RawInput::default();
         input.screen_rect =
             Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(width + 80.0, 400.0)));
-        let out = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
+        let out = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show_inside(ui, |ui| {
                 ui.allocate_ui(Vec2::new(width, 300.0), |ui| {
                     observation_row(ui, 0, &mut o, &mut remove).expect("row renders");
                 });

@@ -473,8 +473,8 @@ mod tests {
 
     fn editor_pass(ctx: &egui::Context, buf: &mut String) -> (f32, f32, usize) {
         let mut got = (0.0, 0.0, 0usize);
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
                 let font = egui::FontId::monospace(14.0);
                 let text_size = ctx
                     .fonts_mut(|f| {

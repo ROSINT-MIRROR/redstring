@@ -196,8 +196,8 @@ mod tests {
         crate::log::record(crate::log::Level::Error, "smoke", "boom".to_owned()).unwrap();
         let ctx = egui::Context::default();
         for _ in 0..3 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                super::window(ctx).unwrap();
+            let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+                super::window(ui.ctx()).unwrap();
             });
         }
     }
