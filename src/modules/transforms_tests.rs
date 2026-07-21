@@ -276,7 +276,15 @@ mod transforms_tests {
                 value: "8.8.4.0/24".into(),
                 kind: ObsKind::Text,
             }),
-            "the announced range array lands as an observation, first cidr wins"
+            "the first announced cidr lands as an observation"
+        );
+        assert!(
+            facts.contains(&Fact::Attr {
+                key: "netblock".into(),
+                value: "8.8.8.0/24".into(),
+                kind: ObsKind::Text,
+            }),
+            "every announced cidr now lands — the range array is no longer truncated to the first"
         );
     }
 
@@ -478,7 +486,11 @@ mod transforms_tests {
         );
         assert!(
             facts.contains(&Fact::Attr { key: "topics".into(), value: "sanction".into(), kind: ObsKind::Text }),
-            "the primary risk tag surfaces as an observation (role.pep stays in the archived raw)"
+            "the sanction risk tag surfaces as an observation"
+        );
+        assert!(
+            facts.contains(&Fact::Attr { key: "topics".into(), value: "role.pep".into(), kind: ObsKind::Text }),
+            "every risk tag now surfaces — the pep tag is no longer trapped in the archived raw"
         );
         assert!(facts.contains(&Fact::Attr {
             key: "country".into(),

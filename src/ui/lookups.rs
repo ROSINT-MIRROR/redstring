@@ -515,27 +515,59 @@ fn fill_obs(
     set: &mut usize,
     skipped: &mut usize,
 ) -> Result<(), Error> {
-    let pos = observations.iter().position(|o| o.name == key);
-    let Some(p) = pos else {
-        observations.push(Observation::stamp(
-            key.to_owned(),
-            parse_obs_value(kind, value)?,
-            Origin::Lookup(module_id.to_owned()),
-            Verification::MachineSuggested,
-            author.clone(),
-        )?);
-        *set += 1;
-        return Ok(());
-    };
-    if observations[p].value.text()?.trim().is_empty() {
-        observations[p].value = parse_obs_value(kind, value)?;
-        observations[p].origin = Origin::Lookup(module_id.to_owned());
-        observations[p].status = Verification::MachineSuggested;
-        *set += 1;
+    let parsed = parse_obs_value(kind, value)?;
+    if observations.iter().any(|o| o.name == key && o.value == parsed) {
+        *skipped += 1;
         return Ok(());
     }
-    *skipped += 1;
+    if fill_empty_named_slot(observations, key, &parsed, module_id, set)? {
+        return Ok(());
+    }
+    if curated_name_owner(observations, key)? {
+        *skipped += 1;
+        return Ok(());
+    }
+    observations.push(Observation::stamp(
+        key.to_owned(),
+        parsed,
+        Origin::Lookup(module_id.to_owned()),
+        Verification::MachineSuggested,
+        author.clone(),
+    )?);
+    *set += 1;
     Ok(())
+}
+
+fn fill_empty_named_slot(
+    observations: &mut [Observation],
+    key: &str,
+    parsed: &crate::model::ObsValue,
+    module_id: &str,
+    set: &mut usize,
+) -> Result<bool, Error> {
+    for i in 0..observations.len() {
+        if observations[i].name != key || !observations[i].value.text()?.trim().is_empty() {
+            continue;
+        }
+        observations[i].value = parsed.clone();
+        observations[i].origin = Origin::Lookup(module_id.to_owned());
+        observations[i].status = Verification::MachineSuggested;
+        *set += 1;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn curated_name_owner(observations: &[Observation], key: &str) -> Result<bool, Error> {
+    for o in observations {
+        if o.name != key || matches!(o.origin, Origin::Lookup(_)) {
+            continue;
+        }
+        if !o.value.text()?.trim().is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn key_env(keys: &[String], api_keys: &[(String, String)]) -> Vec<(String, String)> {
@@ -702,5 +734,58 @@ mod tests {
             "a bad date degrades to Text, never dropped"
         );
         assert_eq!((set, skip), (3, 0));
+    }
+
+    #[test]
+    fn fill_obs_fans_multi_value_into_distinct_same_name_observations() {
+        let author = Author::default();
+        let mut obs = Vec::new();
+        let (mut set, mut skip) = (0usize, 0usize);
+        for tag in ["sanction", "role.pep", "crime"] {
+            fill_obs(&mut obs, "topics", ObsKind::Text, tag, "opensanctions", &author, &mut set, &mut skip)
+                .unwrap();
+        }
+        let topics: Vec<String> =
+            obs.iter().filter(|o| o.name == "topics").map(|o| o.value.text().unwrap()).collect();
+        assert_eq!(
+            topics,
+            vec!["sanction", "role.pep", "crime"],
+            "every tag lands as its own observation under the shared name — none dropped"
+        );
+        assert_eq!((set, skip), (3, 0));
+        for o in &obs {
+            assert_eq!(o.origin, Origin::Lookup("opensanctions".to_owned()));
+            assert_eq!(o.status, Verification::MachineSuggested);
+        }
+        for tag in ["sanction", "role.pep", "crime"] {
+            fill_obs(&mut obs, "topics", ObsKind::Text, tag, "opensanctions", &author, &mut set, &mut skip)
+                .unwrap();
+        }
+        assert_eq!(obs.len(), 3, "re-applying the same lookup spawns no duplicate observations");
+        assert_eq!((set, skip), (3, 3), "the second pass is entirely deduped on name+value");
+    }
+
+    #[test]
+    fn fill_obs_multi_value_defers_to_a_human_owned_name() {
+        let author = Author::default();
+        let mut obs = vec![
+            Observation::stamp(
+                "topics".to_owned(),
+                ObsValue::Text("hand-curated".to_owned()),
+                Origin::Manual,
+                Verification::AnalystAsserted,
+                author.clone(),
+            )
+            .unwrap(),
+        ];
+        let (mut set, mut skip) = (0usize, 0usize);
+        for tag in ["sanction", "role.pep", "crime"] {
+            fill_obs(&mut obs, "topics", ObsKind::Text, tag, "opensanctions", &author, &mut set, &mut skip)
+                .unwrap();
+        }
+        assert_eq!(obs.len(), 1, "a human-curated attr name is never fanned over by machine values");
+        assert_eq!(obs[0].value.text().unwrap(), "hand-curated");
+        assert_eq!(obs[0].origin, Origin::Manual, "the human observation stays untouched");
+        assert_eq!((set, skip), (0, 3), "all three machine tags defer to the human owner");
     }
 }

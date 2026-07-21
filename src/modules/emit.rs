@@ -40,12 +40,13 @@ fn emit_record(shape: &Shape, record: &Record, facts: &mut Vec<Fact>) -> Result<
         match rule {
             EmitRule::Attr { from, key, kind } => {
                 let Some(vals) = record.get(from) else { continue };
-                let Some(first) = vals.first() else { continue };
-                facts.push(Fact::Attr {
-                    key: key.clone(),
-                    value: first.clone(),
-                    kind: *kind,
-                });
+                for v in vals {
+                    facts.push(Fact::Attr {
+                        key: key.clone(),
+                        value: v.clone(),
+                        kind: *kind,
+                    });
+                }
             }
             EmitRule::Entity {
                 from,
@@ -606,5 +607,46 @@ mod tests {
             value: "2028-09-14T04:00:00Z".into(),
             kind: ObsKind::Date,
         }));
+    }
+
+    #[test]
+    fn attr_emit_fans_over_every_value_of_a_multivalue_field() {
+        let text = "{\"topics\":[\"sanction\",\"role.pep\",\"crime\"]}\n";
+        let records = crate::modules::extract::extractor("ndjson", &ron::Value::Unit)
+            .unwrap()
+            .extract(text)
+            .unwrap();
+        assert_eq!(records.len(), 1, "one ndjson object is one record");
+        assert_eq!(
+            records[0]["topics"],
+            vec!["sanction", "role.pep", "crime"],
+            "the extractor keeps the whole array multi-valued"
+        );
+        let shape = Shape {
+            id: "topics".into(),
+            extract: Extract {
+                id: "ndjson".into(),
+                config: ron::Value::Unit,
+            },
+            min_hits: 1,
+            emit: vec![EmitRule::Attr {
+                from: "topics".into(),
+                key: "topics".into(),
+                kind: ObsKind::Text,
+            }],
+        };
+        let facts = emit(&shape, &records).unwrap();
+        let topics: Vec<&str> = facts
+            .iter()
+            .filter_map(|f| match f {
+                Fact::Attr { key, value, .. } if key == "topics" => Some(value.as_str()),
+                _other => None,
+            })
+            .collect();
+        assert_eq!(
+            topics,
+            vec!["sanction", "role.pep", "crime"],
+            "every tag becomes its own Attr fact — no value is dropped to archived raw"
+        );
     }
 }
