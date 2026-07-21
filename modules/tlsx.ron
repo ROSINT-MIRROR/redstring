@@ -1,0 +1,31 @@
+// builtin module spec — tlsx certificate grab for a domain or IP.
+// Pulls the presented leaf cert (fingerprint + issuer/subject) and every
+// Subject Alternative Name. The fingerprint becomes a TLS-certificate node
+// the host presents; each SAN fans out to a domain node the cert covers —
+// so hosts sharing a cert (co-issuance) converge on the same SAN domains.
+// tlsx -json nests fingerprint_hash (an object), so jq flattens each record
+// to one line of {host, fingerprint, issuer_cn, subject_cn, subject_an[]}
+// (fingerprint falls back across tlsx versions) before ndjson reads it.
+(
+    id: "tlsx",
+    label: "tlsx TLS certificate",
+    applies_to: ["domain", "ip_address"],
+    bin: "sh",
+    args: ["-c", "echo '{value}' | tlsx -json -san -silent | jq -c '{host: .host, fingerprint: (.fingerprint_hash.sha256 // .fingerprint_hash // .hash), issuer_cn: .issuer_cn, subject_cn: .subject_cn, subject_an: .subject_an}'"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "tlsx",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "fingerprint", kind: "tls_certificate", rel: "presents_certificate", attrs: [
+                    ("fingerprint", "sha256"),
+                    ("issuer_cn", "issuer"),
+                    ("subject_cn", "subject"),
+                ]),
+                Entity(from: "subject_an", kind: "domain", rel: "covers"),
+            ],
+        ),
+    ],
+)

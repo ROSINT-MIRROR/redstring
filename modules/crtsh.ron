@@ -1,0 +1,26 @@
+// builtin module spec — crt.sh Certificate Transparency subdomain sweep.
+// Every logged cert for the domain yields its Subject Alternative Names;
+// each SAN fans out to a domain node (rel covers), enumerating subdomains
+// straight off CT logs — a huge pivot with no API key.
+// crt.sh returns a JSON array of certs whose name_value packs several SANs
+// separated by newlines, so jq explodes the array and splits name_value
+// into one flat {issuer, san} object per SAN before ndjson reads it.
+(
+    id: "crtsh",
+    label: "crt.sh CT subdomains",
+    applies_to: ["domain"],
+    bin: "sh",
+    args: ["-c", "curl -s 'https://crt.sh/?q={value}&output=json' | jq -c '.[] | {issuer: .issuer_name, san: (.name_value | split(\"\\n\")[])}'"],
+    timeout_secs: 60,
+    shapes: [
+        (
+            id: "crtsh",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "san", kind: "domain", rel: "covers"),
+                Attr(from: "issuer", key: "ct_issuer"),
+            ],
+        ),
+    ],
+)
