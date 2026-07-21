@@ -87,31 +87,7 @@ impl RedstringApp {
 
 
     pub fn fingerprint(&self) -> Result<String, Error> {
-        let g = self.g.g();
-        let mut parts: Vec<String> = Vec::new();
-        for n in g.node_weights() {
-            let e = n.payload();
-            let loc = n.location();
-            parts.push(node_fp_line(e, loc.x, loc.y));
-        }
-        for idx in g.edge_indices() {
-            let Some((a, b)) = g.edge_endpoints(idx) else { continue };
-            let Some(r) = g.edge_weight(idx) else { continue };
-            let Some(from) = g.node_weight(a) else { continue };
-            let Some(to) = g.node_weight(b) else { continue };
-            let srcs = ron::to_string(&r.payload().sources)
-                .map_err(|source| Error::RonSer { source })?;
-            parts.push(format!(
-                "e|{}|{}|{:?}|{}",
-                from.payload().slug,
-                to.payload().slug,
-                r.payload().kind,
-                srcs
-            ));
-        }
-        parts.sort();
-        parts.insert(0, format!("{}|{}", self.case_name, self.size_by_degree));
-        Ok(parts.join("\n"))
+        compute_fingerprint(&self.g, &self.case_name, self.size_by_degree)
     }
 
     pub fn dirty(&self) -> Result<bool, Error> {
@@ -520,31 +496,87 @@ fn dirty_state(case_open: bool, fp: &str, saved_fp: &str) -> bool {
     case_open && fp != saved_fp
 }
 
-fn node_fp_line(e: &Entity, x: f32, y: f32) -> String {
-    format!(
-        "n|{}|{:?}|{}|{}|{:?}|{:?}|{}|{:.1}|{:.1}|{}|{}|{:?}|{:?}",
-        e.slug,
-        e.kind,
-        e.label,
-        e.value,
-        e.observations,
-        e.image,
-        e.note,
-        x,
-        y,
-        e.size,
-        e.collapsed,
-        e.role,
-        e.occupation
-    )
+fn compute_fingerprint(graph: &RsGraph, case_name: &str, size_by_degree: bool) -> Result<String, Error> {
+    let g = graph.g();
+    let mut recs: Vec<String> = Vec::new();
+    let mut display = CaseDisplay {
+        size_by_degree,
+        ..CaseDisplay::default()
+    };
+    for n in g.node_weights() {
+        let e = n.payload();
+        let loc = n.location();
+        recs.push(node_fp_line(e)?);
+        display.positions.insert(e.slug.clone(), (loc.x, loc.y));
+        if e.size != DEFAULT_NODE_SIZE {
+            display.sizes.insert(e.slug.clone(), e.size);
+        }
+        if e.collapsed {
+            display.collapsed.insert(e.slug.clone());
+        }
+    }
+    for idx in g.edge_indices() {
+        let Some((a, b)) = g.edge_endpoints(idx) else { continue };
+        let Some(r) = g.edge_weight(idx) else { continue };
+        let Some(from) = g.node_weight(a) else { continue };
+        let Some(to) = g.node_weight(b) else { continue };
+        recs.push(edge_fp_line(&from.payload().slug, &to.payload().slug, r.payload())?);
+    }
+    recs.sort();
+    recs.insert(0, display_fp(&display)?);
+    recs.insert(0, case_name.to_owned());
+    Ok(recs.join("\n"))
+}
+
+fn node_fp_line(e: &Entity) -> Result<String, Error> {
+    let rec = EntityRec {
+        slug: e.slug.clone(),
+        kind: e.kind,
+        label: e.label.clone(),
+        value: e.value.clone(),
+        observations: e.observations.clone(),
+        role: e.role,
+        occupation: e.occupation.clone(),
+        image: e.image.clone(),
+    };
+    let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
+    Ok(format!("n|{body}|{:?}", e.note))
+}
+
+fn edge_fp_line(from: &str, to: &str, r: &Relation) -> Result<String, Error> {
+    let rec = RelationRec {
+        from: from.to_owned(),
+        to: to.to_owned(),
+        kind: r.kind,
+        origin: r.origin.clone(),
+        status: r.status,
+        confidence: r.confidence,
+        author: r.author.clone(),
+        created_at: r.created_at,
+        sources: r.sources.clone(),
+    };
+    let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
+    Ok(format!("e|{body}"))
+}
+
+fn display_fp(d: &CaseDisplay) -> Result<String, Error> {
+    let body = serde_json::to_string(&(&d.positions, &d.sizes, &d.collapsed, d.size_by_degree))
+        .map_err(|source| Error::JsonSer { source })?;
+    Ok(format!("d|{body}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{dirty_state, node_fp_line};
-    use crate::model::{
-        DEFAULT_NODE_SIZE, Entity, EntityKind, Occupation, OccupationIcon, Role,
+    use super::{
+        RsGraph, compute_fingerprint, display_fp, dirty_state, edge_fp_line, node_fp_line,
     };
+    use crate::model::{
+        Author, Camera, CaseDisplay, DEFAULT_NODE_SIZE, Entity, EntityKind, Occupation,
+        OccupationIcon, Origin, Relation, RelationKind, Role, Verification,
+    };
+    use egui::Pos2;
+    use egui_graphs::Graph;
+    use petgraph::stable_graph::StableGraph;
 
     fn bare_person() -> Entity {
         Entity {
@@ -564,6 +596,34 @@ mod tests {
         }
     }
 
+    fn person(slug: &str) -> Entity {
+        Entity {
+            slug: slug.into(),
+            ..bare_person()
+        }
+    }
+
+    fn relation(confidence: u8, status: Verification) -> Relation {
+        Relation {
+            kind: RelationKind::Controls,
+            origin: Origin::Manual,
+            status,
+            confidence,
+            author: Author::default(),
+            created_at: 0,
+            sources: Vec::new(),
+            hidden: false,
+        }
+    }
+
+    fn tiny_graph(confidence: u8, status: Verification) -> RsGraph {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = g.add_node_with_label_and_location(person("a"), "a".into(), Pos2::new(0.0, 0.0));
+        let b = g.add_node_with_label_and_location(person("b"), "b".into(), Pos2::new(20.0, 0.0));
+        g.add_edge_with_label(a, b, relation(confidence, status), "rel".into());
+        g
+    }
+
     #[test]
     fn occupation_changes_node_fingerprint() {
         let base = bare_person();
@@ -573,8 +633,8 @@ mod tests {
             icon: OccupationIcon::Scales,
         });
         assert_ne!(
-            node_fp_line(&base, 0.0, 0.0),
-            node_fp_line(&judge, 0.0, 0.0),
+            node_fp_line(&base).unwrap(),
+            node_fp_line(&judge).unwrap(),
             "setting an occupation must change the dirty fingerprint"
         );
 
@@ -584,9 +644,79 @@ mod tests {
             icon: OccupationIcon::Briefcase,
         });
         assert_ne!(
-            node_fp_line(&judge, 0.0, 0.0),
-            node_fp_line(&lawyer, 0.0, 0.0),
+            node_fp_line(&judge).unwrap(),
+            node_fp_line(&lawyer).unwrap(),
             "changing only the occupation icon must change the fingerprint"
+        );
+    }
+
+    #[test]
+    fn edge_confidence_change_flips_dirty() {
+        let saved = edge_fp_line("a", "b", &relation(50, Verification::Unreviewed)).unwrap();
+        let bumped = edge_fp_line("a", "b", &relation(80, Verification::Unreviewed)).unwrap();
+        assert_ne!(saved, bumped, "bumping edge confidence must change the fingerprint");
+        assert!(
+            dirty_state(true, &bumped, &saved),
+            "an edge confidence change must mark the case dirty"
+        );
+    }
+
+    #[test]
+    fn edge_verification_change_flips_dirty() {
+        let saved = edge_fp_line("a", "b", &relation(80, Verification::Unreviewed)).unwrap();
+        let verified = edge_fp_line("a", "b", &relation(80, Verification::Corroborated)).unwrap();
+        assert_ne!(saved, verified, "re-verifying an edge must change the fingerprint");
+        assert!(
+            dirty_state(true, &verified, &saved),
+            "an edge verification change must mark the case dirty"
+        );
+    }
+
+    #[test]
+    fn camera_change_leaves_fingerprint_stable() {
+        let mut d = CaseDisplay::default();
+        d.positions.insert("p".into(), (4.0, 9.0));
+        let before = display_fp(&d).unwrap();
+        d.camera = Camera {
+            x: 999.0,
+            y: -999.0,
+            zoom: 7.5,
+        };
+        let after = display_fp(&d).unwrap();
+        assert_eq!(before, after, "panning/zooming must not enter the fingerprint");
+        assert!(
+            !dirty_state(true, &after, &before),
+            "a camera-only change must never mark the case dirty"
+        );
+
+        d.positions.insert("p".into(), (5.0, 9.0));
+        let moved = display_fp(&d).unwrap();
+        assert_ne!(before, moved, "moving a node must change the fingerprint");
+    }
+
+    #[test]
+    fn full_fingerprint_round_trip_and_edge_flip() {
+        let saved =
+            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", false).unwrap();
+        let reloaded =
+            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", false).unwrap();
+        assert!(
+            !dirty_state(true, &reloaded, &saved),
+            "an identical save→load rebuild must not be dirty"
+        );
+
+        let rebumped =
+            compute_fingerprint(&tiny_graph(80, Verification::Unreviewed), "case", false).unwrap();
+        assert!(
+            dirty_state(true, &rebumped, &saved),
+            "edge confidence must flip dirty through the full fingerprint"
+        );
+
+        let reverified =
+            compute_fingerprint(&tiny_graph(50, Verification::Corroborated), "case", false).unwrap();
+        assert!(
+            dirty_state(true, &reverified, &saved),
+            "edge verification must flip dirty through the full fingerprint"
         );
     }
 
