@@ -82,6 +82,8 @@ pub struct RedstringApp {
 
     pub seal_confirm: Option<(Vec<NodeIndex>, bool)>,
 
+    pub merge_confirm: Option<(NodeIndex, NodeIndex)>,
+
     pub quit_confirm: bool,
     pub allow_close: bool,
 
@@ -176,6 +178,7 @@ impl RedstringApp {
             next_run_id: 1,
             delete_confirm: None,
             seal_confirm: None,
+            merge_confirm: None,
             quit_confirm: false,
             allow_close: false,
             saved_fp: String::new(),
@@ -345,6 +348,7 @@ impl RedstringApp {
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
         self.seal_confirm_window(ui)?;
+        self.merge_confirm_window(ui)?;
         self.welcome_window(ui)?;
         self.find_window(ui)?;
         super::logview::window(ui.ctx())?;
@@ -515,6 +519,58 @@ impl RedstringApp {
         if cancel {
             self.seal_confirm = None;
         }
+        Ok(())
+    }
+
+    pub fn merge_confirm_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+        let Some((a, b)) = self.merge_confirm else {
+            return Ok(());
+        };
+        let la = self.node_label(a)?;
+        let lb = self.node_label(b)?;
+        let mut choice: Option<(NodeIndex, NodeIndex)> = None;
+        let mut cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Window::new("merge entities")
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ui.ctx().content_rect().center())
+            .show(ui.ctx(), |ui| {
+                ui.label(
+                    "Two entities become one — pick which survives. The other's facts, sources and relations move onto it, then it is removed.",
+                );
+                ui.add_space(8.0);
+                let merge_icon = egui_phosphor::regular::ARROWS_MERGE;
+                let keep_a =
+                    ui.button(RichText::new(format!("{merge_icon} keep {la}")).strong());
+                if ui.memory(|m| m.focused().is_none()) {
+                    keep_a.request_focus();
+                }
+                if keep_a.clicked() {
+                    choice = Some((a, b));
+                }
+                if ui
+                    .button(RichText::new(format!("{merge_icon} keep {lb}")).strong())
+                    .clicked()
+                {
+                    choice = Some((b, a));
+                }
+                ui.add_space(6.0);
+                cancel |= ui.button("cancel").clicked();
+            });
+        let Some((survivor, absorbed)) = choice else {
+            if cancel {
+                self.merge_confirm = None;
+            }
+            return Ok(());
+        };
+        let survivor_slug = self.node_slug(survivor)?;
+        let absorbed_slug = self.node_slug(absorbed)?;
+        self.merge_entities(survivor, absorbed)?;
+        self.g.set_selected_nodes(vec![survivor]);
+        self.merge_confirm = None;
+        crate::dlog_info!("ops", "merged {absorbed_slug} into {survivor_slug}");
+        self.status = format!("merged {absorbed_slug} into {survivor_slug}");
         Ok(())
     }
 }
