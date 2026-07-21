@@ -43,8 +43,12 @@ pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
             e.image = None;
             e.facets.clear();
             e.observations.clear();
+            e.sealed = false;
         } else {
             e.observations.retain(|o| !o.sealed);
+            for o in &mut e.observations {
+                o.sources.retain(|s| !s.sealed);
+            }
         }
     }
     out.data
