@@ -332,33 +332,12 @@ impl RedstringApp {
             .exact_size(super::style::STRIP_W + 8.0)
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(2, 6)));
 
-        let painter = ui.painter().clone();
-        let icon_f = egui::FontId::proportional(24.0);
-        let label_f = egui::FontId::proportional(12.0);
-        let row_w = KIND_META
-            .iter()
-            .map(|m| {
-                let iw = painter
-                    .layout_no_wrap(m.icon.to_owned(), icon_f.clone(), Color32::WHITE)
-                    .size()
-                    .x;
-                let lw = painter
-                    .layout_no_wrap(m.label.to_owned(), label_f.clone(), Color32::WHITE)
-                    .size()
-                    .x;
-                iw + lw
-            })
-            .fold(0.0f32, f32::max);
-        let extras = ui.spacing().button_padding.x * 2.0
-            + ui.spacing().item_spacing.x
-            + ui.spacing().scroll.bar_width
-            + 16.0;
-        let palette_w = ((row_w + extras) * 1.1).ceil();
         let expanded = egui::Panel::left("left")
             .resizable(true)
-            .default_size(palette_w)
+            .default_size(self.prefs.palette_width)
             .size_range(140.0..=480.0);
-        egui::Panel::show_animated_between_inside(
+        let mut palette_settled = false;
+        let palette_panel = egui::Panel::show_animated_between_inside(
             ui,
             !self.prefs.sidebar_collapsed,
             strip,
@@ -367,11 +346,22 @@ impl RedstringApp {
                 if how_expanded == 0.0 {
                     self.sidebar_strip(ui)
                 } else {
+                    if how_expanded >= 1.0 {
+                        palette_settled = true;
+                    }
                     self.left_panel(ui)
                 }
             },
-        )
-        .inner?;
+        );
+        let palette_w = palette_panel.response.rect.width();
+        palette_panel.inner?;
+        if palette_settled
+            && (palette_w - self.prefs.palette_width).abs() > 0.5
+            && ui.input(|i| i.pointer.any_released())
+        {
+            self.prefs.palette_width = palette_w;
+            self.prefs.save()?;
+        }
         let has_sel = !self.g.selected_nodes().is_empty() || !self.g.selected_edges().is_empty();
         let show_inspector = !self.prefs.inspector_collapsed || has_sel;
         let insp_strip = egui::Panel::right("right_strip")

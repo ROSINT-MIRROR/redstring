@@ -19,6 +19,9 @@ pub struct Prefs {
     pub sidebar_collapsed: bool,
     pub inspector_collapsed: bool,
 
+    #[serde(default = "default_palette_width")]
+    pub palette_width: f32,
+
     pub ui_scale: f32,
     pub theme: Theme,
 
@@ -32,6 +35,7 @@ impl Default for Prefs {
         Self {
             sidebar_collapsed: false,
             inspector_collapsed: false,
+            palette_width: default_palette_width(),
             ui_scale: 1.0,
             theme: Theme::Dark,
             recent: Vec::new(),
@@ -86,6 +90,10 @@ fn push_recent(list: &mut Vec<String>, path: String) {
     list.truncate(MAX_RECENT);
 }
 
+fn default_palette_width() -> f32 {
+    280.0
+}
+
 pub fn config_base() -> Result<PathBuf, Error> {
     let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) else {
         let Some(home) = std::env::var_os("HOME").filter(|v| !v.is_empty()) else {
@@ -116,6 +124,7 @@ mod tests {
         let p = Prefs {
             sidebar_collapsed: true,
             inspector_collapsed: true,
+            palette_width: 320.0,
             ui_scale: 1.75,
             theme: Theme::Light,
             recent: vec!["/tmp/case_a".into(), "/tmp/case_b".into()],
@@ -124,6 +133,16 @@ mod tests {
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();
         assert_eq!(p, back);
+        assert_eq!(back.palette_width, 320.0);
+    }
+
+    #[test]
+    fn palette_width_default_and_omitted() {
+        assert_eq!(default_palette_width(), 280.0);
+        assert_eq!(Prefs::default().palette_width, 280.0);
+
+        let p: Prefs = ron::from_str("(sidebar_collapsed: true)").unwrap();
+        assert_eq!(p.palette_width, 280.0);
     }
 
     #[test]
