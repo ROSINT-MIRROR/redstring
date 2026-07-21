@@ -698,6 +698,7 @@ mod tests {
             boost: 1.0,
             collapsed: false,
             hidden: false,
+            sealed: false,
         };
         Node::new(ent)
     }
