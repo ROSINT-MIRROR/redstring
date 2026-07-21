@@ -16,7 +16,10 @@ use petgraph::{EdgeType, stable_graph::IndexType};
 use egui_phosphor::regular::{PAPERCLIP, WARNING};
 
 use crate::error::Error;
-use crate::model::{RELATION_META, Relation, RelationKind, Verification, status_color};
+use crate::model::{
+    RELATION_META, Relation, RelationKind, SOURCE_TIER_META, Source, SourceTier, Verification,
+    status_color,
+};
 
 use super::label::{claim_edge_label, theme_shift};
 
@@ -56,6 +59,7 @@ pub struct SourcedEdgeShape {
     kind: RelationKind,
     sourced: bool,
     source_count: usize,
+    tier: SourceTier,
     status: Verification,
     selected: bool,
     order: usize,
@@ -68,6 +72,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
             kind: props.payload.kind,
             sourced: !props.payload.sources.is_empty(),
             source_count: props.payload.sources.len(),
+            tier: strongest_tier(&props.payload.sources),
             status: props.payload.status,
             selected: props.selected,
             order: props.order,
@@ -149,6 +154,7 @@ where
         self.kind = state.payload.kind;
         self.sourced = !state.payload.sources.is_empty();
         self.source_count = state.payload.sources.len();
+        self.tier = strongest_tier(&state.payload.sources);
         self.status = state.payload.status;
         self.selected = state.selected;
         self.order = state.order;
@@ -202,7 +208,11 @@ impl SourcedEdgeShape {
             .canvas_to_screen_size(EDGE_LABEL_SIZE)
             .clamp(EDGE_LABEL_MIN_PX, EDGE_LABEL_MAX_PX);
         let tail_px = if parts.warn { fpx * EDGE_WARN_MULT } else { fpx };
-        let tail_color = if parts.warn { warn_color(dark) } else { color };
+        let tail_color = if parts.warn {
+            warn_color(dark)
+        } else {
+            tier_color(self.tier, dark)
+        };
         let mut job = LayoutJob::default();
         job.append(
             &parts.verb,
@@ -304,6 +314,33 @@ fn warn_color(dark: bool) -> Color32 {
     } else {
         Color32::from_rgb(198, 30, 18)
     }
+}
+
+fn tier_rank(tier: SourceTier) -> u8 {
+    match tier {
+        SourceTier::Primary => 3,
+        SourceTier::Secondary => 2,
+        SourceTier::Reported => 1,
+        SourceTier::Unrated => 0,
+    }
+}
+
+fn strongest_tier(sources: &[Source]) -> SourceTier {
+    let mut best = SourceTier::Unrated;
+    for s in sources {
+        if tier_rank(s.tier) > tier_rank(best) {
+            best = s.tier;
+        }
+    }
+    best
+}
+
+fn tier_color(tier: SourceTier, dark: bool) -> Color32 {
+    let raw = SOURCE_TIER_META[tier as usize].color;
+    let Ok(c) = crate::ui::board_color(raw, dark) else {
+        return raw;
+    };
+    c
 }
 
 fn label_backdrop_fill(bg: Color32, dark: bool) -> Color32 {
@@ -425,6 +462,34 @@ mod tests {
         out
     }
 
+    fn tail_section_color(shapes: &[Shape]) -> Option<Color32> {
+        for s in shapes {
+            if let Shape::Text(t) = s {
+                let secs = &t.galley.job.sections;
+                if secs.len() >= 2 {
+                    return Some(secs[1].format.color);
+                }
+            }
+        }
+        None
+    }
+
+    fn src_tier(tier: SourceTier) -> Source {
+        Source {
+            kind: SourceKind::Note,
+            reference: "r".into(),
+            tier,
+            ..Default::default()
+        }
+    }
+
+    fn color_dist(a: Color32, b: Color32) -> f32 {
+        let dr = a.r() as f32 - b.r() as f32;
+        let dg = a.g() as f32 - b.g() as f32;
+        let db = a.b() as f32 - b.b() as f32;
+        (dr * dr + dg * dg + db * db).sqrt()
+    }
+
     #[test]
     fn edge_label_text_gates_and_warns() {
         let controls = RELATION_META[RelationKind::Controls as usize].label;
@@ -540,6 +605,87 @@ mod tests {
         assert!(
             verb_priority < 0.5,
             "sourced-verb priority must sit below every node label (min size 0.5) so it yields first"
+        );
+    }
+
+    #[test]
+    fn strongest_tier_picks_best_credibility() {
+        assert_eq!(strongest_tier(&[]), SourceTier::Unrated, "no sources -> unrated");
+        assert_eq!(
+            strongest_tier(&[src_tier(SourceTier::Unrated), src_tier(SourceTier::Unrated)]),
+            SourceTier::Unrated,
+            "an all-unrated edge must stay unrated so weak-only sourcing reads weak"
+        );
+        assert_eq!(
+            strongest_tier(&[
+                src_tier(SourceTier::Reported),
+                src_tier(SourceTier::Primary),
+                src_tier(SourceTier::Unrated),
+            ]),
+            SourceTier::Primary,
+            "a single primary source wins the tint because it is what makes the claim defensible"
+        );
+        assert_eq!(
+            strongest_tier(&[src_tier(SourceTier::Reported), src_tier(SourceTier::Secondary)]),
+            SourceTier::Secondary,
+            "secondary outranks reported when no primary is present"
+        );
+    }
+
+    #[test]
+    fn tier_colors_distinct_and_legible_both_themes() {
+        let tiers = [
+            SourceTier::Unrated,
+            SourceTier::Primary,
+            SourceTier::Secondary,
+            SourceTier::Reported,
+        ];
+        for &dark in &[true, false] {
+            let cols: Vec<Color32> = tiers.iter().map(|&t| tier_color(t, dark)).collect();
+            for i in 0..cols.len() {
+                for j in (i + 1)..cols.len() {
+                    assert!(
+                        color_dist(cols[i], cols[j]) > 35.0,
+                        "tiers {:?}/{:?} must stay visually distinct (dark={dark}): {:?} vs {:?}",
+                        tiers[i],
+                        tiers[j],
+                        cols[i],
+                        cols[j]
+                    );
+                }
+            }
+        }
+        let lum = |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+        for &t in &tiers {
+            assert!(
+                lum(tier_color(t, false)) < lum(tier_color(t, true)),
+                "light theme must darken tier {t:?} so the badge stays legible on a light board"
+            );
+        }
+    }
+
+    #[test]
+    fn sourced_badge_tinted_by_strongest_tier() {
+        SourcedEdgeShape::set_shot_labels(true).unwrap();
+        let prim = tail_section_color(&edge_shapes(rel(
+            RelationKind::Controls,
+            vec![src_tier(SourceTier::Primary)],
+        )));
+        let unr = tail_section_color(&edge_shapes(rel(
+            RelationKind::Controls,
+            vec![src_tier(SourceTier::Unrated), src_tier(SourceTier::Unrated)],
+        )));
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
+        let prim = prim.expect("a sourced edge must render a badge tail section");
+        let unr = unr.expect("an all-unrated edge must render a badge tail section");
+        assert_eq!(
+            prim,
+            tier_color(SourceTier::Primary, true),
+            "the badge tail must take the strongest present tier's board color"
+        );
+        assert_ne!(
+            prim, unr,
+            "a primary-sourced badge must be tinted apart from an all-unrated one"
         );
     }
 }
