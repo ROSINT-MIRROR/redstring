@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::prefs::Theme;
 
 use super::app::RedstringApp;
-use super::layout::LayoutKind;
+use super::layout::{LayoutKind, Spread};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -127,6 +127,18 @@ impl RedstringApp {
                         {
                             self.apply_layout(ui, kind)?;
                         }
+                    }
+                    if tb_button(ui, egui_phosphor::regular::ARROWS_IN, "Tighten")
+                        .on_hover_text("pull nodes closer — proportional to current spacing; selection if any, else all")
+                        .clicked()
+                    {
+                        self.apply_spread(ui, Spread::Tighten)?;
+                    }
+                    if tb_button(ui, egui_phosphor::regular::ARROWS_OUT, "Loosen")
+                        .on_hover_text("spread nodes apart — proportional to current spacing; selection if any, else all")
+                        .clicked()
+                    {
+                        self.apply_spread(ui, Spread::Loosen)?;
                     }
                     ui.label(RichText::new("layout:").weak());
                     Ok(())

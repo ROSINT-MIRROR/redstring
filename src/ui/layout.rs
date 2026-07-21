@@ -14,6 +14,7 @@ const STEP_MARGIN: f32 = 30.0;
 const FORCE_ITERS: u32 = 300;
 const GRAVITY: f32 = 0.04;
 const ANIM_SECS: f64 = 0.35;
+const SPREAD_FACTOR: f32 = 1.2;
 
 #[derive(Clone, Copy)]
 pub enum LayoutKind {
@@ -21,6 +22,12 @@ pub enum LayoutKind {
     Circle,
     Tree,
     Force,
+}
+
+#[derive(Clone, Copy)]
+pub enum Spread {
+    Loosen,
+    Tighten,
 }
 
 pub struct LayoutAnim {
@@ -65,6 +72,40 @@ impl RedstringApp {
         };
         let scope = if partial { " (selection)" } else { "" };
         self.status = format!("{name} layout: {moved} nodes{scope}");
+        Ok(())
+    }
+
+    pub fn apply_spread(&mut self, ui: &egui::Ui, dir: Spread) -> Result<(), Error> {
+        let targets = self.layout_targets();
+        if targets.len() < 2 {
+            self.status = "need at least 2 nodes to space".into();
+            return Ok(());
+        }
+        let partial = targets.len() < self.g.g().node_count();
+        let factor = match dir {
+            Spread::Loosen => SPREAD_FACTOR,
+            Spread::Tighten => 1.0 / SPREAD_FACTOR,
+        };
+        let mut points: Vec<(NodeIndex, Pos2)> = Vec::new();
+        for idx in &targets {
+            let Some(loc) = self.node_loc(*idx) else {
+                continue;
+            };
+            points.push((*idx, loc));
+        }
+        let steps = scale_about_centroid(&points, factor);
+        let moved = steps.len();
+        self.layout_anim = Some(LayoutAnim {
+            steps,
+            start: ui.input(|i| i.time),
+        });
+        ui.ctx().request_repaint();
+        let verb = match dir {
+            Spread::Loosen => "loosened",
+            Spread::Tighten => "tightened",
+        };
+        let scope = if partial { " (selection)" } else { "" };
+        self.status = format!("{verb} spacing: {moved} nodes{scope}");
         Ok(())
     }
 
@@ -405,12 +446,40 @@ fn place(
     col
 }
 
+fn scale_about_centroid(
+    points: &[(NodeIndex, Pos2)],
+    factor: f32,
+) -> Vec<(NodeIndex, Pos2, Pos2)> {
+    if points.len() < 2 {
+        return Vec::new();
+    }
+    let mut sum = Vec2::ZERO;
+    for (_, p) in points {
+        sum += p.to_vec2();
+    }
+    let center = (sum / points.len() as f32).to_pos2();
+    points
+        .iter()
+        .map(|(idx, p)| (*idx, *p, center + (*p - center) * factor))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn nix(i: usize) -> NodeIndex {
         NodeIndex::new(i)
+    }
+
+    fn centroid_of(ps: impl Iterator<Item = Pos2>) -> Pos2 {
+        let mut sum = Vec2::ZERO;
+        let mut n = 0.0f32;
+        for p in ps {
+            sum += p.to_vec2();
+            n += 1.0;
+        }
+        (sum / n).to_pos2()
     }
 
     #[test]
@@ -451,5 +520,56 @@ mod tests {
 
         assert_ne!(cells[&nix(0)].0, cells[&nix(2)].0);
         assert_eq!(cells[&nix(2)].1, 0);
+    }
+
+    fn sample() -> Vec<(NodeIndex, Pos2)> {
+        vec![
+            (nix(0), Pos2::new(-30.0, 10.0)),
+            (nix(1), Pos2::new(20.0, 10.0)),
+            (nix(2), Pos2::new(10.0, -40.0)),
+        ]
+    }
+
+    #[test]
+    fn loosen_grows_distances_and_holds_centroid() {
+        let pts = sample();
+        let f = 1.2;
+        let steps = scale_about_centroid(&pts, f);
+        assert_eq!(steps.len(), pts.len());
+
+        let before = centroid_of(pts.iter().map(|(_, p)| *p));
+        let after = centroid_of(steps.iter().map(|(_, _, to)| *to));
+        assert!((before - after).length() < 1e-3);
+
+        for i in 0..steps.len() {
+            for j in (i + 1)..steps.len() {
+                let d_before = (steps[i].1 - steps[j].1).length();
+                let d_after = (steps[i].2 - steps[j].2).length();
+                assert!(d_after > d_before);
+                assert!((d_after - d_before * f).abs() < 1e-2);
+            }
+        }
+    }
+
+    #[test]
+    fn tighten_after_loosen_returns_to_origin() {
+        let pts = sample();
+        let f = 1.2;
+        let loosened: Vec<(NodeIndex, Pos2)> = scale_about_centroid(&pts, f)
+            .into_iter()
+            .map(|(idx, _, to)| (idx, to))
+            .collect();
+        let restored = scale_about_centroid(&loosened, 1.0 / f);
+        assert_eq!(restored.len(), pts.len());
+        for (i, (_, _, to)) in restored.iter().enumerate() {
+            assert!((*to - pts[i].1).length() < 1e-2);
+        }
+    }
+
+    #[test]
+    fn fewer_than_two_nodes_is_noop() {
+        assert!(scale_about_centroid(&[], 1.2).is_empty());
+        let one = vec![(nix(0), Pos2::new(3.0, 4.0))];
+        assert!(scale_about_centroid(&one, 1.2).is_empty());
     }
 }
