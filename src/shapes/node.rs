@@ -11,7 +11,7 @@ use petgraph::{EdgeType, stable_graph::IndexType};
 use crate::error::Error;
 use crate::model::{Entity, Facet, FacetValue, KIND_META};
 
-use super::badge::{Corners, backdrop, badge_fg, collapsed_badge, draw_facet_badges};
+use super::badge::{Corners, backdrop, badge_fg, collapsed_badge, draw_facet_badges, sealed_badge};
 use super::label::{
     BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX,
     badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
@@ -45,6 +45,9 @@ const LABEL_TAIL_CHARS: usize = 6;
 const DISC_FILL_DARK: f32 = 0.25;
 const DISC_FILL_LIGHT: f32 = 0.5;
 
+const SEALED_DESAT: f32 = 0.55;
+const SEALED_IMG_TINT: Color32 = Color32::from_gray(150);
+
 #[derive(Clone)]
 pub struct EntityNodeShape {
     circle: DefaultNodeShape,
@@ -60,6 +63,7 @@ pub struct EntityNodeShape {
 
     size: f32,
     collapsed: bool,
+    sealed: bool,
     hidden: bool,
 }
 
@@ -74,6 +78,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             facets: props.payload.facets.clone(),
             size: props.payload.size * props.payload.boost,
             collapsed: props.payload.collapsed,
+            sealed: props.payload.sealed,
             hidden: props.payload.hidden,
             circle,
             tex_ok: false,
@@ -115,6 +120,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         self.facets = state.payload.facets.clone();
         self.size = state.payload.size * state.payload.boost;
         self.collapsed = state.payload.collapsed;
+        self.sealed = state.payload.sealed;
         self.hidden = state.payload.hidden;
         <DefaultNodeShape as DisplayNode<Entity, E, Ty, Ix>>::update(&mut self.circle, state);
         self.circle.radius = NODE_RADIUS * self.size;
@@ -190,8 +196,10 @@ impl EntityNodeShape {
         let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
         let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
         let color = self.frame_color(ctx);
+        let color = if self.sealed { mute_node(color) } else { color };
         let dark = ctx.ctx.global_style().visuals.dark_mode;
         let kind = self.kind_color(ctx);
+        let kind = if self.sealed { mute_node(kind) } else { kind };
         let bg = ctx.ctx.global_style().visuals.panel_fill;
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
 
@@ -234,8 +242,10 @@ impl EntityNodeShape {
             tl: center + Vec2::new(-badge_off, -badge_off),
             br: center + Vec2::new(badge_off, badge_off),
         };
+        let collapse_center = collapse_slot(corners.tl, self.sealed, badge_r);
         let Ok(()) = draw_facet_badges(&self.facets, ctx, &mut res, badge_r, &corners) else { return res };
-        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, corners.tl, badge_r) else { return res };
+        let Ok(()) = sealed_badge(self.sealed, ctx, &mut res, corners.tl, badge_r) else { return res };
+        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, collapse_center, badge_r) else { return res };
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
@@ -284,9 +294,11 @@ impl EntityNodeShape {
                 .clamp(0.0, 255.0) as u8,
         );
         let color = self.frame_color(ctx);
+        let color = if self.sealed { mute_node(color) } else { color };
         let dark = ctx.ctx.global_style().visuals.dark_mode;
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
+        let img_tint = if self.sealed { SEALED_IMG_TINT } else { Color32::WHITE };
 
         let mut res: Vec<Shape> = Vec::with_capacity(4);
         res.extend(self.selection_ring(ctx).map(|ring| {
@@ -297,7 +309,7 @@ impl EntityNodeShape {
             return res;
         };
         res.push(
-            RectShape::new(rect, cr, Color32::WHITE, Stroke::NONE, StrokeKind::Inside)
+            RectShape::new(rect, cr, img_tint, Stroke::NONE, StrokeKind::Inside)
                 .with_texture(tex.id(), uv)
                 .into(),
         );
@@ -312,8 +324,10 @@ impl EntityNodeShape {
             tl: rect.left_top(),
             br: rect.right_bottom(),
         };
+        let collapse_center = collapse_slot(corners.tl, self.sealed, img_badge_r);
         let Ok(()) = draw_facet_badges(&self.facets, ctx, &mut res, img_badge_r, &corners) else { return res };
-        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, corners.tl, img_badge_r) else { return res };
+        let Ok(()) = sealed_badge(self.sealed, ctx, &mut res, corners.tl, img_badge_r) else { return res };
+        let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, collapse_center, img_badge_r) else { return res };
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
@@ -376,6 +390,20 @@ fn disc_fill(bg: Color32, kind: Color32, dark: bool) -> Color32 {
     bg.lerp_to_gamma(kind, frac)
 }
 
+fn mute_node(c: Color32) -> Color32 {
+    let lum = 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+    let gray = Color32::from_gray(lum.clamp(0.0, 255.0) as u8);
+    c.lerp_to_gamma(gray, SEALED_DESAT)
+}
+
+fn collapse_slot(tl: Pos2, sealed: bool, badge_r: f32) -> Pos2 {
+    if sealed {
+        tl + Vec2::new(0.0, badge_r * 2.0 + 1.0)
+    } else {
+        tl
+    }
+}
+
 fn display_label(raw: &str) -> String {
     let trimmed = raw.trim();
     let count = trimmed.chars().count();
@@ -410,7 +438,7 @@ fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui_phosphor::regular::PLUS;
+    use egui_phosphor::regular::{LOCK, PLUS};
 
     #[test]
     fn boundary_point_hits_square() {
@@ -429,15 +457,7 @@ mod tests {
         assert!(p.x.is_finite() && p.y.is_finite());
     }
 
-    fn node_label_texts(size: f32, collapsed: bool) -> Vec<String> {
-        let ent = Entity {
-            slug: "n".into(),
-            kind: EntityKind::Person,
-            label: "Node Label".into(),
-            size,
-            collapsed,
-            ..Default::default()
-        };
+    fn entity_shape_texts(ent: Entity) -> Vec<String> {
         let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(ent);
         let mut out = Vec::new();
         let ctx = egui::Context::default();
@@ -467,6 +487,55 @@ mod tests {
             }
         });
         out
+    }
+
+    fn node_label_texts(size: f32, collapsed: bool) -> Vec<String> {
+        entity_shape_texts(Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            size,
+            collapsed,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn sealed_node_draws_lock_badge() {
+        let sealed = entity_shape_texts(Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            size: DEFAULT_NODE_SIZE,
+            sealed: true,
+            ..Default::default()
+        });
+        assert!(
+            sealed.iter().any(|t| t.as_str() == LOCK),
+            "a sealed node must render the lock badge glyph, got {sealed:?}"
+        );
+        let unsealed = entity_shape_texts(Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            size: DEFAULT_NODE_SIZE,
+            sealed: false,
+            ..Default::default()
+        });
+        assert!(
+            !unsealed.iter().any(|t| t.as_str() == LOCK),
+            "an unsealed node must not render the lock badge, got {unsealed:?}"
+        );
+    }
+
+    #[test]
+    fn mute_node_desaturates_toward_gray() {
+        let vivid = Color32::from_rgb(220, 60, 40);
+        let muted = mute_node(vivid);
+        assert!(
+            chroma(muted) < chroma(vivid),
+            "a sealed node color must lose saturation so it recedes: {muted:?} vs {vivid:?}"
+        );
     }
 
     #[test]
