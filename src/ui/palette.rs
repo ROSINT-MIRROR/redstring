@@ -192,9 +192,10 @@ fn kind_row(
 }
 
 fn caret_gutter(ui: &mut egui::Ui, color: Color32, has_presets: bool, expanded: bool) -> bool {
-    let glyph = if !has_presets {
-        ""
-    } else if expanded {
+    if !has_presets {
+        return false;
+    }
+    let glyph = if expanded {
         egui_phosphor::regular::CARET_DOWN
     } else {
         egui_phosphor::regular::CARET_RIGHT
@@ -204,7 +205,7 @@ fn caret_gutter(ui: &mut egui::Ui, color: Color32, has_presets: bool, expanded: 
             .frame(false)
             .min_size(Vec2::new(CHEVRON_W, 40.0f32)),
     );
-    has_presets && resp.clicked()
+    resp.clicked()
 }
 
 fn preset_row(ui: &mut egui::Ui, p: &Preset, cat: &CategoryMeta, selected: bool) -> bool {
@@ -317,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn caret_gutter_reserves_constant_width() {
+    fn leaf_flush_left_expandable_reserves_caret() {
         let color = CATEGORY_META[0].color;
         let base = icon_left_with(|_ui| {});
         let leaf = icon_left_with(|ui| {
@@ -330,21 +331,21 @@ mod tests {
             caret_gutter(ui, color, true, true);
         });
         assert_eq!(
-            leaf, collapsed,
-            "leaf and expandable kind rows must share one left edge: leaf {leaf} vs expandable {collapsed}"
+            leaf, base,
+            "leaf kind (no presets) must sit flush-left with no caret gutter: leaf {leaf} vs base {base}"
         );
         assert_eq!(
             collapsed, expanded,
             "caret gutter width must not change with expand state: collapsed {collapsed} vs expanded {expanded}"
         );
-        let width = leaf - base - 8.0f32;
         assert!(
-            (width - CHEVRON_W).abs() < 0.5f32,
-            "reserved caret gutter width {width} must equal CHEVRON_W {CHEVRON_W}"
+            collapsed > leaf + 0.5f32,
+            "expandable kind icon must sit right of the flush-left leaf icon: expandable {collapsed} vs leaf {leaf}"
         );
+        let gutter = collapsed - base - 8.0f32;
         assert!(
-            CHEVRON_W < 24.0f32,
-            "caret gutter must stay small so base kinds sit flush-left: CHEVRON_W {CHEVRON_W}"
+            (gutter - CHEVRON_W).abs() < 0.5f32,
+            "expandable caret gutter {gutter} must equal CHEVRON_W {CHEVRON_W}"
         );
     }
 
@@ -357,9 +358,9 @@ mod tests {
         let leaf_icon = icon_left_with(|ui| {
             caret_gutter(ui, color, false, false);
         });
-        assert_eq!(
-            kind_icon, leaf_icon,
-            "expandable and leaf base kinds must share the base-kind icon x: {kind_icon} vs {leaf_icon}"
+        assert!(
+            leaf_icon < kind_icon - 0.5f32,
+            "leaf base kind must sit flush-left, left of an expandable kind's icon: leaf {leaf_icon} vs expandable {kind_icon}"
         );
         let indent = CHEVRON_W + 8.0f32 + PRESET_STEP;
         let preset_icon = icon_left_with(|ui| {
@@ -367,12 +368,8 @@ mod tests {
         });
         let step = preset_icon - kind_icon;
         assert!(
-            step >= 22.0f32,
-            "preset icon must sit clearly right of the base-kind icon: preset {preset_icon} vs base {kind_icon} (step {step})"
-        );
-        assert!(
             (step - PRESET_STEP).abs() < 0.5f32,
-            "preset step {step} must equal PRESET_STEP {PRESET_STEP}"
+            "preset icon must sit PRESET_STEP right of the expandable base-kind icon: preset {preset_icon} vs base {kind_icon} (step {step})"
         );
     }
 
