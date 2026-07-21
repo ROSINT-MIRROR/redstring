@@ -197,6 +197,7 @@ impl RedstringApp {
             bin: bin.clone(),
             args: entry.spec.render_args(&value, &e.label, &e.slug, &e.attr_pairs()?)?,
             env: key_env(&entry.spec.keys, &self.prefs.api_keys),
+            headers: entry.spec.headers.clone(),
             timeout_secs: entry.spec.timeout_secs,
             shapes: entry.spec.shapes.clone(),
             target_slug: e.slug.clone(),

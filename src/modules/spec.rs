@@ -25,6 +25,9 @@ pub struct ModuleSpec {
     #[serde(default)]
     pub keys: Vec<String>,
 
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+
     pub shapes: Vec<Shape>,
 }
 
@@ -264,6 +267,7 @@ mod tests {
             args: vec!["{label}".into(), "--slug={slug}".into(), "{attr:registrar}".into()],
             timeout_secs: 5,
             keys: Vec::new(),
+            headers: Vec::new(),
             shapes: Vec::new(),
         };
         let args = spec

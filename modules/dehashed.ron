@@ -1,0 +1,72 @@
+// builtin module spec — DeHashed v2 breach search: pivot an identity into its leaked records.
+// DeHashed is an HTTP API, not a CLI, so curl is the bin — called DIRECTLY (no `sh -c`, no shell
+// anywhere). The catch: the auth secret is a custom header `DeHashed-Api-Key`, and the runner
+// injects API keys as ENV only (never argv) with no shell to expand them. So the secret rides the
+// spec's `headers` field: the runner materializes `{key:dehashed}` from the injected
+// REDSTRING_KEY_DEHASHED env at spawn and pipes the finished `DeHashed-Api-Key: <secret>` line to
+// curl over STDIN, which `-H @-` reads as a header. The secret never touches argv (/proc/pid/cmdline)
+// or a shell — only the child's private stdin. This mechanism is general: any HTTP-API transform
+// with an env-injected auth header declares `headers` the same way.
+//
+// The query is a BARE `{value}` (no field prefix) so DeHashed searches every field — one spec serves
+// email / phone / username / name / social handle. The v2 response is a JSON object with `entries[]`;
+// the json adapter reads array:"entries", one record per breach row, each field array-or-scalar. Row
+// fields fan out to typed pivot nodes so the red string appears and upsert-by-value converges them:
+//   - database_name → a Leak node (appeared_in) — a subject appearing in N breaches gets N strings,
+//     and two subjects in the same breach converge onto one Leak;
+//   - email / username(→alias) / phone / name(→person) / address / ip_address → their typed nodes
+//     (related_to) — a breach row only warrants "these co-occurred", so the verb stays honest;
+//   - password → a Secret node (related_to) — plaintext password REUSE is a real pivot, so two
+//     accounts sharing one cracked password converge onto one Secret.
+// hashed_password stays a descriptive Text observation, not a node: salted hashes are unique per
+// breach, so a hash never converges — pivoting on it would only litter the board. A non-JSON or
+// error response (bad key, 4xx body) has no `entries`, matches no shape, and is archived as raw
+// evidence rather than parsed — degrade to evidence, never to garbage.
+(
+    id: "dehashed",
+    label: "DeHashed breach search",
+    applies_to: ["email", "person", "phone", "alias", "social_account"],
+    bin: "curl",
+    args: [
+        "-sS",
+        "-X", "POST",
+        "-H", "@-",
+        "-H", "Content-Type: application/json",
+        "-H", "Accept: application/json",
+        "--data", r#"{"query":"{value}","page":1}"#,
+        "https://api.dehashed.com/v2/search",
+    ],
+    timeout_secs: 30,
+    keys: ["dehashed"],
+    headers: [
+        ("DeHashed-Api-Key", "{key:dehashed}"),
+    ],
+    shapes: [
+        (
+            id: "dehashed",
+            extract: (id: "json", config: (array: "entries", fields: [
+                ("database_name", "database_name"),
+                ("email", "email"),
+                ("username", "username"),
+                ("password", "password"),
+                ("hashed_password", "hashed_password"),
+                ("name", "name"),
+                ("phone", "phone"),
+                ("address", "address"),
+                ("ip_address", "ip_address"),
+            ])),
+            min_hits: 1,
+            emit: [
+                Attr(from: "hashed_password", key: "hashed_password", kind: Text),
+                Entity(from: "database_name", kind: "leak", rel: "appeared_in"),
+                Entity(from: "email", kind: "email", rel: "related_to"),
+                Entity(from: "username", kind: "alias", rel: "related_to"),
+                Entity(from: "password", kind: "secret", rel: "related_to"),
+                Entity(from: "name", kind: "person", rel: "related_to"),
+                Entity(from: "phone", kind: "phone", rel: "related_to"),
+                Entity(from: "address", kind: "address", rel: "related_to"),
+                Entity(from: "ip_address", kind: "ip_address", rel: "related_to"),
+            ],
+        ),
+    ],
+)
