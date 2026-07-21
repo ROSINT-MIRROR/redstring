@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::model::{
-        CaseFile, CaseMeta, EntityKind, ObsValue, Observation, Origin, RelationKind, Source,
-        SourceKind, Verification,
+        CaseFile, CaseMeta, EntityKind, Facet, FacetValue, ObsValue, Observation, Origin,
+        RelationKind, Role, Source, SourceKind, occupation_of, role_of, Verification,
     };
     use crate::project::{Project, read_case};
     use crate::ui::testkit::{fixtures, graph, harness, invariant};
@@ -19,6 +19,14 @@ mod tests {
         assert_eq!(doe.kind, EntityKind::Person);
         assert_eq!(doe.value, "John Doe");
         assert_eq!(doe.observations.len(), 2);
+        assert_eq!(
+            doe.facets.get(&Facet::Role),
+            Some(&FacetValue::Indexed(Role::Perpetrator as u16)),
+            "the role facet loads from entity.ron on disk"
+        );
+        assert_eq!(role_of(&doe.facets).unwrap(), Role::Perpetrator);
+        let occ = occupation_of(&doe.facets).unwrap().expect("occupation facet loads from disk");
+        assert_eq!(occ.label, "Judge");
 
         let domain = cf
             .data

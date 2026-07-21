@@ -420,7 +420,7 @@ mod tests {
         stale_collapsed,
     };
     use crate::model::{
-        Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind, Role,
+        Author, Entity, EntityKind, DEFAULT_NODE_SIZE, Origin, Relation, RelationKind,
         Verification,
     };
 
@@ -432,8 +432,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use egui::epaint::{CircleShape, RectShape, TextShape};
 use egui::{
     Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, StrokeKind, TextureHandle,
@@ -8,7 +10,7 @@ use petgraph::{EdgeType, stable_graph::IndexType};
 
 use egui_phosphor::regular::PLUS;
 
-use crate::model::{Entity, KIND_META, OCC_BADGE, OCCUPATION_ICONS, Occupation, ROLE_META, Role};
+use crate::model::{BadgeCorner, Entity, FACET_META, Facet, FacetValue, KIND_META, facet_badge};
 
 use super::label::{
     BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX,
@@ -52,8 +54,7 @@ pub struct EntityNodeShape {
     icon: String,
     name: String,
 
-    role: Role,
-    occupation: Option<Occupation>,
+    facets: BTreeMap<Facet, FacetValue>,
 
     size: f32,
     collapsed: bool,
@@ -68,8 +69,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             image: props.payload.image.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             name: display_label(&props.payload.label),
-            role: props.payload.role,
-            occupation: props.payload.occupation.clone(),
+            facets: props.payload.facets.clone(),
             size: props.payload.size * props.payload.boost,
             collapsed: props.payload.collapsed,
             hidden: props.payload.hidden,
@@ -110,8 +110,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = display_label(&state.payload.label);
-        self.role = state.payload.role;
-        self.occupation = state.payload.occupation.clone();
+        self.facets = state.payload.facets.clone();
         self.size = state.payload.size * state.payload.boost;
         self.collapsed = state.payload.collapsed;
         self.hidden = state.payload.hidden;
@@ -231,9 +230,13 @@ impl EntityNodeShape {
         let Ok(badge_r) = badge_radius(r) else {
             return res;
         };
-        self.role_badge(ctx, &mut res, center + Vec2::new(badge_off, -badge_off), badge_r);
-        self.occupation_badge(ctx, &mut res, center + Vec2::new(-badge_off, badge_off), badge_r);
-        self.collapsed_badge(ctx, &mut res, center + Vec2::new(-badge_off, -badge_off), badge_r);
+        let corners = Corners {
+            tr: center + Vec2::new(badge_off, -badge_off),
+            bl: center + Vec2::new(-badge_off, badge_off),
+            tl: center + Vec2::new(-badge_off, -badge_off),
+        };
+        self.draw_facet_badges(ctx, &mut res, badge_r, &corners);
+        self.collapsed_badge(ctx, &mut res, corners.tl, badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
@@ -304,9 +307,13 @@ impl EntityNodeShape {
         let Ok(img_badge_r) = badge_radius_img(rect.width().min(rect.height())) else {
             return res;
         };
-        self.role_badge(ctx, &mut res, rect.right_top(), img_badge_r);
-        self.occupation_badge(ctx, &mut res, rect.left_bottom(), img_badge_r);
-        self.collapsed_badge(ctx, &mut res, rect.left_top(), img_badge_r);
+        let corners = Corners {
+            tr: rect.right_top(),
+            bl: rect.left_bottom(),
+            tl: rect.left_top(),
+        };
+        self.draw_facet_badges(ctx, &mut res, img_badge_r, &corners);
+        self.collapsed_badge(ctx, &mut res, corners.tl, img_badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
@@ -359,26 +366,22 @@ impl EntityNodeShape {
         res
     }
 
-    fn role_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
-        if self.role == Role::Unset {
-            return;
+    fn draw_facet_badges(
+        &self,
+        ctx: &DrawContext,
+        res: &mut Vec<Shape>,
+        radius: f32,
+        corners: &Corners,
+    ) {
+        for (facet, value) in &self.facets {
+            let Ok(Some(badge)) = facet_badge(*facet, value) else {
+                continue;
+            };
+            let Some(meta) = FACET_META.iter().find(|m| m.facet == *facet) else {
+                continue;
+            };
+            glyph_badge(ctx, res, corners.at(meta.corner), radius, badge.color, badge.glyph);
         }
-        let meta = &ROLE_META[self.role as usize];
-        glyph_badge(ctx, res, center, radius, meta.color, meta.icon);
-    }
-
-    fn occupation_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
-        let Some(occ) = &self.occupation else {
-            return;
-        };
-        glyph_badge(
-            ctx,
-            res,
-            center,
-            radius,
-            OCC_BADGE,
-            OCCUPATION_ICONS[occ.icon as usize].glyph,
-        );
     }
 
     fn collapsed_badge(&self, ctx: &DrawContext, res: &mut Vec<Shape>, center: Pos2, radius: f32) {
@@ -386,6 +389,21 @@ impl EntityNodeShape {
             return;
         }
         glyph_badge(ctx, res, center, radius, COLLAPSE_BADGE, PLUS);
+    }
+}
+
+struct Corners {
+    tr: Pos2,
+    bl: Pos2,
+    tl: Pos2,
+}
+
+impl Corners {
+    fn at(&self, corner: BadgeCorner) -> Pos2 {
+        match corner {
+            BadgeCorner::TopRight => self.tr,
+            BadgeCorner::BottomLeft => self.bl,
+        }
     }
 }
 
@@ -515,8 +533,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size,
@@ -593,8 +610,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size,
@@ -690,8 +706,7 @@ mod tests {
             label: label.into(),
             value: String::new(),
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: (LABEL_MIN_PX * 2.0) / LABEL_SIZE,

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Error;
-use crate::model::{CaseFile, KIND_META, RELATION_META, Role};
+use crate::model::{CaseFile, KIND_META, RELATION_META};
 
 use super::layout::Project;
 
@@ -39,8 +39,7 @@ fn redact(cf: &CaseFile) -> CaseFile {
             e.label = SEALED_LABEL.to_owned();
             e.value = String::new();
             e.image = None;
-            e.occupation = None;
-            e.role = Role::Unset;
+            e.facets.clear();
             e.observations.clear();
         } else {
             e.observations.retain(|o| !o.sealed);
@@ -126,7 +125,7 @@ mod tests {
     use super::*;
     use crate::model::{
         Author, CaseMeta, EntityKind, EntityRec, ObsValue, Observation, Origin, RelationKind,
-        RelationRec, Role, Source, SourceKind, Verification,
+        RelationRec, Source, SourceKind, Verification,
     };
 
     fn obs(name: &str, value: &str) -> Observation {
@@ -148,8 +147,7 @@ mod tests {
             value: value.to_owned(),
             sealed,
             observations: vec![],
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             image: None,
         }
     }
@@ -179,8 +177,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: vec![],
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             image: None,
         });
         cf.data.entities.push(EntityRec {
@@ -190,8 +187,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: vec![],
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             image: None,
         });
         cf.data.relations.push(RelationRec {

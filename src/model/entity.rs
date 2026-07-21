@@ -1,12 +1,12 @@
+use std::collections::BTreeMap;
+
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-use super::facet::Facet;
+use super::facet::{Facet, FacetValue};
 use super::observation::Observation;
-use super::occupation::Occupation;
-use super::role::Role;
 use super::value::{ValueFormat, validate_value};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -248,9 +248,7 @@ pub struct Entity {
     #[serde(default)]
     pub observations: Vec<Observation>,
     #[serde(default)]
-    pub role: Role,
-    #[serde(default)]
-    pub occupation: Option<Occupation>,
+    pub facets: BTreeMap<Facet, FacetValue>,
     pub note: String,
     pub image: Option<String>,
     #[serde(default = "default_node_size")]
@@ -360,8 +358,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -403,8 +400,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -603,7 +599,7 @@ mod tests {
         let p = &KIND_META[EntityKind::Person as usize];
         assert!(
             !p.attrs.contains(&"occupation"),
-            "occupation is now the Entity.occupation facet — it must not double as a suggested observation"
+            "occupation is now the Facet::Occupation store entry — it must not double as a suggested observation"
         );
     }
 

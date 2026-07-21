@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
 use super::entity::{Entity, EntityKind};
+use super::facet::{occupation_of, set_occupation, set_role};
 use super::observation::{Author, ObsValue, Observation, Origin, Verification};
 use super::occupation::{Occupation, OccupationIcon};
 
@@ -143,14 +144,17 @@ pub const PRESETS: [Preset; 56] = [
 
 pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<(), Error> {
     for r in preset.role.iter() {
-        e.role = *r;
+        set_role(&mut e.facets, *r)?;
     }
     for occ in preset.occupation.iter() {
-        if e.occupation.is_none() {
-            e.occupation = Some(Occupation {
-                label: occ.0.to_owned(),
-                icon: occ.1,
-            });
+        if occupation_of(&e.facets)?.is_none() {
+            set_occupation(
+                &mut e.facets,
+                Some(Occupation {
+                    label: occ.0.to_owned(),
+                    icon: occ.1,
+                }),
+            )?;
         }
     }
     let Some((key, value)) = preset.attr else {
@@ -172,7 +176,7 @@ pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, KIND_META, OCCUPATION_ICONS};
+    use crate::model::{DEFAULT_NODE_SIZE, KIND_META, OCCUPATION_ICONS, role_of};
 
     fn person(slug: &str) -> Entity {
         Entity {
@@ -182,8 +186,7 @@ mod tests {
             value: String::new(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
@@ -313,9 +316,9 @@ mod tests {
         let mut e = person("x");
         let judge = PRESETS.iter().find(|p| p.label == "Judge").expect("judge preset");
         apply_preset(&mut e, judge, &Author::default()).unwrap();
-        assert_eq!(e.role, Role::Unset);
+        assert_eq!(role_of(&e.facets).unwrap(), Role::Unset);
         assert!(e.observations.is_empty(), "occupation is a facet — not a stray observation");
-        let occ = e.occupation.clone().expect("occupation facet set");
+        let occ = occupation_of(&e.facets).unwrap().expect("occupation facet set");
         assert_eq!(occ.label, "Judge");
         assert_eq!(occ.icon, OccupationIcon::Scales);
         assert_eq!(
@@ -352,7 +355,7 @@ mod tests {
             .find(|p| p.role == Some(Role::Suspect))
             .expect("suspect preset");
         apply_preset(&mut e, suspect, &Author::default()).unwrap();
-        assert_eq!(e.role, Role::Suspect);
+        assert_eq!(role_of(&e.facets).unwrap(), Role::Suspect);
         assert!(e.observations.is_empty(), "role preset must not add an attr");
     }
 
@@ -362,7 +365,7 @@ mod tests {
         e.kind = EntityKind::Organization;
         let company = PRESETS.iter().find(|p| p.label == "Company").expect("company preset");
         apply_preset(&mut e, company, &Author::default()).unwrap();
-        assert_eq!(e.role, Role::Unset, "org preset sets no role");
+        assert_eq!(role_of(&e.facets).unwrap(), Role::Unset, "org preset sets no role");
         assert!(
             e.observations
                 .iter()
@@ -375,13 +378,17 @@ mod tests {
     #[test]
     fn apply_preset_never_clobbers_existing_occupation() {
         let mut e = person("z");
-        e.occupation = Some(Occupation {
-            label: "Existing".to_owned(),
-            icon: OccupationIcon::Detective,
-        });
+        set_occupation(
+            &mut e.facets,
+            Some(Occupation {
+                label: "Existing".to_owned(),
+                icon: OccupationIcon::Detective,
+            }),
+        )
+        .unwrap();
         let lawyer = PRESETS.iter().find(|p| p.label == "Lawyer").expect("lawyer preset");
         apply_preset(&mut e, lawyer, &Author::default()).unwrap();
-        let occ = e.occupation.clone().expect("occupation retained");
+        let occ = occupation_of(&e.facets).unwrap().expect("occupation retained");
         assert_eq!(occ.label, "Existing", "preset must not overwrite an existing occupation");
         assert_eq!(occ.icon, OccupationIcon::Detective, "existing icon preserved");
         assert!(e.observations.is_empty(), "no occupation observation is created");

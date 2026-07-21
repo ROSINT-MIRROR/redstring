@@ -564,7 +564,7 @@ mod tests {
     use petgraph::stable_graph::StableGraph;
 
     use super::*;
-    use crate::model::{DEFAULT_NODE_SIZE, DatePrecision, DateVal, Entity, ObsValue, Role};
+    use crate::model::{DEFAULT_NODE_SIZE, DatePrecision, DateVal, Entity, ObsValue};
 
     fn domain_node(slug: &str, label: &str, value: &str) -> Entity {
         Entity {
@@ -574,8 +574,7 @@ mod tests {
             value: value.to_owned(),
             sealed: false,
             observations: Vec::new(),
-            role: Role::Unset,
-            occupation: None,
+            facets: Default::default(),
             note: String::new(),
             image: None,
             size: DEFAULT_NODE_SIZE,
