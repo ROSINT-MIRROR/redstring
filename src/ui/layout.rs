@@ -39,7 +39,11 @@ impl RedstringApp {
     pub fn apply_layout(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
         let targets = self.layout_targets();
         if targets.len() < 2 {
-            self.status = "need at least 2 nodes to lay out".into();
+            self.status = if self.g.g().node_count() >= 2 {
+                "select 2+ nodes to lay out, or clear the selection to arrange all".into()
+            } else {
+                "need at least 2 nodes to lay out".into()
+            };
             return Ok(());
         }
         let partial = targets.len() < self.g.g().node_count();
@@ -78,7 +82,11 @@ impl RedstringApp {
     pub fn apply_spread(&mut self, ui: &egui::Ui, dir: Spread) -> Result<(), Error> {
         let targets = self.layout_targets();
         if targets.len() < 2 {
-            self.status = "need at least 2 nodes to space".into();
+            self.status = if self.g.g().node_count() >= 2 {
+                "select 2+ nodes to space, or clear the selection to arrange all".into()
+            } else {
+                "need at least 2 nodes to space".into()
+            };
             return Ok(());
         }
         let partial = targets.len() < self.g.g().node_count();
@@ -138,7 +146,7 @@ impl RedstringApp {
             .copied()
             .filter(|idx| !self.node_hidden(*idx))
             .collect();
-        if sel.len() >= 2 {
+        if !sel.is_empty() {
             return sel;
         }
         self.g

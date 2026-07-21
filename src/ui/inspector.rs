@@ -166,7 +166,7 @@ impl RedstringApp {
             Ok(())
         })
         .inner?;
-        image_path_label(ui, &e.image);
+        image_path_label(ui, &e.image, self.project.as_ref())?;
 
         style::section(ui, egui_phosphor::regular::TAG, "attributes")?;
         let mut remove: Option<usize> = None;
@@ -379,9 +379,11 @@ impl RedstringApp {
         relation_kind_combo(ui, "insp_rel_kind", &mut r.kind);
 
         if r.sources.is_empty() {
-            ui.colored_label(ALARM_RED, "⚠ UNSOURCED — unproven claim");
+            let g = egui_phosphor::regular::WARNING_CIRCLE;
+            ui.colored_label(ALARM_RED, format!("{g} UNSOURCED — unproven claim"));
         } else {
-            ui.colored_label(OK_GREEN, format!("✓ {} source(s)", r.sources.len()));
+            let g = egui_phosphor::regular::CHECK;
+            ui.colored_label(OK_GREEN, format!("{g} {} source(s)", r.sources.len()));
         }
 
         style::section(ui, egui_phosphor::regular::LINK, "sources")?;
@@ -453,9 +455,19 @@ impl RedstringApp {
     }
 }
 
-fn image_path_label(ui: &mut egui::Ui, image: &Option<String>) {
-    let Some(p) = image else { return };
-    ui.label(RichText::new(p.as_str()).weak().small());
+fn image_path_label(
+    ui: &mut egui::Ui,
+    image: &Option<String>,
+    project: Option<&crate::project::Project>,
+) -> Result<(), Error> {
+    let Some(p) = image else { return Ok(()) };
+    let Some(proj) = project else {
+        ui.add(egui::Label::new(RichText::new(p.as_str()).weak().small()).truncate());
+        return Ok(());
+    };
+    let shown = proj.rel_or_self(p)?;
+    ui.add(egui::Label::new(RichText::new(shown).weak().small()).truncate());
+    Ok(())
 }
 
 fn remove_marked<T>(items: &mut Vec<T>, marked: Option<usize>) {
@@ -495,8 +507,7 @@ fn observation_row(
     })
     .inner?;
 
-    ui.horizontal(|ui| -> Result<(), Error> {
-        ui.add_space(90.0 + ui.spacing().item_spacing.x);
+    ui.horizontal_wrapped(|ui| -> Result<(), Error> {
         verification_combo(ui, i, &mut o.status)?;
         ui.add(egui::DragValue::new(&mut o.confidence).range(0..=100u8).suffix("%"))
             .on_hover_text("confidence");
@@ -751,5 +762,38 @@ mod tests {
             !has(&texts, "occupation"),
             "Organization must not render an occupation field: {texts:?}"
         );
+    }
+
+    #[test]
+    fn observation_row_fits_default_inspector_width() {
+        let width = 248.0;
+        let ctx = egui::Context::default();
+        let mut o = Observation::stamp(
+            "registrar_abuse_contact_email".to_owned(),
+            ObsValue::Text("abuse@example.com".to_owned()),
+            Origin::Lookup("whois".to_owned()),
+            Verification::MachineSuggested,
+            Author::default(),
+        )
+        .expect("stamp observation");
+        let mut remove = None;
+        let mut input = egui::RawInput::default();
+        input.screen_rect =
+            Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(width + 80.0, 400.0)));
+        let out = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
+                ui.allocate_ui(Vec2::new(width, 300.0), |ui| {
+                    observation_row(ui, 0, &mut o, &mut remove).expect("row renders");
+                });
+            });
+        });
+        let mut right = f32::MIN;
+        for cs in &out.shapes {
+            let b = cs.shape.visual_bounding_rect();
+            if b.is_finite() {
+                right = right.max(b.right());
+            }
+        }
+        assert!(right > 0.0 && right <= width + 3.0, "obs row clips at {right} > {width}");
     }
 }

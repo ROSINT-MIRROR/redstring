@@ -64,6 +64,8 @@ impl RedstringApp {
             );
             let resp = if in_flight {
                 resp.on_disabled_hover_text("already running on this entity")
+            } else if !module_ok {
+                resp.on_disabled_hover_text("needs a valid value — fix the value field")
             } else {
                 resp
             };

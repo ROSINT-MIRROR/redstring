@@ -229,6 +229,9 @@ impl RedstringApp {
 
                     ui.separator();
                     egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        if verbs.is_empty() {
+                            ui.label(RichText::new("no relations match").weak().small());
+                        }
                         for k in verbs {
                             if ui.button(RELATION_META[*k as usize].label).clicked() {
                                 picked = Some(*k);
