@@ -422,12 +422,13 @@ fn size_of(display: &CaseDisplay, slug: &str) -> f32 {
 }
 
 fn warn_suffix(project: &Project) -> String {
-    match project::validate(project) {
-        Ok(findings) if findings.is_empty() => String::new(),
-        Ok(findings) => format!(
-            " · ⚠ {} finding(s) — run redstring --check",
-            findings.len()
-        ),
+    let counts = project::validate(project).and_then(|structural| {
+        let sourcing = project::source_findings(project)?;
+        Ok(structural.len() + sourcing.len())
+    });
+    match counts {
+        Ok(0) => String::new(),
+        Ok(n) => format!(" · ⚠ {n} finding(s) — run redstring --check"),
         Err(err) => format!(" · validate failed: {err}"),
     }
 }

@@ -11,4 +11,4 @@ pub use bundle::{export, open_bundle};
 pub use derive::{write_graph_md, write_json};
 pub use io::{read_case, read_note, write_case, write_note};
 pub use layout::Project;
-pub use validate::validate;
+pub use validate::{source_findings, validate};

@@ -80,7 +80,11 @@ fn run_check(path: Option<String>) -> ! {
 }
 
 fn check_case(target: &str) -> ! {
-    let result = project::Project::open(Path::new(target)).and_then(|p| project::validate(&p));
+    let result = project::Project::open(Path::new(target)).and_then(|p| {
+        let mut findings = project::validate(&p)?;
+        findings.extend(project::source_findings(&p)?);
+        Ok(findings)
+    });
     let findings = match result {
         Ok(f) => f,
         Err(err) => {
