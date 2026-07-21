@@ -1,10 +1,13 @@
-use egui::{Pos2, Rect, Vec2};
+use egui::{Context, Pos2, Rect, Vec2};
 
 use crate::error::Error;
+
+const CLAIMS_ID: &str = "redstring_label_claims";
 
 pub const LABEL_SIZE: f32 = 7.0;
 pub const LABEL_GAP: f32 = 2.0;
 pub const LABEL_WRAP: f32 = 75.0;
+pub const LABEL_MAX_ROWS: usize = 2;
 
 pub const MAX_FONT_PX: f32 = 256.0;
 
@@ -52,6 +55,42 @@ pub fn label_box(
     let text_top = clear_y + gap + pad;
     let min = Pos2::new(center.x - galley_size.x / 2.0, text_top);
     Ok(Rect::from_min_size(min, galley_size).expand(pad))
+}
+
+#[derive(Clone, Copy)]
+struct LabelClaim {
+    rect: Rect,
+    priority: f32,
+}
+
+#[derive(Clone, Default)]
+struct LabelClaims {
+    frame: u64,
+    live: Vec<LabelClaim>,
+    prev: Vec<LabelClaim>,
+}
+
+pub fn claim_label(ctx: &Context, rect: Rect, priority: f32) -> Result<bool, Error> {
+    let frame = ctx.cumulative_pass_nr();
+    let win = ctx.data_mut(|d| {
+        let claims = d.get_temp_mut_or_default::<LabelClaims>(egui::Id::new(CLAIMS_ID));
+        if claims.frame != frame {
+            claims.frame = frame;
+            claims.prev = std::mem::take(&mut claims.live);
+        }
+        let my_idx = claims.live.len();
+        claims.live.push(LabelClaim { rect, priority });
+        for (k, other) in claims.prev.iter().enumerate() {
+            if k == my_idx || !other.rect.intersects(rect) {
+                continue;
+            }
+            if other.priority > priority || (other.priority == priority && k < my_idx) {
+                return false;
+            }
+        }
+        true
+    });
+    Ok(win)
 }
 
 #[cfg(test)]

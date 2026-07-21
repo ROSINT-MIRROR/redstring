@@ -11,8 +11,8 @@ use egui_phosphor::regular::PLUS;
 use crate::model::{Entity, KIND_META, OCC_BADGE, OCCUPATION_ICONS, Occupation, ROLE_META, Role};
 
 use super::label::{
-    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX, badge_radius,
-    badge_radius_img, label_box, label_pad_px,
+    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX,
+    badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
 };
 use super::texture::{cover_uv, texture_for};
 
@@ -29,7 +29,15 @@ const ICON_SIZE: f32 = 15.0;
 
 const LABEL_MIN_PX: f32 = 9.0;
 
-const BACKDROP_ALPHA: f32 = 0.8;
+const LABEL_ELIDE_CHARS: usize = 18;
+const LABEL_HEAD_CHARS: usize = 8;
+const LABEL_TAIL_CHARS: usize = 6;
+
+const DISC_FILL_DARK: f32 = 0.25;
+const DISC_FILL_LIGHT: f32 = 0.5;
+
+const BACKDROP_MIX: f32 = 0.14;
+const BACKDROP_LINE_MIX: f32 = 0.34;
 
 const COLLAPSE_BADGE: Color32 = Color32::from_rgb(72, 96, 132);
 
@@ -59,7 +67,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
         Self {
             image: props.payload.image.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
-            name: props.payload.label.clone(),
+            name: display_label(&props.payload.label),
             role: props.payload.role,
             occupation: props.payload.occupation.clone(),
             size: props.payload.size * props.payload.boost,
@@ -101,7 +109,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
             self.tex_ok = false;
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
-        self.name = state.payload.label.clone();
+        self.name = display_label(&state.payload.label);
         self.role = state.payload.role;
         self.occupation = state.payload.occupation.clone();
         self.size = state.payload.size * state.payload.boost;
@@ -164,6 +172,13 @@ impl EntityNodeShape {
         badge_fg(ctx.ctx.global_style().visuals.panel_fill)
     }
 
+    fn kind_color(&self, ctx: &DrawContext) -> Color32 {
+        let Some(c) = self.circle.color else {
+            return self.frame_color(ctx);
+        };
+        c
+    }
+
     fn selection_ring(&self, ctx: &DrawContext) -> Option<Stroke> {
         if !self.circle.selected {
             return None;
@@ -178,6 +193,8 @@ impl EntityNodeShape {
         let center = ctx.meta.canvas_to_screen_pos(self.circle.pos);
         let r = ctx.meta.canvas_to_screen_size(self.circle.radius);
         let color = self.frame_color(ctx);
+        let dark = ctx.ctx.global_style().visuals.dark_mode;
+        let kind = self.kind_color(ctx);
         let bg = ctx.ctx.global_style().visuals.panel_fill;
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
 
@@ -194,7 +211,7 @@ impl EntityNodeShape {
             CircleShape {
                 center,
                 radius: r,
-                fill: bg.lerp_to_gamma(color, 0.25),
+                fill: disc_fill(bg, kind, dark),
                 stroke: Stroke::new(ctx.meta.canvas_to_screen_size(border), color),
             }
             .into(),
@@ -216,7 +233,7 @@ impl EntityNodeShape {
         };
         self.role_badge(ctx, &mut res, center + Vec2::new(badge_off, -badge_off), badge_r);
         self.occupation_badge(ctx, &mut res, center + Vec2::new(-badge_off, badge_off), badge_r);
-        self.collapsed_badge(ctx, &mut res, center + Vec2::new(badge_off, badge_off), badge_r);
+        self.collapsed_badge(ctx, &mut res, center + Vec2::new(-badge_off, -badge_off), badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
@@ -230,6 +247,7 @@ impl EntityNodeShape {
             ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
         );
         job.halign = egui::Align::Center;
+        job.wrap.max_rows = LABEL_MAX_ROWS;
         let label = ctx.ctx.fonts_mut(|f| f.layout_job(job));
         let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size);
         let Ok(box_rect) = label_box(LabelAnchor::Disc, center, r, label.size(), gap, fpx) else {
@@ -238,8 +256,15 @@ impl EntityNodeShape {
         let Ok(lpad) = label_pad_px(fpx) else {
             return res;
         };
+        let priority = if self.circle.selected { f32::INFINITY } else { self.size };
+        let Ok(draw) = claim_label(ctx.ctx, box_rect, priority) else {
+            return res;
+        };
+        if !draw {
+            return res;
+        }
         let label_pos = Pos2::new(center.x, box_rect.min.y + lpad);
-        backdrop(&mut res, box_rect, bg);
+        backdrop(&mut res, box_rect, bg, dark);
         res.push(TextShape::new(label_pos, label, ink).into());
         res
     }
@@ -257,6 +282,7 @@ impl EntityNodeShape {
                 .clamp(0.0, 255.0) as u8,
         );
         let color = self.frame_color(ctx);
+        let dark = ctx.ctx.global_style().visuals.dark_mode;
         let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
 
@@ -280,30 +306,28 @@ impl EntityNodeShape {
         };
         self.role_badge(ctx, &mut res, rect.right_top(), img_badge_r);
         self.occupation_badge(ctx, &mut res, rect.left_bottom(), img_badge_r);
-        self.collapsed_badge(ctx, &mut res, rect.right_bottom(), img_badge_r);
+        self.collapsed_badge(ctx, &mut res, rect.left_top(), img_badge_r);
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
             return res;
         }
         let ink = self.label_ink(ctx);
+        let name_wrap = ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size);
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
-            (
-                f.layout_no_wrap(
-                    self.icon.clone(),
-                    FontId::new(
-                        font_px(ctx, LABEL_SIZE * 2.0 * self.size),
-                        FontFamily::Proportional,
-                    ),
-                    color,
-                ),
-                f.layout(
-                    self.name.clone(),
-                    FontId::new(fpx, FontFamily::Monospace),
-                    ink,
-                    ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
-                ),
-            )
+            let icon = f.layout_no_wrap(
+                self.icon.clone(),
+                FontId::new(font_px(ctx, LABEL_SIZE * 2.0 * self.size), FontFamily::Proportional),
+                color,
+            );
+            let mut name_job = egui::text::LayoutJob::simple(
+                self.name.clone(),
+                FontId::new(fpx, FontFamily::Monospace),
+                ink,
+                name_wrap,
+            );
+            name_job.wrap.max_rows = LABEL_MAX_ROWS;
+            (icon, f.layout_job(name_job))
         });
         let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size);
         let total_w = icon.size().x + gap + name.size().x;
@@ -317,12 +341,19 @@ impl EntityNodeShape {
         let Ok(pad) = label_pad_px(fpx) else {
             return res;
         };
+        let priority = if self.circle.selected { f32::INFINITY } else { self.size };
+        let Ok(draw) = claim_label(ctx.ctx, box_rect, priority) else {
+            return res;
+        };
+        if !draw {
+            return res;
+        }
         let top = box_rect.min.y + pad;
         let left = box_rect.min.x + pad;
         let icon_pos = Pos2::new(left, top + (row_h - icon.size().y) / 2.0);
         let name_pos = Pos2::new(left + icon.size().x + gap, top + (row_h - name.size().y) / 2.0);
         let bg = ctx.ctx.global_style().visuals.panel_fill;
-        backdrop(&mut res, box_rect, bg);
+        backdrop(&mut res, box_rect, bg, dark);
         res.push(TextShape::new(icon_pos, icon, color).into());
         res.push(TextShape::new(name_pos, name, ink).into());
         res
@@ -403,10 +434,46 @@ fn font_px(ctx: &DrawContext, canvas_size: f32) -> f32 {
     ctx.meta.canvas_to_screen_size(canvas_size).min(MAX_FONT_PX)
 }
 
-fn backdrop(res: &mut Vec<Shape>, rect: Rect, bg: Color32) {
+fn disc_fill(bg: Color32, kind: Color32, dark: bool) -> Color32 {
+    let frac = if dark { DISC_FILL_DARK } else { DISC_FILL_LIGHT };
+    bg.lerp_to_gamma(kind, frac)
+}
+
+fn backdrop(res: &mut Vec<Shape>, rect: Rect, bg: Color32, dark: bool) {
+    let toward = if dark { Color32::WHITE } else { Color32::BLACK };
+    let fill = bg.lerp_to_gamma(toward, BACKDROP_MIX);
+    let line = bg.lerp_to_gamma(toward, BACKDROP_LINE_MIX);
     res.push(
-        RectShape::filled(rect, CornerRadius::same(2), bg.gamma_multiply(BACKDROP_ALPHA)).into(),
+        RectShape::new(
+            rect,
+            CornerRadius::same(2),
+            fill,
+            Stroke::new(1.0_f32, line),
+            StrokeKind::Inside,
+        )
+        .into(),
     );
+}
+
+fn display_label(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let count = trimmed.chars().count();
+    let has_space = trimmed.chars().any(|c| c.is_whitespace());
+    if count > LABEL_ELIDE_CHARS && !has_space {
+        return middle_truncate(trimmed, LABEL_HEAD_CHARS, LABEL_TAIL_CHARS);
+    }
+    trimmed.to_owned()
+}
+
+fn middle_truncate(s: &str, head: usize, tail: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= head + tail + 1 {
+        return s.to_owned();
+    }
+    let mut out: String = chars[..head].iter().collect();
+    out.push('…');
+    out.extend(chars[chars.len() - tail..].iter());
+    out
 }
 
 fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
@@ -589,6 +656,118 @@ mod tests {
             "label ink must invert between themes: dark {} vs light {}",
             luminance(dark),
             luminance(light)
+        );
+    }
+
+    #[test]
+    fn long_token_label_is_middle_truncated() {
+        let raw = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
+        let shown = display_label(raw);
+        assert!(
+            shown.chars().count() < raw.chars().count(),
+            "a long single-token label must be shortened, got {shown:?}"
+        );
+        assert!(shown.contains('…'), "middle truncation must insert an ellipsis, got {shown:?}");
+        assert!(shown.starts_with("bc1qxy2"), "the head must stay visible, got {shown:?}");
+        assert!(shown.ends_with("wlh"), "the tail must stay visible, got {shown:?}");
+        assert!(
+            shown.chars().count() <= LABEL_HEAD_CHARS + LABEL_TAIL_CHARS + 1,
+            "the truncated label must fit roughly one line, got {shown:?}"
+        );
+        assert_eq!(
+            display_label("Meridian Holdings Ltd"),
+            "Meridian Holdings Ltd",
+            "multi-word prose labels must not be middle-truncated"
+        );
+    }
+
+    fn disc_node(label: &str) -> Node<Entity, Relation, Directed, DefaultIx, EntityNodeShape> {
+        let ent = Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: label.into(),
+            value: String::new(),
+            observations: Vec::new(),
+            role: Role::Unset,
+            occupation: None,
+            note: String::new(),
+            image: None,
+            size: (LABEL_MIN_PX * 2.0) / LABEL_SIZE,
+            boost: 1.0,
+            collapsed: false,
+            hidden: false,
+        };
+        Node::new(ent)
+    }
+
+    #[test]
+    fn overlapping_labels_declutter() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        let mut drawn = 0usize;
+        for _ in 0..2 {
+            drawn = 0;
+            ctx.run(input.clone(), |c| {
+                let painter = c.debug_painter();
+                let style = SettingsStyle::default();
+                let meta = MetadataFrame::default();
+                let dctx = DrawContext {
+                    ctx: c,
+                    painter: &painter,
+                    style: &style,
+                    is_directed: true,
+                    meta: &meta,
+                };
+                for _ in 0..2 {
+                    let mut node = disc_node("Overlap Label");
+                    let shapes = <EntityNodeShape as DisplayNode<
+                        Entity,
+                        Relation,
+                        Directed,
+                        DefaultIx,
+                    >>::shapes(node.display_mut(), &dctx);
+                    for s in &shapes {
+                        if let Shape::Text(t) = s {
+                            if t.galley.text() == "Overlap Label" {
+                                drawn += 1;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        assert_eq!(
+            drawn, 1,
+            "two identically-placed labels must declutter to one after a stable frame, got {drawn}"
+        );
+    }
+
+    fn chroma(c: Color32) -> f32 {
+        let r = c.r() as f32;
+        let g = c.g() as f32;
+        let b = c.b() as f32;
+        r.max(g).max(b) - r.min(g).min(b)
+    }
+
+    #[test]
+    fn light_disc_fill_is_more_saturated_than_before() {
+        let bg = Color32::from_rgb(248, 248, 248);
+        let kind = Color32::from_rgb(255, 170, 80);
+        let new_fill = disc_fill(bg, kind, false);
+        let old_base = crate::ui::board_color(kind, false).expect("board color");
+        let old_fill = bg.lerp_to_gamma(old_base, 0.25);
+        assert!(
+            chroma(new_fill) > chroma(old_fill) + 10.0,
+            "light disc fill must keep more category hue than the old pale formula: new {new_fill:?} chroma {} vs old {old_fill:?} chroma {}",
+            chroma(new_fill),
+            chroma(old_fill)
+        );
+        let dark_fill = disc_fill(Color32::from_rgb(27, 27, 27), kind, true);
+        assert_eq!(
+            dark_fill,
+            Color32::from_rgb(27, 27, 27).lerp_to_gamma(kind, 0.25),
+            "dark disc fill must be unchanged"
         );
     }
 
