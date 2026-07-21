@@ -7,7 +7,7 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 14] = [
+const BUILTIN: [(&str, &str); 18] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
     ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
@@ -22,6 +22,10 @@ const BUILTIN: [(&str, &str); 14] = [
     ("builtin:asnmap", include_str!("../../modules/asnmap.ron")),
     ("builtin:gau", include_str!("../../modules/gau.ron")),
     ("builtin:exiftool", include_str!("../../modules/exiftool.ron")),
+    ("builtin:gleif", include_str!("../../modules/gleif.ron")),
+    ("builtin:hackertarget", include_str!("../../modules/hackertarget.ron")),
+    ("builtin:blockchain_btc", include_str!("../../modules/blockchain_btc.ron")),
+    ("builtin:holehe", include_str!("../../modules/holehe.ron")),
 ];
 
 
@@ -640,5 +644,100 @@ OrgName:        Google LLC
             outbound: true,
             attrs: Vec::new(),
         }));
+    }
+
+    #[test]
+    fn email_and_crypto_transforms_apply_to_declared_kinds() {
+        assert!(builtin("builtin:gleif").kinds().unwrap().contains(&EntityKind::Organization));
+        assert!(builtin("builtin:hackertarget").kinds().unwrap().contains(&EntityKind::IpAddress));
+        assert!(builtin("builtin:blockchain_btc").kinds().unwrap().contains(&EntityKind::CryptoWallet));
+        assert!(builtin("builtin:holehe").kinds().unwrap().contains(&EntityKind::Email));
+    }
+
+    #[test]
+    fn gleif_json_nested_pointers_emit_lei_status_jurisdiction() {
+        let spec = builtin("builtin:gleif");
+        let text = "{\"data\":[{\"type\":\"lei-records\",\"attributes\":{\"lei\":\"HWUPKR0MPOU8FGXBT394\",\"entity\":{\"legalName\":{\"name\":\"APPLE INC.\"},\"legalAddress\":{\"country\":\"US\"}},\"registration\":{\"status\":\"ISSUED\"}}}]}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr {
+            key: "lei".into(),
+            value: "HWUPKR0MPOU8FGXBT394".into(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "registration_status".into(),
+            value: "ISSUED".into(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "jurisdiction".into(),
+            value: "US".into(),
+        }));
+    }
+
+    #[test]
+    fn hackertarget_lines_fan_cohosted_domains_inbound() {
+        let spec = builtin("builtin:hackertarget");
+        let text = "alpha.example.com\nbeta.example.com\ngamma.example.org\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let domains = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Domain, rel: RelationKind::HostedOn, .. }))
+            .count();
+        assert_eq!(domains, 3, "one co-hosted domain per line");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "beta.example.com".into(),
+            value: "beta.example.com".into(),
+            rel: RelationKind::HostedOn,
+            outbound: false,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn blockchain_btc_json_array_fans_transactions() {
+        let spec = builtin("builtin:blockchain_btc");
+        let text = "{\"final_balance\":10729621465,\"n_tx\":2,\"txs\":[{\"hash\":\"8cbeef13f40de8d5e06cfd693cf2975c0a9bf7cd9191eeb435772412174509f0\"},{\"hash\":\"12b5633bad1f9c167d523ad1aa1947b2732a865bf5414eab2f9e5ae5d5c191ba\"}]}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let txs = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Transaction, rel: RelationKind::RelatedTo, .. }))
+            .count();
+        assert_eq!(txs, 2, "one transaction node per tx hash");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Transaction,
+            label: "8cbeef13f40de8d5e06cfd693cf2975c0a9bf7cd9191eeb435772412174509f0".into(),
+            value: "8cbeef13f40de8d5e06cfd693cf2975c0a9bf7cd9191eeb435772412174509f0".into(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn holehe_regex_named_group_emits_only_used_website_accounts() {
+        let spec = builtin("builtin:holehe");
+        let text = "*********************\n   target@example.com\n*********************\n[+] codepen.com\n[+] pinterest.com\n[+] wordpress.com\n[x] twitter.com\n[-] github.com\n3 websites checked\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        let sites = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Website, rel: RelationKind::UsesAccount, .. }))
+            .count();
+        assert_eq!(sites, 3, "only the [+] hits become accounts");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Website,
+            label: "codepen.com".into(),
+            value: "codepen.com".into(),
+            rel: RelationKind::UsesAccount,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        assert!(
+            !facts.iter().any(|f| matches!(f, Fact::Entity { value, .. } if value == "github.com" || value == "twitter.com")),
+            "[-] and [x] lines must never emit an account"
+        );
     }
 }
