@@ -35,7 +35,7 @@ pub const ORG_TYPE_VALUES: [SubtypeValue; 16] = [
     sv("Hospital", egui_phosphor::regular::HOSPITAL, (225, 100, 110)),
     sv("Clinic", egui_phosphor::regular::STETHOSCOPE, (110, 190, 180)),
     sv("Pharmacy", egui_phosphor::regular::PILL, (120, 185, 120)),
-    sv("Esoteric order", egui_phosphor::regular::EYE, (150, 110, 190)),
+    sv("Cult / secret society", egui_phosphor::regular::EYE, (150, 110, 190)),
     sv("Ad platform", egui_phosphor::regular::TARGET, (235, 155, 90)),
 ];
 
@@ -134,7 +134,7 @@ mod tests {
                 "Hospital",
                 "Clinic",
                 "Pharmacy",
-                "Esoteric order",
+                "Cult / secret society",
                 "Ad platform",
             ],
             "org-type vocab order pins the preset indices"

@@ -226,7 +226,7 @@ pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::Statute, "Statute", egui_phosphor::regular::SCROLL, Category::Documents, (205, 195, 175), &["jurisdiction", "citation", "year"], &["law", "statute", "regulation", "treaty", "sofa", "legal instrument"], ValueFormat::Free, &[]),
     k(EntityKind::Offense, "Offense", egui_phosphor::regular::PROHIBIT, Category::Documents, (210, 160, 160), &["category", "severity", "statute_ref"], &["offense", "charge", "crime", "count"], ValueFormat::Free, &[]),
     k(EntityKind::EmailMessage, "Email message", egui_phosphor::regular::ENVELOPE_SIMPLE, Category::Documents, (190, 195, 190), &["from", "to", "subject", "sent_date", "bates_id"], &["email message", "correspondence", "message", "memo"], ValueFormat::Free, &[]),
-    k(EntityKind::AdCreative, "Ad creative", egui_phosphor::regular::IMAGES, Category::Commerce, (224, 128, 175), &["format", "platform", "advertiser", "first_seen", "landing_url"], &["ad", "creative", "advert", "ad creative", "banner", "deepfake"], ValueFormat::Free, &[]),
+    k(EntityKind::AdCreative, "Ad creative", egui_phosphor::regular::IMAGES, Category::Documents, (224, 128, 175), &["format", "platform", "advertiser", "first_seen", "landing_url"], &["ad", "creative", "advert", "ad creative", "banner", "deepfake"], ValueFormat::Free, &[]),
     k(EntityKind::Book, "Book", egui_phosphor::regular::BOOK, Category::Documents, (200, 188, 170), &["author", "publisher", "year", "isbn", "edition", "language"], &["book", "publication", "volume", "monograph", "scripture", "corpus"], ValueFormat::Free, &[]),
 ];
 
@@ -777,7 +777,7 @@ mod tests {
             |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
         assert_eq!(by_slug("ad_creative"), Some(EntityKind::AdCreative));
         assert_eq!(by_slug("book"), Some(EntityKind::Book));
-        assert_eq!(KIND_META[EntityKind::AdCreative as usize].category, Category::Commerce);
+        assert_eq!(KIND_META[EntityKind::AdCreative as usize].category, Category::Documents);
         assert_eq!(KIND_META[EntityKind::Book as usize].category, Category::Documents);
         for kind in [EntityKind::AdCreative, EntityKind::Book] {
             assert!(KIND_META[kind as usize].facets.is_empty(), "{kind:?} no facets");
