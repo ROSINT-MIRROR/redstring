@@ -134,7 +134,7 @@ fn parse_facts(input: &RunInput, raw: &str) -> Result<(String, Vec<Fact>), Error
 }
 
 
-fn capture(input: &RunInput) -> (String, String, bool, bool) {
+fn build_command(input: &RunInput) -> Command {
     let mut cmd = Command::new(&input.bin);
     cmd.args(&input.args)
         .stdin(Stdio::null())
@@ -143,6 +143,17 @@ fn capture(input: &RunInput) -> (String, String, bool, bool) {
     for (k, v) in &input.env {
         cmd.env(k, v);
     }
+    for root in input.project_root.iter() {
+        if root.as_os_str().is_empty() {
+            continue;
+        }
+        cmd.current_dir(root);
+    }
+    cmd
+}
+
+fn capture(input: &RunInput) -> (String, String, bool, bool) {
+    let mut cmd = build_command(input);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -223,14 +234,7 @@ fn tail(s: &str) -> String {
 
 
 fn stream(input: &RunInput, tx: &Sender<ModuleRun>, ctx: &egui::Context) {
-    let mut cmd = Command::new(&input.bin);
-    cmd.args(&input.args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in &input.env {
-        cmd.env(k, v);
-    }
+    let mut cmd = build_command(input);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -443,6 +447,41 @@ mod tests {
         let (_out, err, ok, _c) = capture(&input("/nonexistent/bin_xyz", &[], 1));
         assert!(!ok);
         assert!(err.contains("failed to launch"), "{err}");
+    }
+
+    fn cwd_root(tag: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!("rs-runcwd-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    #[test]
+    fn capture_runs_in_project_root() {
+        let dir = cwd_root("cap");
+        let mut inp = input("sh", &["-c", "pwd -P"], 5);
+        inp.project_root = Some(dir.clone());
+        let (out, err, ok, _c) = capture(&inp);
+        assert!(ok, "{err}");
+        let want = std::fs::canonicalize(&dir).unwrap();
+        let want = want.to_string_lossy();
+        assert_eq!(out.trim(), want.as_ref());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stream_runs_in_project_root() {
+        let dir = cwd_root("stream");
+        let mut inp = input("sh", &["-c", "pwd -P > cwd_proof.txt"], 5);
+        inp.shapes = vec![ndjson_shape()];
+        inp.project_root = Some(dir.clone());
+        let (tx, _rx) = std::sync::mpsc::channel();
+        stream(&inp, &tx, &egui::Context::default());
+        let proof = std::fs::read_to_string(dir.join("cwd_proof.txt")).unwrap();
+        let want = std::fs::canonicalize(&dir).unwrap();
+        let want = want.to_string_lossy();
+        assert_eq!(proof.trim(), want.as_ref());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn ndjson_shape() -> Shape {
