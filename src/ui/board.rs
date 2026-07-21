@@ -98,9 +98,11 @@ impl RedstringApp {
         let rect = ui.available_rect_before_wrap();
         self.board_size = rect.size();
 
+        self.apply_fold()?;
         self.edge_drag_input(ui, rect)?;
         self.pan_input(ui, rect)?;
         self.node_drag_input(ui, rect)?;
+        self.fold_input(ui, rect)?;
         self.layout_anim_tick(ui)?;
         scroll_zoom(ui)?;
 
@@ -126,6 +128,7 @@ impl RedstringApp {
         self.resize_handle(ui, rect)?;
         self.kind_drop(ui, rect)?;
         self.verb_picker(ui)?;
+        self.fold_menu(ui)?;
         self.label_editor(ui, rect)?;
         Ok(())
     }
@@ -338,6 +341,13 @@ impl RedstringApp {
                 continue;
             };
             let e = node.payload();
+            if e.hidden {
+                let Some(n) = self.g.node_mut(idx) else {
+                    continue;
+                };
+                n.set_selected(false);
+                continue;
+            }
             let base = if e.image.is_some() {
                 IMG_RADIUS
             } else {

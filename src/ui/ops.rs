@@ -115,6 +115,8 @@ impl RedstringApp {
             image: None,
             size: DEFAULT_NODE_SIZE,
             boost: 1.0,
+            collapsed: false,
+            hidden: false,
         };
         Ok(self
             .g

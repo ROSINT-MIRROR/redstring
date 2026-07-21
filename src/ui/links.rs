@@ -51,7 +51,8 @@ impl RedstringApp {
                 return Ok(());
             };
             if to == from {
-                self.status = "link cancelled".into();
+                self.node_menu = Some((from, p));
+                self.status = "expand or collapse this node's subtree".into();
                 return Ok(());
             }
             self.verb_filter.clear();

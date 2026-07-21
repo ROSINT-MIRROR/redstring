@@ -47,6 +47,8 @@ pub struct RedstringApp {
 
     pub edge_drag: Option<NodeIndex>,
     pub pending_edge: Option<(NodeIndex, NodeIndex, Pos2)>,
+
+    pub node_menu: Option<(NodeIndex, Pos2)>,
     pub verb_filter: String,
     pub verb_filter_focus: bool,
 
@@ -123,6 +125,7 @@ impl RedstringApp {
             kind_search: String::new(),
             edge_drag: None,
             pending_edge: None,
+            node_menu: None,
             verb_filter: String::new(),
             verb_filter_focus: false,
             label_edit: None,

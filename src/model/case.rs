@@ -149,6 +149,9 @@ pub struct CaseDisplay {
 
     #[serde(default)]
     pub size_by_degree: bool,
+
+    #[serde(default)]
+    pub collapsed: std::collections::BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]

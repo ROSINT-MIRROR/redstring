@@ -198,6 +198,9 @@ pub struct Relation {
     pub created_at: i64,
     #[serde(default)]
     pub sources: Vec<Source>,
+
+    #[serde(skip)]
+    pub hidden: bool,
 }
 
 fn full_confidence() -> u8 {
@@ -219,6 +222,7 @@ impl Relation {
             author,
             created_at: now_unix()?,
             sources: Vec::new(),
+            hidden: false,
         })
     }
 }

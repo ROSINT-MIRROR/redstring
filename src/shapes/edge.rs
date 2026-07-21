@@ -26,6 +26,7 @@ pub struct SourcedEdgeShape {
     status: Verification,
     selected: bool,
     order: usize,
+    hidden: bool,
 }
 
 impl From<EdgeProps<Relation>> for SourcedEdgeShape {
@@ -35,6 +36,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
             status: props.payload.status,
             selected: props.selected,
             order: props.order,
+            hidden: props.payload.hidden,
         }
     }
 }
@@ -52,6 +54,9 @@ where
         end: &Node<N, Relation, Ty, Ix, D>,
         ctx: &DrawContext,
     ) -> Vec<Shape> {
+        if self.hidden {
+            return Vec::new();
+        }
         let (s, e) = trim_to_boundaries(start, end);
         let (s, e) = offset_ends(s, e, self.order);
         let color = match self.status {
@@ -107,6 +112,7 @@ where
         self.status = state.payload.status;
         self.selected = state.selected;
         self.order = state.order;
+        self.hidden = state.payload.hidden;
     }
 
     fn is_inside(
@@ -115,6 +121,9 @@ where
         end: &Node<N, Relation, Ty, Ix, D>,
         pos: Pos2,
     ) -> bool {
+        if self.hidden {
+            return false;
+        }
         let (s, e) = trim_to_boundaries(start, end);
         let (s, e) = offset_ends(s, e, self.order);
         dist_point_segment(pos, s, e) <= HIT_TOLERANCE
