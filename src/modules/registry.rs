@@ -7,7 +7,7 @@ use crate::prefs::config_base;
 use super::spec::ModuleSpec;
 
 
-const BUILTIN: [(&str, &str); 8] = [
+const BUILTIN: [(&str, &str); 14] = [
     ("builtin:whois", include_str!("../../modules/whois.ron")),
     ("builtin:candel", include_str!("../../modules/candel.ron")),
     ("builtin:dnsx", include_str!("../../modules/dnsx.ron")),
@@ -16,6 +16,12 @@ const BUILTIN: [(&str, &str); 8] = [
     ("builtin:crtsh", include_str!("../../modules/crtsh.ron")),
     ("builtin:webprobe", include_str!("../../modules/webprobe.ron")),
     ("builtin:hrefs", include_str!("../../modules/hrefs.ron")),
+    ("builtin:ipapi", include_str!("../../modules/ipapi.ron")),
+    ("builtin:dnsxptr", include_str!("../../modules/dnsxptr.ron")),
+    ("builtin:subfinder", include_str!("../../modules/subfinder.ron")),
+    ("builtin:asnmap", include_str!("../../modules/asnmap.ron")),
+    ("builtin:gau", include_str!("../../modules/gau.ron")),
+    ("builtin:exiftool", include_str!("../../modules/exiftool.ron")),
 ];
 
 
@@ -530,5 +536,109 @@ OrgName:        Google LLC
         assert_eq!(args[0], "-c");
         let expected = "b=$(curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring probe' -w ' RSMETAxZ %{http_code} %{url_effective}' 'example.com'); meta=$(printf '%s' \"$b\" | grep -oE 'RSMETAxZ [0-9]+ [^ ]+' | tail -n1); c=$(printf '%s' \"$meta\" | cut -d' ' -f2); u=$(printf '%s' \"$meta\" | cut -d' ' -f3); case \"$c\" in ''|000) exit 0 ;; esac; t=$(printf '%s' \"$b\" | paste -sd' ' - | grep -oiE '<title[^>]*>[^<]*' | head -n1 | sed 's/<[^>]*>//'); jq -cn --arg c \"$c\" --arg u \"$u\" --arg t \"$t\" '{status_code:$c,final_url:$u,title:$t}'";
         assert_eq!(args[1], expected);
+    }
+
+    #[test]
+    fn new_transforms_apply_to_declared_kinds() {
+        assert!(builtin("builtin:ipapi").kinds().unwrap().contains(&EntityKind::IpAddress));
+        assert!(builtin("builtin:dnsxptr").kinds().unwrap().contains(&EntityKind::IpAddress));
+        assert!(builtin("builtin:subfinder").kinds().unwrap().contains(&EntityKind::Domain));
+        assert!(builtin("builtin:asnmap").kinds().unwrap().contains(&EntityKind::Asn));
+        assert!(builtin("builtin:gau").kinds().unwrap().contains(&EntityKind::Domain));
+        let exif = builtin("builtin:exiftool").kinds().unwrap();
+        assert!(exif.contains(&EntityKind::Photo));
+        assert!(exif.contains(&EntityKind::Document));
+        assert!(exif.contains(&EntityKind::Video));
+    }
+
+    #[test]
+    fn applies_to_extensions_reach_new_kinds() {
+        assert!(builtin("builtin:dnsx").kinds().unwrap().contains(&EntityKind::Server));
+        assert!(builtin("builtin:tlsx").kinds().unwrap().contains(&EntityKind::Server));
+        assert!(builtin("builtin:candel").kinds().unwrap().contains(&EntityKind::SocialAccount));
+    }
+
+    #[test]
+    fn ipapi_json_emits_geo_asn_isp_and_reverse() {
+        let spec = builtin("builtin:ipapi");
+        let text = "{\"status\":\"success\",\"countryCode\":\"US\",\"region\":\"CA\",\"regionName\":\"California\",\"city\":\"Mountain View\",\"isp\":\"Google LLC\",\"org\":\"Google Public DNS\",\"as\":\"AS15169 Google LLC\",\"reverse\":\"dns.google\",\"query\":\"8.8.8.8\"}";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Location,
+            label: "US".into(),
+            value: "US".into(),
+            rel: RelationKind::LocatedAt,
+            outbound: true,
+            attrs: vec![
+                ("city".into(), "Mountain View".into()),
+                ("region".into(), "California".into()),
+                ("country_code".into(), "US".into()),
+            ],
+        }));
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Asn,
+            label: "AS15169 Google LLC".into(),
+            value: "AS15169 Google LLC".into(),
+            rel: RelationKind::InAsn,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Organization,
+            label: "Google LLC".into(),
+            value: "Google LLC".into(),
+            rel: RelationKind::RelatedTo,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "reverse_dns".into(),
+            value: "dns.google".into(),
+        }));
+    }
+
+    #[test]
+    fn dnsxptr_ndjson_points_hostname_at_ip() {
+        let spec = builtin("builtin:dnsxptr");
+        let text = "{\"host\":\"8.8.8.8\",\"ttl\":74729,\"resolver\":[\"1.0.0.1:53\"],\"ptr\":[\"dns.google\"],\"status_code\":\"NOERROR\"}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Domain,
+            label: "dns.google".into(),
+            value: "dns.google".into(),
+            rel: RelationKind::PointsTo,
+            outbound: false,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn exiftool_json_emits_author_device_date_and_gps_location() {
+        let spec = builtin("builtin:exiftool");
+        let text = "[{\"SourceFile\":\"evidence/docs/x.jpg\",\"Make\":\"Canon\",\"Model\":\"Canon EOS 5D\",\"Artist\":\"Jane Photographer\",\"CreateDate\":\"2021:06:15 14:23:01\",\"GPSLatitude\":\"37.774900 N\",\"GPSPosition\":\"37.774900 N, 122.419400 W\"}]";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert!(facts.contains(&Fact::Attr {
+            key: "author".into(),
+            value: "Jane Photographer".into(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "created_at".into(),
+            value: "2021:06:15 14:23:01".into(),
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "device_model".into(),
+            value: "Canon EOS 5D".into(),
+        }));
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::Location,
+            label: "37.774900 N, 122.419400 W".into(),
+            value: "37.774900 N, 122.419400 W".into(),
+            rel: RelationKind::LocatedAt,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
     }
 }

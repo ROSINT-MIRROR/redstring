@@ -1,0 +1,33 @@
+// builtin module spec — ip-api.com IP geolocation (KEYLESS, no API key).
+// One HTTP GET returns a single flat JSON object; the json adapter reads the
+// object at root (array: "") and lowercases keys, so no jq is needed.
+// Geo coalesces into ONE location node keyed by country code (max convergence —
+// every US-hosted IP hits the same node) carrying city/region; the ASN and ISP
+// become their own pivotable nodes so IPs sharing an AS/ISP converge; the PTR
+// hostname rides as a reverse_dns observation. Free tier is HTTP + rate-limited.
+(
+    id: "ipapi",
+    label: "ip-api geolocation",
+    applies_to: ["ip_address"],
+    bin: "sh",
+    requires: ["curl"],
+    args: ["-c", "curl -s 'http://ip-api.com/json/{value}?fields=status,countryCode,region,regionName,city,isp,org,as,reverse,query'"],
+    timeout_secs: 20,
+    shapes: [
+        (
+            id: "ipapi",
+            extract: (id: "json", config: (array: "")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "countrycode", kind: "location", rel: "located_at", attrs: [
+                    ("city", "city"),
+                    ("regionname", "region"),
+                    ("countrycode", "country_code"),
+                ]),
+                Entity(from: "as", kind: "asn", rel: "in_asn"),
+                Entity(from: "isp", kind: "organization", rel: "related_to"),
+                Attr(from: "reverse", key: "reverse_dns"),
+            ],
+        ),
+    ],
+)

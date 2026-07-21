@@ -8,7 +8,7 @@
 (
     id: "dnsx",
     label: "dnsx DNS resolve",
-    applies_to: ["domain"],
+    applies_to: ["domain", "server"],
     bin: "sh",
     requires: ["dnsx", "jq"],
     args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -silent"],

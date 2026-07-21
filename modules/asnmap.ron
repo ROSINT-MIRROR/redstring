@@ -1,0 +1,26 @@
+// builtin module spec — asnmap ASN -> organization + announced netblocks.
+// -json emits ndjson; the adapter keeps numbers and reads as_name / as_country and
+// the as_range CIDR directly (no jq). There is no netblock entity kind, so the
+// announced range rides as an observation rather than fanning out to a node.
+// asnmap is NOT bundled; the requires-gate hides this module until it is on PATH.
+(
+    id: "asnmap",
+    label: "asnmap ASN netblocks",
+    applies_to: ["asn"],
+    bin: "asnmap",
+    requires: ["asnmap"],
+    args: ["-a", "{value}", "-json", "-silent"],
+    timeout_secs: 60,
+    shapes: [
+        (
+            id: "asnmap",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Attr(from: "as_name", key: "as_org"),
+                Attr(from: "as_country", key: "country"),
+                Attr(from: "as_range", key: "netblock"),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,24 @@
+// builtin module spec — subfinder passive subdomain enumeration for a domain.
+// -silent prints one discovered host per line; the lines adapter reads each as a
+// domain. No subdomain_of verb exists yet, so related_to is the honest edge —
+// shared parent / child domains converge by slug upsert. subfinder is NOT bundled;
+// the requires-gate hides this module until it is on PATH.
+(
+    id: "subfinder",
+    label: "subfinder subdomains",
+    applies_to: ["domain"],
+    bin: "subfinder",
+    requires: ["subfinder"],
+    args: ["-d", "{value}", "-silent"],
+    timeout_secs: 120,
+    shapes: [
+        (
+            id: "subfinder",
+            extract: (id: "lines", config: (field: "domain")),
+            min_hits: 1,
+            emit: [
+                Entity(from: "domain", kind: "domain", rel: "related_to"),
+            ],
+        ),
+    ],
+)

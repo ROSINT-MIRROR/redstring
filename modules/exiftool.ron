@@ -1,0 +1,32 @@
+// builtin module spec — exiftool metadata extraction from a photo / document / video.
+// The FIRST file-consuming module: {attr:file} is the entity's project-relative file
+// observation (e.g. evidence/docs/x.jpg), resolved because lookups run with cwd = the
+// project root. exiftool -json returns a one-element array; the json adapter reads it
+// (array: "") and lowercases keys. -c "%.6f" renders GPS as decimal degrees.
+// GPS coalesces into ONE location node keyed by the composite GPSPosition (present
+// whenever lat+lon exist). Author varies by container — Artist (EXIF), Creator (XMP),
+// Author (PDF) — so all three map to the author observation; absent keys are skipped.
+(
+    id: "exiftool",
+    label: "exiftool metadata",
+    applies_to: ["photo", "document", "video"],
+    bin: "exiftool",
+    requires: ["exiftool"],
+    args: ["-json", "-c", "%.6f", "{attr:file}"],
+    timeout_secs: 30,
+    shapes: [
+        (
+            id: "exiftool",
+            extract: (id: "json", config: (array: "")),
+            min_hits: 1,
+            emit: [
+                Attr(from: "author", key: "author"),
+                Attr(from: "artist", key: "author"),
+                Attr(from: "creator", key: "author"),
+                Attr(from: "createdate", key: "created_at"),
+                Attr(from: "model", key: "device_model"),
+                Entity(from: "gpsposition", kind: "location", rel: "located_at"),
+            ],
+        ),
+    ],
+)
