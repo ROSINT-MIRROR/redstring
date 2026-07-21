@@ -407,4 +407,106 @@ mod transforms_tests {
             "the hash must never become a Secret node"
         );
     }
+
+    #[test]
+    fn opensanctions_applies_to_person_and_org_with_api_key_header() {
+        let spec = builtin("builtin:opensanctions");
+        assert!(spec.keys.iter().any(|k| k == "opensanctions"), "opensanctions grows its own key slot");
+        assert_eq!(
+            spec.headers,
+            vec![("Authorization".to_owned(), "ApiKey {key:opensanctions}".to_owned())],
+            "the api key rides the headers field as an env token, never argv"
+        );
+        let kinds = spec.kinds().unwrap();
+        assert!(kinds.contains(&EntityKind::Person), "screens people");
+        assert!(kinds.contains(&EntityKind::Organization), "screens organizations");
+    }
+
+    #[test]
+    fn opensanctions_renders_urlencoded_search_query() {
+        let spec = builtin("builtin:opensanctions");
+        let args = spec
+            .render_args("Vladimir Putin", "Vladimir Putin", "vladimir_putin", &[])
+            .unwrap();
+        assert!(
+            args.contains(&"q=Vladimir Putin".to_owned()),
+            "the name rides through --data-urlencode for curl to percent-encode: {args:?}"
+        );
+        assert!(args.contains(&"https://api.opensanctions.org/search/default".to_owned()));
+    }
+
+    #[test]
+    fn opensanctions_key_slot_joins_the_settings_union() {
+        let mut entries = Vec::new();
+        for (origin, text) in BUILTIN {
+            entries.push(entry_from_str(origin, text).unwrap());
+        }
+        let ids = Registry { entries }.key_ids().unwrap();
+        assert!(ids.iter().any(|k| k == "opensanctions"), "the keyed slot surfaces in Settings: {ids:?}");
+        assert!(ids.iter().any(|k| k == "dehashed"), "the union keeps every other keyed module too");
+    }
+
+    #[test]
+    fn opensanctions_hits_pivot_watchlists_and_annotate_the_subject() {
+        let spec = builtin("builtin:opensanctions");
+        let sample = r#"{"total":{"value":2},"results":[
+            {"id":"Q7747","caption":"Vladimir Vladimirovich Putin","schema":"Person",
+             "properties":{"topics":["sanction","role.pep"],"country":["ru"],"birthDate":["1952-10-07"]},
+             "datasets":["eu_fsf","us_ofac_sdn","gb_hmt_sanctions"],"score":0.95},
+            {"id":"NK-abc","caption":"Vostok Trading LLC","schema":"Organization",
+             "properties":{"topics":["sanction"],"country":["ru"]},
+             "datasets":["eu_fsf"],"score":0.6}
+        ]}"#;
+        let (shape, records) = sniff(&spec.shapes, sample).unwrap().unwrap();
+        assert_eq!(shape.id, "opensanctions");
+        assert_eq!(records.len(), 2, "one record per matched watchlisted entity");
+        let facts = emit(shape, &records).unwrap();
+
+        assert!(facts.contains(&Fact::Attr {
+            key: "sanctions_match".into(),
+            value: "Vladimir Vladimirovich Putin".into(),
+            kind: ObsKind::Text,
+        }));
+        assert!(facts.contains(&Fact::Attr {
+            key: "match_schema".into(),
+            value: "Person".into(),
+            kind: ObsKind::Text,
+        }));
+        assert!(
+            facts.contains(&Fact::Attr { key: "match_score".into(), value: "0.95".into(), kind: ObsKind::Number }),
+            "the match confidence is a typed Number, not a string"
+        );
+        assert!(
+            facts.contains(&Fact::Attr { key: "topics".into(), value: "sanction".into(), kind: ObsKind::Text }),
+            "the primary risk tag surfaces as an observation (role.pep stays in the archived raw)"
+        );
+        assert!(facts.contains(&Fact::Attr {
+            key: "country".into(),
+            value: "ru".into(),
+            kind: ObsKind::Text,
+        }));
+
+        let watchlist = |slug: &str| Fact::Entity {
+            kind: EntityKind::Dataset,
+            label: slug.to_owned(),
+            value: slug.to_owned(),
+            rel: RelationKind::AppearedIn,
+            outbound: true,
+            attrs: Vec::new(),
+        };
+        assert!(facts.contains(&watchlist("us_ofac_sdn")), "each source dataset is a watchlist Dataset node");
+        assert!(facts.contains(&watchlist("eu_fsf")));
+        assert!(facts.contains(&watchlist("gb_hmt_sanctions")));
+        let watchlists = facts
+            .iter()
+            .filter(|f| matches!(f, Fact::Entity { kind: EntityKind::Dataset, rel: RelationKind::AppearedIn, .. }))
+            .count();
+        assert_eq!(watchlists, 4, "datasets fan out multi-value: 3 for the person plus 1 for the org");
+
+        assert!(facts.contains(&Fact::Attr {
+            key: "sanctions_match".into(),
+            value: "Vostok Trading LLC".into(),
+            kind: ObsKind::Text,
+        }));
+    }
 }
