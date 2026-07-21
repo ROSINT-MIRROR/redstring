@@ -5,13 +5,17 @@
 
 
 
+use std::cell::Cell;
+
 use egui::epaint::{RectShape, TextShape};
-use egui::{Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, Vec2};
+use egui::text::{LayoutJob, TextFormat};
+use egui::{Align, Color32, CornerRadius, FontFamily, FontId, Pos2, Rect, Shape, Stroke, Vec2};
 use egui_graphs::{DisplayEdge, DisplayNode, DrawContext, EdgeProps, Node};
 use petgraph::{EdgeType, stable_graph::IndexType};
 
-use egui_phosphor::regular::{PAPERCLIP, WARNING_CIRCLE};
+use egui_phosphor::regular::{PAPERCLIP, WARNING};
 
+use crate::error::Error;
 use crate::model::{RELATION_META, Relation, RelationKind, Verification, status_color};
 
 const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
@@ -28,7 +32,18 @@ const EDGE_LABEL_MIN_PX: f32 = 8.0;
 const EDGE_LABEL_MAX_PX: f32 = 40.0;
 const EDGE_LABEL_PAD_FRAC: f32 = 0.3;
 const EDGE_LABEL_PAD_MIN: f32 = 2.0;
-const EDGE_BACKDROP_ALPHA: f32 = 0.85;
+const EDGE_BACKDROP_ALPHA: f32 = 0.94;
+const EDGE_BACKDROP_LIGHTEN: f32 = 0.16;
+const EDGE_BACKDROP_DARKEN: f32 = 0.17;
+const EDGE_WARN_MULT: f32 = 1.4;
+
+thread_local! {
+    static SHOT_LABELS: Cell<bool> = const { Cell::new(false) };
+}
+
+fn shot_labels_flag() -> bool {
+    SHOT_LABELS.with(|c| c.get())
+}
 
 #[derive(Clone)]
 pub struct SourcedEdgeShape {
@@ -73,7 +88,11 @@ where
         }
         let (s, e) = trim_to_boundaries(start, end);
         let (s, e) = offset_ends(s, e, self.order);
-        let Ok(color) = status_color(self.status) else {
+        let dark = ctx.ctx.global_style().visuals.dark_mode;
+        let Ok(raw) = status_color(self.status) else {
+            return Vec::new();
+        };
+        let Ok(color) = crate::ui::board_color(raw, dark) else {
             return Vec::new();
         };
 
@@ -115,7 +134,7 @@ where
         res.push(Shape::convex_polygon(tip, color, Stroke::NONE));
 
         let mid = a + (b - a) * 0.5;
-        res.extend(self.label_shapes(ctx, mid, hot, color));
+        res.extend(self.label_shapes(ctx, mid, hot, color, dark));
 
         res
     }
@@ -150,44 +169,125 @@ where
 
 
 impl SourcedEdgeShape {
-    fn label_shapes(&self, ctx: &DrawContext, mid: Pos2, hot: bool, color: Color32) -> Vec<Shape> {
-        let Some(text) = edge_label_text(self.sourced, self.source_count, self.kind, hot) else {
+    pub fn set_shot_labels(on: bool) -> Result<(), Error> {
+        SHOT_LABELS.with(|c| c.set(on));
+        Ok(())
+    }
+
+    fn label_shapes(
+        &self,
+        ctx: &DrawContext,
+        mid: Pos2,
+        hot: bool,
+        color: Color32,
+        dark: bool,
+    ) -> Vec<Shape> {
+        let Some(parts) = edge_label_parts(
+            self.sourced,
+            self.source_count,
+            self.kind,
+            hot,
+            shot_labels_flag(),
+        ) else {
             return Vec::new();
         };
         let fpx = ctx
             .meta
             .canvas_to_screen_size(EDGE_LABEL_SIZE)
             .clamp(EDGE_LABEL_MIN_PX, EDGE_LABEL_MAX_PX);
-        let galley = ctx
-            .ctx
-            .fonts_mut(|f| f.layout_no_wrap(text, FontId::new(fpx, FontFamily::Proportional), color));
+        let tail_px = if parts.warn { fpx * EDGE_WARN_MULT } else { fpx };
+        let tail_color = if parts.warn { warn_color(dark) } else { color };
+        let mut job = LayoutJob::default();
+        job.append(
+            &parts.verb,
+            0.0,
+            TextFormat {
+                font_id: FontId::new(fpx, FontFamily::Proportional),
+                color,
+                valign: Align::Center,
+                ..Default::default()
+            },
+        );
+        job.append(
+            &parts.tail,
+            0.0,
+            TextFormat {
+                font_id: FontId::new(tail_px, FontFamily::Proportional),
+                color: tail_color,
+                valign: Align::Center,
+                ..Default::default()
+            },
+        );
+        let galley = ctx.ctx.fonts_mut(|f| f.layout_job(job));
         let sz = galley.size();
         let pad = (fpx * EDGE_LABEL_PAD_FRAC).max(EDGE_LABEL_PAD_MIN);
         let box_rect = Rect::from_center_size(mid, sz + Vec2::splat(pad * 2.0));
         let bg = ctx.ctx.global_style().visuals.panel_fill;
+        let fill = label_backdrop_fill(bg, dark).gamma_multiply(EDGE_BACKDROP_ALPHA);
         let mut res = Vec::with_capacity(2);
-        res.push(
-            RectShape::filled(
-                box_rect,
-                CornerRadius::same(3),
-                bg.gamma_multiply(EDGE_BACKDROP_ALPHA),
-            )
-            .into(),
-        );
+        res.push(RectShape::filled(box_rect, CornerRadius::same(3), fill).into());
         res.push(TextShape::new(mid - sz / 2.0, galley, color).into());
         res
     }
 }
 
-fn edge_label_text(sourced: bool, count: usize, kind: RelationKind, hot: bool) -> Option<String> {
-    let verb = RELATION_META[kind as usize].label;
+struct LabelParts {
+    verb: String,
+    tail: String,
+    warn: bool,
+}
+
+fn edge_label_parts(
+    sourced: bool,
+    count: usize,
+    kind: RelationKind,
+    hot: bool,
+    always: bool,
+) -> Option<LabelParts> {
+    let verb = RELATION_META[kind as usize].label.to_owned();
     if !sourced {
-        return Some(format!("{verb}  {WARNING_CIRCLE} 0"));
+        return Some(LabelParts {
+            verb,
+            tail: format!("  {WARNING} 0 src"),
+            warn: true,
+        });
     }
-    if !hot {
+    if !hot && !always {
         return None;
     }
-    Some(format!("{verb}  {PAPERCLIP} {count}"))
+    Some(LabelParts {
+        verb,
+        tail: format!("  {PAPERCLIP} {count}"),
+        warn: false,
+    })
+}
+
+#[cfg(test)]
+fn edge_label_text(
+    sourced: bool,
+    count: usize,
+    kind: RelationKind,
+    hot: bool,
+    always: bool,
+) -> Option<String> {
+    let parts = edge_label_parts(sourced, count, kind, hot, always)?;
+    Some(format!("{}{}", parts.verb, parts.tail))
+}
+
+fn warn_color(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_rgb(255, 96, 72)
+    } else {
+        Color32::from_rgb(198, 30, 18)
+    }
+}
+
+fn label_backdrop_fill(bg: Color32, dark: bool) -> Color32 {
+    if dark {
+        bg.lerp_to_gamma(Color32::WHITE, EDGE_BACKDROP_LIGHTEN)
+    } else {
+        bg.lerp_to_gamma(Color32::BLACK, EDGE_BACKDROP_DARKEN)
+    }
 }
 
 fn trim_to_boundaries<N, Ty, Ix, D>(
@@ -318,26 +418,33 @@ mod tests {
         let controls = RELATION_META[RelationKind::Controls as usize].label;
         let financed = RELATION_META[RelationKind::Financed as usize].label;
 
-        let un = edge_label_text(false, 0, RelationKind::Controls, false).unwrap();
-        assert!(un.contains(WARNING_CIRCLE), "unsourced label must carry the warning glyph");
+        let un = edge_label_text(false, 0, RelationKind::Controls, false, false).unwrap();
+        assert!(un.contains(WARNING), "unsourced label must carry the warning glyph");
         assert!(un.contains(controls), "unsourced label must name the verb");
 
         assert!(
-            edge_label_text(true, 7, RelationKind::Financed, false).is_none(),
-            "a sourced edge at rest must not draw a label"
+            edge_label_text(true, 7, RelationKind::Financed, false, false).is_none(),
+            "a sourced edge at rest with labels off must not draw a label"
         );
 
-        let hot = edge_label_text(true, 7, RelationKind::Financed, true).unwrap();
-        assert!(hot.contains('7'), "a sourced label must show the source count");
+        let hot = edge_label_text(true, 7, RelationKind::Financed, true, false).unwrap();
+        assert!(hot.contains('7'), "a hot sourced label must show the source count");
         assert!(hot.contains(financed), "a sourced label must name the verb");
+
+        let always = edge_label_text(true, 7, RelationKind::Financed, false, true).unwrap();
+        assert!(
+            always.contains(financed) && always.contains('7'),
+            "always-label mode must render a sourced verb + count even at rest, got {always}"
+        );
     }
 
     #[test]
     fn unsourced_edge_draws_warning_shape() {
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
         let controls = RELATION_META[RelationKind::Controls as usize].label;
         let texts = text_shapes(&edge_shapes(rel(RelationKind::Controls, Vec::new())));
         assert!(
-            texts.iter().any(|t| t.contains(WARNING_CIRCLE)),
+            texts.iter().any(|t| t.contains(WARNING)),
             "an unsourced edge must render a warning-text shape, got {texts:?}"
         );
         assert!(
@@ -348,6 +455,7 @@ mod tests {
 
     #[test]
     fn sourced_edge_at_rest_has_no_label() {
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
         let src = vec![Source {
             kind: SourceKind::Note,
             reference: "n".into(),
@@ -358,6 +466,37 @@ mod tests {
         assert!(
             texts.is_empty(),
             "a sourced edge at rest must not render a label, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn shot_labels_flag_reveals_sourced_verb() {
+        let controls = RELATION_META[RelationKind::Controls as usize].label;
+        let src = vec![Source {
+            kind: SourceKind::Note,
+            reference: "n".into(),
+            excerpt: String::new(),
+        }];
+        SourcedEdgeShape::set_shot_labels(true).unwrap();
+        let texts = text_shapes(&edge_shapes(rel(RelationKind::Controls, src)));
+        SourcedEdgeShape::set_shot_labels(false).unwrap();
+        assert!(
+            texts.iter().any(|t| t.contains(controls)),
+            "shot always-label mode must render a sourced edge's verb, got {texts:?}"
+        );
+    }
+
+    #[test]
+    fn light_theme_darkens_edge_color() {
+        let raw = status_color(Verification::MachineSuggested).unwrap();
+        let dark = crate::ui::board_color(raw, true).unwrap();
+        let light = crate::ui::board_color(raw, false).unwrap();
+        let lum = |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+        assert!(
+            lum(light) < lum(dark) - 20.0,
+            "light theme must darken the edge status color for legibility: dark {} vs light {}",
+            lum(dark),
+            lum(light)
         );
     }
 }
