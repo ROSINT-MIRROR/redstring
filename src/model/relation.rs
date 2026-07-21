@@ -106,6 +106,29 @@ pub enum RelationKind {
     RedirectsTo,
     Sells,
     AdvertisedOn,
+    Trafficked,
+    Recruited,
+    Groomed,
+    Exploited,
+    Abducted,
+    PlacedAt,
+    ResidentOf,
+    InCareOf,
+    Adopted,
+    FosteredBy,
+    GuardianOf,
+    Abused,
+    SexuallyAssaulted,
+    Killed,
+    Kidnapped,
+    Accused,
+    Denounced,
+    ComplainedAgainst,
+    Supports,
+    Corroborates,
+    Contradicts,
+    Refutes,
+    Cites,
 }
 
 pub struct RelMeta {
@@ -123,7 +146,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 99] = [
+pub const RELATION_META: [RelMeta; 122] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -223,6 +246,29 @@ pub const RELATION_META: [RelMeta; 99] = [
     r(RelationKind::RedirectsTo, "redirects to", "web/infra"),
     r(RelationKind::Sells, "sells", "commerce"),
     r(RelationKind::AdvertisedOn, "advertised on", "commerce"),
+    r(RelationKind::Trafficked, "trafficked", "trafficking"),
+    r(RelationKind::Recruited, "recruited", "trafficking"),
+    r(RelationKind::Groomed, "groomed", "trafficking"),
+    r(RelationKind::Exploited, "exploited", "trafficking"),
+    r(RelationKind::Abducted, "abducted", "trafficking"),
+    r(RelationKind::PlacedAt, "placed at", "custody/care"),
+    r(RelationKind::ResidentOf, "resident of", "custody/care"),
+    r(RelationKind::InCareOf, "in care of", "custody/care"),
+    r(RelationKind::Adopted, "adopted", "custody/care"),
+    r(RelationKind::FosteredBy, "fostered by", "custody/care"),
+    r(RelationKind::GuardianOf, "guardian of", "custody/care"),
+    r(RelationKind::Abused, "abused", "abuse/violence"),
+    r(RelationKind::SexuallyAssaulted, "sexually assaulted", "abuse/violence"),
+    r(RelationKind::Killed, "killed", "abuse/violence"),
+    r(RelationKind::Kidnapped, "kidnapped", "abuse/violence"),
+    r(RelationKind::Accused, "accused", "accusation"),
+    r(RelationKind::Denounced, "denounced", "accusation"),
+    r(RelationKind::ComplainedAgainst, "complained against", "accusation"),
+    r(RelationKind::Supports, "supports", "evidence"),
+    r(RelationKind::Corroborates, "corroborates", "evidence"),
+    r(RelationKind::Contradicts, "contradicts", "evidence"),
+    r(RelationKind::Refutes, "refutes", "evidence"),
+    r(RelationKind::Cites, "cites", "evidence"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -291,7 +337,7 @@ mod tests {
                 seen_cats.push(m.category);
             }
         }
-        assert_eq!(seen_cats.len(), 12, "expected the 12 verb families");
+        assert_eq!(seen_cats.len(), 17, "expected the 17 verb families");
     }
 
     #[test]
@@ -335,6 +381,44 @@ mod tests {
             assert_eq!(m.kind, k, "RELATION_META index skewed for {k:?}");
             assert_eq!(m.category, "web/infra", "{k:?} must join the web/infra family");
             assert!(!m.label.is_empty(), "{k:?} label");
+        }
+    }
+
+    #[test]
+    fn wave2_crime_relations_resolve_by_slug_in_new_families() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("trafficked"), Some(RelationKind::Trafficked));
+        assert_eq!(by_slug("placed_at"), Some(RelationKind::PlacedAt));
+        assert_eq!(by_slug("in_care_of"), Some(RelationKind::InCareOf));
+        assert_eq!(by_slug("guardian_of"), Some(RelationKind::GuardianOf));
+        assert_eq!(by_slug("sexually_assaulted"), Some(RelationKind::SexuallyAssaulted));
+        assert_eq!(by_slug("complained_against"), Some(RelationKind::ComplainedAgainst));
+        assert_eq!(by_slug("refutes"), Some(RelationKind::Refutes));
+
+        for (k, fam) in [
+            (RelationKind::Trafficked, "trafficking"),
+            (RelationKind::PlacedAt, "custody/care"),
+            (RelationKind::Abused, "abuse/violence"),
+            (RelationKind::Accused, "accusation"),
+            (RelationKind::Supports, "evidence"),
+        ] {
+            assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
+        }
+
+        for k in [
+            RelationKind::Supports,
+            RelationKind::Corroborates,
+            RelationKind::Contradicts,
+            RelationKind::Refutes,
+            RelationKind::Cites,
+        ] {
+            assert_eq!(
+                RELATION_META[k as usize].category,
+                "evidence",
+                "{k:?} is a signed evidence-polarity verb pointing source/document -> claim"
+            );
         }
     }
 }

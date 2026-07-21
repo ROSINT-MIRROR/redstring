@@ -17,6 +17,10 @@ pub enum Role {
     Witness,
     Source,
     Impersonated,
+    Associate,
+    Enabler,
+    Broker,
+    Facilitator,
 }
 
 pub struct RoleMeta {
@@ -35,7 +39,7 @@ const fn rm(role: Role, label: &'static str, icon: &'static str, rgb: (u8, u8, u
     }
 }
 
-pub const ROLE_META: [RoleMeta; 7] = [
+pub const ROLE_META: [RoleMeta; 11] = [
     rm(Role::Unset, "none", egui_phosphor::regular::CIRCLE_DASHED, (150, 150, 150)),
     rm(Role::Suspect, "suspect", egui_phosphor::regular::USER_FOCUS, (235, 165, 60)),
     rm(Role::Perpetrator, "perpetrator", egui_phosphor::regular::HAND_FIST, (225, 70, 70)),
@@ -43,6 +47,10 @@ pub const ROLE_META: [RoleMeta; 7] = [
     rm(Role::Witness, "witness", egui_phosphor::regular::EYE, (90, 195, 165)),
     rm(Role::Source, "source", egui_phosphor::regular::USER_SOUND, (185, 130, 225)),
     rm(Role::Impersonated, "impersonated", egui_phosphor::regular::MASK_HAPPY, (216, 138, 178)),
+    rm(Role::Associate, "associate", egui_phosphor::regular::HANDSHAKE, (150, 170, 195)),
+    rm(Role::Enabler, "enabler", egui_phosphor::regular::PLUGS_CONNECTED, (205, 165, 95)),
+    rm(Role::Broker, "broker", egui_phosphor::regular::SWAP, (200, 140, 110)),
+    rm(Role::Facilitator, "facilitator", egui_phosphor::regular::FLOW_ARROW, (150, 185, 130)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -201,6 +209,22 @@ mod tests {
         assert!(!m.icon.is_empty(), "impersonated needs a glyph");
         assert_ne!(Role::Impersonated, Role::Victim, "abused identities are not victims");
         assert_ne!(Role::Impersonated, Role::default(), "impersonated is not the default role");
+    }
+
+    #[test]
+    fn wave2_network_roles_present_and_indexed() {
+        for (role, label) in [
+            (Role::Associate, "associate"),
+            (Role::Enabler, "enabler"),
+            (Role::Broker, "broker"),
+            (Role::Facilitator, "facilitator"),
+        ] {
+            let m = &ROLE_META[role as usize];
+            assert_eq!(m.role, role, "discriminant indexes its own ROLE_META row");
+            assert_eq!(m.label, label);
+            assert!(!m.icon.is_empty(), "{role:?} needs a glyph");
+            assert_ne!(role, Role::default(), "{role:?} is a network role, not the default");
+        }
     }
 
     #[test]
