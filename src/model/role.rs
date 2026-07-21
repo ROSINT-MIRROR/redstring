@@ -16,6 +16,7 @@ pub enum Role {
     Victim,
     Witness,
     Source,
+    Impersonated,
 }
 
 pub struct RoleMeta {
@@ -34,13 +35,14 @@ const fn rm(role: Role, label: &'static str, icon: &'static str, rgb: (u8, u8, u
     }
 }
 
-pub const ROLE_META: [RoleMeta; 6] = [
+pub const ROLE_META: [RoleMeta; 7] = [
     rm(Role::Unset, "none", egui_phosphor::regular::CIRCLE_DASHED, (150, 150, 150)),
     rm(Role::Suspect, "suspect", egui_phosphor::regular::USER_FOCUS, (235, 165, 60)),
     rm(Role::Perpetrator, "perpetrator", egui_phosphor::regular::HAND_FIST, (225, 70, 70)),
     rm(Role::Victim, "victim", egui_phosphor::regular::BANDAIDS, (95, 155, 240)),
     rm(Role::Witness, "witness", egui_phosphor::regular::EYE, (90, 195, 165)),
     rm(Role::Source, "source", egui_phosphor::regular::USER_SOUND, (185, 130, 225)),
+    rm(Role::Impersonated, "impersonated", egui_phosphor::regular::MASK_HAPPY, (216, 138, 178)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -189,6 +191,16 @@ mod tests {
             assert!(!m.label.is_empty(), "{:?} label", m.role);
             assert!(!m.icon.is_empty(), "{:?} icon", m.role);
         }
+    }
+
+    #[test]
+    fn impersonated_role_present_and_distinct_from_victim() {
+        let m = &ROLE_META[Role::Impersonated as usize];
+        assert_eq!(m.role, Role::Impersonated, "discriminant indexes its own ROLE_META row");
+        assert_eq!(m.label, "impersonated");
+        assert!(!m.icon.is_empty(), "impersonated needs a glyph");
+        assert_ne!(Role::Impersonated, Role::Victim, "abused identities are not victims");
+        assert_ne!(Role::Impersonated, Role::default(), "impersonated is not the default role");
     }
 
     #[test]
