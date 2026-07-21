@@ -85,6 +85,14 @@ pub enum Error {
         source: regex::Error,
     },
 
+    ShotArgs {
+        what: String,
+    },
+
+    Render {
+        what: String,
+    },
+
     #[cfg(test)]
     InvariantViolated {
         what: String,
@@ -167,6 +175,8 @@ impl std::fmt::Display for Error {
             Self::BadRegex { pattern, source } => {
                 write!(f, "bad regex '{pattern}': {source}")
             }
+            Self::ShotArgs { what } => write!(f, "--shot: {what}"),
+            Self::Render { what } => write!(f, "offscreen render failed: {what}"),
             #[cfg(test)]
             Self::InvariantViolated { what } => write!(f, "invariant violated: {what}"),
             #[cfg(test)]

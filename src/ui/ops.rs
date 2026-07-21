@@ -102,48 +102,7 @@ impl RedstringApp {
     }
 
     pub fn sync_visuals(&mut self) -> Result<(), Error> {
-        let nodes: Vec<NodeIndex> = self.g.g().node_indices().collect();
-        for idx in nodes {
-            let boost = self.degree_boost(idx);
-            let Some(n) = self.g.node(idx) else { continue };
-            let e = n.payload();
-            let meta = &KIND_META[e.kind as usize];
-            let color = meta.color;
-            let label = format!("{} {}", meta.icon, e.label);
-            let Some(n) = self.g.node_mut(idx) else { continue };
-            n.set_color(color);
-            n.set_label(label);
-            n.payload_mut().boost = boost;
-        }
-
-        let edges: Vec<EdgeIndex> = self.g.g().edge_indices().collect();
-        for idx in edges {
-            let Some(ed) = self.g.edge(idx) else { continue };
-            let r = ed.payload();
-            let tag = if r.sources.is_empty() {
-                "⚠0".to_owned()
-            } else {
-                format!("[{}]", r.sources.len())
-            };
-            let label = format!("{} {}", RELATION_META[r.kind as usize].label, tag);
-            let Some(ed) = self.g.edge_mut(idx) else { continue };
-            ed.set_label(label);
-        }
-        Ok(())
-    }
-
-
-
-    fn degree_boost(&self, idx: NodeIndex) -> f32 {
-        if !self.size_by_degree {
-            return 1.0;
-        }
-        let g = self.g.g();
-        let degree = g
-            .edges_directed(idx, petgraph::Direction::Incoming)
-            .count()
-            + g.edges_directed(idx, petgraph::Direction::Outgoing).count();
-        (1.0 + 0.18 * degree as f32).sqrt().clamp(1.0, 2.5)
+        apply_visuals(&mut self.g, self.size_by_degree)
     }
 
     pub fn node_label(&self, idx: NodeIndex) -> Result<String, Error> {
@@ -243,6 +202,49 @@ pub fn spiral(n: usize) -> Result<Pos2, Error> {
     let a = n as f32 * 2.399_963_2;
     let r = 40.0 + 16.0 * n as f32;
     Ok(Pos2::new(r * a.cos(), r * a.sin()))
+}
+
+pub fn apply_visuals(g: &mut RsGraph, size_by_degree: bool) -> Result<(), Error> {
+    let nodes: Vec<NodeIndex> = g.g().node_indices().collect();
+    for idx in nodes {
+        let boost = degree_boost(g, idx, size_by_degree);
+        let Some(n) = g.node(idx) else { continue };
+        let e = n.payload();
+        let meta = &KIND_META[e.kind as usize];
+        let color = meta.color;
+        let label = format!("{} {}", meta.icon, e.label);
+        let Some(n) = g.node_mut(idx) else { continue };
+        n.set_color(color);
+        n.set_label(label);
+        n.payload_mut().boost = boost;
+    }
+
+    let edges: Vec<EdgeIndex> = g.g().edge_indices().collect();
+    for idx in edges {
+        let Some(ed) = g.edge(idx) else { continue };
+        let r = ed.payload();
+        let tag = if r.sources.is_empty() {
+            "⚠0".to_owned()
+        } else {
+            format!("[{}]", r.sources.len())
+        };
+        let label = format!("{} {}", RELATION_META[r.kind as usize].label, tag);
+        let Some(ed) = g.edge_mut(idx) else { continue };
+        ed.set_label(label);
+    }
+    Ok(())
+}
+
+fn degree_boost(g: &RsGraph, idx: NodeIndex, size_by_degree: bool) -> f32 {
+    if !size_by_degree {
+        return 1.0;
+    }
+    let gg = g.g();
+    let degree = gg
+        .edges_directed(idx, petgraph::Direction::Incoming)
+        .count()
+        + gg.edges_directed(idx, petgraph::Direction::Outgoing).count();
+    (1.0 + 0.18 * degree as f32).sqrt().clamp(1.0, 2.5)
 }
 
 #[cfg(test)]

@@ -2734,14 +2734,17 @@ dependencies = [
  "eframe",
  "egui",
  "egui-phosphor",
+ "egui-wgpu",
  "egui_graphs",
  "image",
  "petgraph",
+ "pollster",
  "regex",
  "rfd",
  "ron",
  "serde",
  "serde_json",
+ "wgpu",
  "zip",
 ]
 

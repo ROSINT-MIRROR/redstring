@@ -5,6 +5,7 @@ mod modules;
 mod prefs;
 mod project;
 mod shapes;
+mod shot;
 mod ui;
 
 use std::path::Path;
@@ -13,11 +14,39 @@ use ui::RedstringApp;
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--shot") {
+        run_shot(&args)
+    } else {
+        run_after_check(&args)
+    }
+}
+
+fn run_after_check(args: &[String]) -> eframe::Result {
     let check = args.iter().position(|a| a == "--check");
     let Some(check_at) = check else {
-        return run_after_flags(&args);
+        return run_after_flags(args);
     };
     run_check(args.get(check_at + 1).cloned())
+}
+
+fn run_shot(args: &[String]) -> ! {
+    match shot::shoot(args) {
+        Ok(report) => {
+            println!(
+                "ok: rendered {} entities / {} links -> {} [{}] {}",
+                report.nodes,
+                report.edges,
+                report.out.display(),
+                report.mode,
+                report.backend,
+            );
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_after_flags(args: &[String]) -> eframe::Result {
