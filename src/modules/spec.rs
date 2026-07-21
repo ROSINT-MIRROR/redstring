@@ -15,6 +15,9 @@ pub struct ModuleSpec {
 
     pub bin: String,
 
+    #[serde(default)]
+    pub requires: Vec<String>,
+
     pub args: Vec<String>,
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
@@ -203,6 +206,7 @@ mod tests {
             label: "t".into(),
             applies_to: vec!["domain".into()],
             bin: "true".into(),
+            requires: Vec::new(),
             args: vec!["{label}".into(), "--slug={slug}".into(), "{attr:registrar}".into()],
             timeout_secs: 5,
             keys: Vec::new(),

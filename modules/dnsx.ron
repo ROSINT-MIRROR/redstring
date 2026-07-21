@@ -10,6 +10,7 @@
     label: "dnsx DNS resolve",
     applies_to: ["domain"],
     bin: "sh",
+    requires: ["dnsx", "jq"],
     args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -silent"],
     timeout_secs: 30,
     shapes: [

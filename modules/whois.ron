@@ -7,6 +7,7 @@
     label: "whois lookup",
     applies_to: ["domain", "ip_address"],
     bin: "whois",
+    requires: [],
     args: ["{value}"],
     timeout_secs: 20,
     shapes: [
