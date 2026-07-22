@@ -66,6 +66,7 @@ pub fn label_box(
 struct LabelClaim {
     rect: Rect,
     priority: f32,
+    id: u64,
 }
 
 #[derive(Clone, Default)]
@@ -75,7 +76,7 @@ struct LabelClaims {
     prev: Vec<LabelClaim>,
 }
 
-pub fn claim_label(ctx: &Context, rect: Rect, priority: f32) -> Result<bool, Error> {
+pub fn claim_label(ctx: &Context, id: u64, rect: Rect, priority: f32) -> Result<bool, Error> {
     let frame = ctx.cumulative_pass_nr();
     let win = ctx.data_mut(|d| {
         let claims = d.get_temp_mut_or_default::<LabelClaims>(egui::Id::new(CLAIMS_ID));
@@ -83,13 +84,12 @@ pub fn claim_label(ctx: &Context, rect: Rect, priority: f32) -> Result<bool, Err
             claims.frame = frame;
             claims.prev = std::mem::take(&mut claims.live);
         }
-        let my_idx = claims.live.len();
-        claims.live.push(LabelClaim { rect, priority });
-        for (k, other) in claims.prev.iter().enumerate() {
-            if k == my_idx || !other.rect.intersects(rect) {
+        claims.live.push(LabelClaim { rect, priority, id });
+        for other in claims.prev.iter() {
+            if other.id == id || !other.rect.intersects(rect) {
                 continue;
             }
-            if other.priority > priority || (other.priority == priority && k < my_idx) {
+            if other.priority > priority || (other.priority == priority && other.id < id) {
                 return false;
             }
         }
@@ -100,12 +100,12 @@ pub fn claim_label(ctx: &Context, rect: Rect, priority: f32) -> Result<bool, Err
 
 pub fn claim_edge_label(
     ctx: &Context,
+    id: u64,
     rect: Rect,
     priority: f32,
     force: bool,
 ) -> Result<bool, Error> {
-    let win = claim_label(ctx, rect, priority)?;
-    Ok(force || win)
+    Ok(force || claim_label(ctx, id, rect, priority)?)
 }
 
 #[cfg(test)]
@@ -228,16 +228,16 @@ mod tests {
         let box_rect = Rect::from_center_size(Pos2::new(100.0, 100.0), Vec2::splat(40.0));
 
         let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
-            claim_label(ui.ctx(), box_rect, 100.0).expect("seed a higher-priority claim");
+            claim_label(ui.ctx(), 1, box_rect, 100.0).expect("seed a higher-priority claim");
         });
 
         let mut warn_win = false;
         let mut verb_win = true;
         let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
             let c = ui.ctx();
-            claim_label(c, box_rect, 100.0).expect("re-seed the higher-priority claim");
-            warn_win = claim_edge_label(c, box_rect, 100.0, true).expect("forced warning claim");
-            verb_win = claim_edge_label(c, box_rect, 0.0, false).expect("gated verb claim");
+            claim_label(c, 1, box_rect, 100.0).expect("re-seed the higher-priority claim");
+            warn_win = claim_edge_label(c, 2, box_rect, 100.0, true).expect("forced warning claim");
+            verb_win = claim_edge_label(c, 3, box_rect, 0.0, false).expect("gated verb claim");
         });
 
         assert!(
@@ -247,6 +247,47 @@ mod tests {
         assert!(
             !verb_win,
             "a gated sourced-verb label overlapping a higher-priority box must be skipped"
+        );
+    }
+
+    #[test]
+    fn disjoint_edge_claim_does_not_shift_node_label_decisions() {
+        let ctx = egui::Context::default();
+        let r = Rect::from_center_size(Pos2::new(100.0, 100.0), Vec2::splat(40.0));
+        let far = Rect::from_center_size(Pos2::new(1000.0, 1000.0), Vec2::splat(40.0));
+        let edge = 1u64 << 63;
+
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let c = ui.ctx();
+            claim_label(c, 1, r, 5.0).expect("seed A");
+            claim_label(c, 2, r, 5.0).expect("seed B");
+        });
+
+        let mut a_win = false;
+        let mut b_win = true;
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let c = ui.ctx();
+            a_win = claim_label(c, 1, r, 5.0).expect("A baseline");
+            b_win = claim_label(c, 2, r, 5.0).expect("B baseline");
+        });
+        assert!(a_win, "baseline: equal-priority lower-id A must win its overlap claim");
+        assert!(!b_win, "baseline: equal-priority higher-id B must yield to A");
+
+        let mut a_win2 = false;
+        let mut b_win2 = true;
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let c = ui.ctx();
+            claim_label(c, edge, far, 1000.0).expect("a disjoint high-priority edge claim, pushed first");
+            a_win2 = claim_label(c, 1, r, 5.0).expect("A with the edge claim present");
+            b_win2 = claim_label(c, 2, r, 5.0).expect("B with the edge claim present");
+        });
+        assert!(
+            a_win2,
+            "A must STILL win: a disjoint hover-inserted edge claim shifts push indices but not stable ids"
+        );
+        assert!(
+            !b_win2,
+            "B must STILL yield: the A/B declutter outcome is invariant to the inserted-first disjoint claim"
         );
     }
 }

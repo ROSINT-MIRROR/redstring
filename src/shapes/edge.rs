@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 use std::cell::Cell;
 
 use egui::epaint::{RectShape, TextShape};
@@ -139,7 +132,6 @@ where
             ));
         }
 
-
         let dir = (e - s).normalized();
         let t1 = e - rotate(dir, TIP_ANGLE) * TIP_SIZE * mult;
         let t2 = e - rotate(dir, -TIP_ANGLE) * TIP_SIZE * mult;
@@ -151,7 +143,8 @@ where
         res.push(Shape::convex_polygon(tip, line_color, Stroke::NONE));
 
         let mid = a + (b - a) * 0.5;
-        res.extend(self.label_shapes(ctx, mid, hot, color, dark));
+        let id = edge_id(start.location(), end.location(), self.kind, self.order);
+        res.extend(self.label_shapes(ctx, id, mid, hot, color, dark));
 
         res
     }
@@ -183,10 +176,6 @@ where
     }
 }
 
-
-
-
-
 impl SourcedEdgeShape {
     pub fn set_shot_labels(on: bool) -> Result<(), Error> {
         SHOT_LABELS.with(|c| c.set(on));
@@ -196,6 +185,7 @@ impl SourcedEdgeShape {
     fn label_shapes(
         &self,
         ctx: &DrawContext,
+        id: u64,
         mid: Pos2,
         hot: bool,
         color: Color32,
@@ -247,7 +237,7 @@ impl SourcedEdgeShape {
         let pad = (fpx * EDGE_LABEL_PAD_FRAC).max(EDGE_LABEL_PAD_MIN);
         let box_rect = Rect::from_center_size(mid, sz + Vec2::splat(pad * 2.0));
         let (priority, force) = edge_label_claim(parts.warn, hot, parts.sealed);
-        let Ok(draw) = claim_edge_label(ctx.ctx, box_rect, priority, force) else {
+        let Ok(draw) = claim_edge_label(ctx.ctx, id, box_rect, priority, force) else {
             return Vec::new();
         };
         if !draw {
@@ -313,6 +303,22 @@ fn edge_label_claim(warn: bool, hot: bool, sealed: bool) -> (f32, bool) {
 
 fn mute_edge(c: Color32) -> Color32 {
     c.gamma_multiply(SEALED_LINE_DIM)
+}
+
+fn edge_id(a: Pos2, b: Pos2, kind: RelationKind, order: usize) -> u64 {
+    let words = [
+        a.x.round() as i64 as u64, a.y.round() as i64 as u64,
+        b.x.round() as i64 as u64, b.y.round() as i64 as u64,
+        kind as u32 as u64, order as u64,
+    ];
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for w in words {
+        for byte in w.to_le_bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    hash | (1u64 << 63)
 }
 
 #[cfg(test)]
@@ -387,7 +393,6 @@ where
         end.display().closest_boundary_point(-dir),
     )
 }
-
 
 fn offset_ends(s: Pos2, e: Pos2, order: usize) -> (Pos2, Pos2) {
     if order == 0 {
