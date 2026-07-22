@@ -27,6 +27,8 @@ mod tests_persistence;
 #[cfg(test)]
 mod tests_delete;
 #[cfg(test)]
+mod tests_merge;
+#[cfg(test)]
 mod tests_flows;
 #[cfg(test)]
 mod tests_hardening;

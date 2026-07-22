@@ -70,6 +70,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         next_run_id: 1,
         delete_confirm: None,
         seal_confirm: None,
+        merge_confirm: None,
         quit_confirm: false,
         allow_close: false,
         saved_fp: String::new(),

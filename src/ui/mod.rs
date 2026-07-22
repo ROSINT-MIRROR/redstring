@@ -12,6 +12,7 @@ mod layout;
 mod links;
 mod lookups;
 mod logview;
+mod multi;
 mod ops;
 mod palette;
 mod pathview;

@@ -1,10 +1,12 @@
 use egui::{Color32, Pos2};
+use petgraph::Direction;
 use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
 
 use crate::error::Error;
 use crate::model::{
     Entity, EntityKind, KIND_META, Origin, Preset, RELATION_META, Relation,
-    RelationKind, Source, SourceKind, Verification, apply_preset,
+    RelationKind, Source, SourceKind, Verification, apply_preset, retain_declared_facets,
 };
 
 use super::app::{RedstringApp, RsGraph};
@@ -119,6 +121,110 @@ impl RedstringApp {
             return Ok(("?".to_owned(), "?".to_owned()));
         };
         Ok((self.node_label(a)?, self.node_label(b)?))
+    }
+
+    pub fn merge_entities(
+        &mut self,
+        survivor: NodeIndex,
+        absorbed: NodeIndex,
+    ) -> Result<(), Error> {
+        if survivor == absorbed {
+            return Ok(());
+        }
+        let Some(node) = self.g.g().node_weight(absorbed) else {
+            return Ok(());
+        };
+        let abs = node.payload().clone();
+        let incident = incident_edges(&self.g, absorbed);
+        merge_payload(&mut self.g, survivor, &abs)?;
+        repoint_edges(&mut self.g, survivor, absorbed, incident);
+        let _removed = self.g.remove_node(absorbed);
+        crate::dlog_info!(
+            "ops",
+            "merge absorbed={} slug={} into survivor={}",
+            absorbed.index(),
+            abs.slug,
+            survivor.index()
+        );
+        Ok(())
+    }
+}
+
+fn incident_edges(g: &RsGraph, absorbed: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Relation)> {
+    let gg = g.g();
+    let mut out = Vec::new();
+    for er in gg
+        .edges_directed(absorbed, Direction::Outgoing)
+        .chain(gg.edges_directed(absorbed, Direction::Incoming))
+    {
+        out.push((er.source(), er.target(), er.weight().payload().clone()));
+    }
+    out
+}
+
+fn merge_payload(g: &mut RsGraph, survivor: NodeIndex, abs: &Entity) -> Result<(), Error> {
+    let Some(node) = g.node_mut(survivor) else {
+        return Ok(());
+    };
+    let s = node.payload_mut();
+    for o in &abs.observations {
+        if s.observations.iter().any(|x| x.name == o.name && x.value == o.value) {
+            continue;
+        }
+        s.observations.push(o.clone());
+    }
+    for (facet, val) in &abs.facets {
+        s.facets.entry(*facet).or_insert_with(|| val.clone());
+    }
+    retain_declared_facets(&mut s.facets, s.kind)?;
+    if !abs.note.trim().is_empty() {
+        if s.note.trim().is_empty() {
+            s.note = abs.note.clone();
+        } else {
+            s.note = format!("{}\n\n---\n\n{}", s.note, abs.note);
+        }
+    }
+    if s.image.is_none() {
+        s.image = abs.image.clone();
+    }
+    Ok(())
+}
+
+fn repoint_edges(
+    g: &mut RsGraph,
+    survivor: NodeIndex,
+    absorbed: NodeIndex,
+    incident: Vec<(NodeIndex, NodeIndex, Relation)>,
+) {
+    for (a, b, rel) in incident {
+        let na = if a == absorbed { survivor } else { a };
+        let nb = if b == absorbed { survivor } else { b };
+        if na == nb {
+            continue;
+        }
+        let existing = g
+            .g()
+            .edges_connecting(na, nb)
+            .find(|er| er.weight().payload().kind == rel.kind)
+            .map(|er| er.id());
+        let Some(eidx) = existing else {
+            let label = RELATION_META[rel.kind as usize].label.to_owned();
+            g.add_edge_with_label(na, nb, rel, label);
+            continue;
+        };
+        let Some(edge) = g.edge_mut(eidx) else {
+            continue;
+        };
+        union_sources(&mut edge.payload_mut().sources, &rel.sources);
+    }
+}
+
+fn union_sources(into: &mut Vec<Source>, extra: &[Source]) {
+    for s in extra {
+        if into.iter().any(|x| x == s) {
+            continue;
+        }
+        into.push(s.clone());
     }
 }
 
