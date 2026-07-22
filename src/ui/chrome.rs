@@ -252,16 +252,24 @@ impl RedstringApp {
                         );
                     });
                     ui.separator();
-                    ui.vertical(|ui| {
-                        ui.set_min_width(320.0);
-                        match self.settings_tab {
-                            SettingsTab::General => changed |= general_tab(ui, &mut self.prefs),
-                            SettingsTab::ApiKeys => {
-                                changed |= api_keys_tab(ui, &mut self.prefs, &api_key_ids)
-                            }
-                            SettingsTab::Modules => modules_tab(ui, &self.registry),
-                        }
-                    });
+                    let cap = settings_tab_cap(ui.ctx().content_rect().height());
+                    egui::ScrollArea::vertical()
+                        .max_height(cap)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.set_min_width(320.0);
+                                match self.settings_tab {
+                                    SettingsTab::General => {
+                                        changed |= general_tab(ui, &mut self.prefs)
+                                    }
+                                    SettingsTab::ApiKeys => {
+                                        changed |= api_keys_tab(ui, &mut self.prefs, &api_key_ids)
+                                    }
+                                    SettingsTab::Modules => modules_tab(ui, &self.registry),
+                                }
+                            });
+                        });
                 });
             });
         self.prefs_open = open;
@@ -386,6 +394,10 @@ impl RedstringApp {
         }
         Ok(())
     }
+}
+
+fn settings_tab_cap(screen_h: f32) -> f32 {
+    (screen_h - 160.0).clamp(180.0, 520.0)
 }
 
 fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
@@ -559,6 +571,13 @@ fn ensure_key<'a>(keys: &'a mut Vec<(String, String)>, id: &str) -> &'a mut Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_tab_cap_floors_tiny_screens_and_ceils_tall_ones() {
+        assert_eq!(settings_tab_cap(300.0), 180.0);
+        assert_eq!(settings_tab_cap(600.0), 440.0);
+        assert_eq!(settings_tab_cap(3000.0), 520.0);
+    }
 
     #[test]
     fn web_archive_is_always_a_settings_key_slot() {
