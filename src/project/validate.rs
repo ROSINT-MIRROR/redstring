@@ -7,7 +7,10 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use crate::error::Error;
-use crate::model::{CaseFile, Origin, RELATION_META, SOURCE_META};
+use crate::model::{
+    CaseFile, Facet, FacetValue, KIND_META, Origin, RELATION_META, ROLE_META, SOURCE_META,
+    Verification, subtype_value,
+};
 
 use super::ignore::RsIgnore;
 use super::io;
@@ -37,35 +40,96 @@ pub fn validate(project: &Project) -> Result<Vec<String>, Error> {
         check_path(project, &ignore, &mut findings, &what, &rel)?;
     }
 
+    facet_lints(&cf, &mut findings)?;
+
     Ok(findings)
+}
+
+fn facet_lints(cf: &CaseFile, findings: &mut Vec<String>) -> Result<(), Error> {
+    for e in &cf.data.entities {
+        let meta = &KIND_META[e.kind as usize];
+        for (facet, value) in &e.facets {
+            if !meta.facets.contains(facet) {
+                findings.push(format!(
+                    "entity {}: facet {facet:?} is not declared by kind '{}'",
+                    e.slug, meta.label
+                ));
+                continue;
+            }
+            let FacetValue::Indexed(n) = value else {
+                continue;
+            };
+            if !facet_index_ok(*facet, *n)? {
+                findings.push(format!("entity {}: facet {facet:?} index {n} out of range", e.slug));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn facet_index_ok(facet: Facet, index: u16) -> Result<bool, Error> {
+    match facet {
+        Facet::Role => Ok((index as usize) < ROLE_META.len()),
+        Facet::Occupation => Ok(false),
+        Facet::OrgType
+        | Facet::AccountType
+        | Facet::DomainType
+        | Facet::SiteType
+        | Facet::ClaimType => Ok(subtype_value(facet, index)?.is_some()),
+    }
+}
+
+pub struct SourcingSummary {
+    pub unproven_edges: usize,
+    pub single_source_edges: usize,
+    pub uncited_obs: usize,
 }
 
 pub fn source_findings(project: &Project) -> Result<Vec<String>, Error> {
-    let cf = io::read_case(project)?;
-    let mut findings: Vec<String> = Vec::new();
-    source_lints(&cf, &mut findings);
-    Ok(findings)
+    Ok(source_report(project)?.0)
 }
 
-fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) {
+pub fn source_report(project: &Project) -> Result<(Vec<String>, SourcingSummary), Error> {
+    let cf = io::read_case(project)?;
+    let mut findings: Vec<String> = Vec::new();
+    let summary = source_lints(&cf, &mut findings);
+    Ok((findings, summary))
+}
+
+fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> SourcingSummary {
+    let mut summary = SourcingSummary {
+        unproven_edges: 0,
+        single_source_edges: 0,
+        uncited_obs: 0,
+    };
     for r in &cf.data.relations {
-        let verb = RELATION_META[r.kind as usize].label;
-        let n = r.sources.len();
-        if n == 0 {
-            findings.push(format!(
-                "edge {} --{verb}--> {} has no source (unproven assertion)",
-                r.from, r.to
-            ));
-        } else if n == 1 {
-            findings.push(format!(
-                "edge {} --{verb}--> {} has a single source (needs corroboration)",
-                r.from, r.to
-            ));
+        if !r.sources.is_empty() {
+            continue;
         }
+        let verb = RELATION_META[r.kind as usize].label;
+        summary.unproven_edges += 1;
+        findings.push(format!(
+            "UNPROVEN edge {} --{verb}--> {}: 0 sources — an unproven assertion, cite it or cut it",
+            r.from, r.to
+        ));
+    }
+    for r in &cf.data.relations {
+        if r.sources.len() != 1 {
+            continue;
+        }
+        let verb = RELATION_META[r.kind as usize].label;
+        summary.single_source_edges += 1;
+        findings.push(format!(
+            "single-source edge {} --{verb}--> {}: 1 source — needs corroboration",
+            r.from, r.to
+        ));
     }
     for e in &cf.data.entities {
         for o in &e.observations {
             if !o.sources.is_empty() {
+                continue;
+            }
+            if matches!(o.status, Verification::NoPublicRecord | Verification::DeniedByTarget) {
                 continue;
             }
             let claim = match &o.origin {
@@ -73,12 +137,14 @@ fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) {
                 Origin::Inference => "inferred",
                 Origin::Lookup(_) | Origin::Import(_) => continue,
             };
+            summary.uncited_obs += 1;
             findings.push(format!(
                 "observation '{}' on {} has no source (uncited {claim} claim)",
                 o.name, e.slug
             ));
         }
     }
+    summary
 }
 
 
@@ -306,12 +372,18 @@ mod tests {
         let findings = full_check(&p);
         let joined = findings.join("\n");
         assert!(
-            joined.contains("edge a --paid--> b has no source (unproven assertion)"),
-            "{joined}"
+            joined.contains("UNPROVEN edge a --paid--> b: 0 sources"),
+            "0-source edges must be marked UNPROVEN and stand out: {joined}"
         );
         assert!(
-            joined.contains("edge a --paid--> c has a single source (needs corroboration)"),
+            joined.contains("single-source edge a --paid--> c: 1 source — needs corroboration"),
             "{joined}"
+        );
+        let unproven_at = joined.find("UNPROVEN edge a").expect("unproven finding present");
+        let single_at = joined.find("single-source edge a").expect("single-source finding present");
+        assert!(
+            unproven_at < single_at,
+            "unproven (0-source) findings must be listed before single-source ones: {joined}"
         );
         assert!(!joined.contains("--paid--> d"), "well-sourced edge must stay silent: {joined}");
         assert!(
@@ -348,5 +420,156 @@ mod tests {
             "a fully-sourced case must produce zero findings (exit 0)"
         );
         std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    fn obs_status(name: &str, origin: Origin, status: Verification) -> Observation {
+        Observation::stamp(
+            name.into(),
+            ObsValue::Text("x".into()),
+            origin,
+            status,
+            Author::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn searched_but_absent_observations_are_not_flagged_uncited() {
+        let p = project("absent");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("absent").unwrap();
+        let mut a = rec("a");
+        a.observations = vec![
+            obs_status("criminal_record", Origin::Manual, Verification::NoPublicRecord),
+            obs_status("denied_alias", Origin::Manual, Verification::DeniedByTarget),
+            obs_status("dob", Origin::Manual, Verification::AnalystAsserted),
+        ];
+        cf.data.entities.push(a);
+        io::write_case(&p, &cf).unwrap();
+
+        let findings = source_findings(&p).unwrap();
+        let joined = findings.join("\n");
+        assert!(
+            !joined.contains("'criminal_record'"),
+            "a NoPublicRecord finding has no positive source to cite by definition: {joined}"
+        );
+        assert!(
+            !joined.contains("'denied_alias'"),
+            "a DeniedByTarget claim must not be flagged uncited: {joined}"
+        );
+        assert!(
+            joined.contains("observation 'dob' on a has no source (uncited manual claim)"),
+            "a genuinely uncited manual claim is still flagged: {joined}"
+        );
+        assert_eq!(findings.len(), 1, "only the real uncited obs is flagged: {joined}");
+        std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    #[test]
+    fn source_report_counts_each_tier() {
+        let p = project("report");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("report").unwrap();
+        let mut a = rec("a");
+        a.observations = vec![obs("dob", Origin::Manual, vec![])];
+        cf.data.entities.push(a);
+        cf.data.entities.push(rec("b"));
+        cf.data.entities.push(rec("c"));
+        cf.data.entities.push(rec("d"));
+        cf.data.relations.push(rel("a", "b", vec![]));
+        cf.data.relations.push(rel("a", "c", vec![]));
+        cf.data.relations.push(rel("a", "d", vec![src()]));
+        io::write_case(&p, &cf).unwrap();
+
+        let (lines, summary) = source_report(&p).unwrap();
+        assert_eq!(summary.unproven_edges, 2, "two 0-source edges");
+        assert_eq!(summary.single_source_edges, 1, "one single-source edge");
+        assert_eq!(summary.uncited_obs, 1, "one uncited manual observation");
+        assert_eq!(lines.len(), 4, "one line per finding across all tiers");
+        std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    #[test]
+    fn facet_index_and_declaration_are_validated() {
+        let p = project("facets");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("facets").unwrap();
+
+        let mut good = rec("good");
+        good.facets.insert(Facet::Role, FacetValue::Indexed(2));
+        cf.data.entities.push(good);
+
+        let mut bad_index = rec("badidx");
+        bad_index.facets.insert(Facet::Role, FacetValue::Indexed(99));
+        cf.data.entities.push(bad_index);
+
+        let mut undeclared = rec("undeclared");
+        undeclared.facets.insert(Facet::OrgType, FacetValue::Indexed(0));
+        cf.data.entities.push(undeclared);
+
+        io::write_case(&p, &cf).unwrap();
+
+        let findings = validate(&p).unwrap();
+        let joined = findings.join("\n");
+        assert!(
+            joined.contains("entity badidx: facet Role index 99 out of range"),
+            "an out-of-range Role index is a structural finding: {joined}"
+        );
+        assert!(
+            joined.contains("entity undeclared: facet OrgType is not declared by kind 'Person'"),
+            "a facet the kind does not declare is a structural finding: {joined}"
+        );
+        assert!(
+            !joined.contains("entity good:"),
+            "an in-range declared facet produces no finding: {joined}"
+        );
+        std::fs::remove_dir_all(p.root).unwrap();
+    }
+
+    #[test]
+    fn findings_split_into_structural_and_advisory_tiers() {
+        let structural = project("split_structural");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("s").unwrap();
+        cf.data.entities.push(rec("a"));
+        cf.data.relations.push(rel("a", "ghost", vec![src(), src()]));
+        io::write_case(&structural, &cf).unwrap();
+        assert!(
+            !validate(&structural).unwrap().is_empty(),
+            "an unknown-slug edge is a STRUCTURAL finding (would classify exit 2)"
+        );
+        assert!(
+            source_findings(&structural).unwrap().is_empty(),
+            "the well-sourced edge raises no advisory noise — the finding is purely structural"
+        );
+        std::fs::remove_dir_all(structural.root).unwrap();
+
+        let advisory = project("split_advisory");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("a").unwrap();
+        cf.data.entities.push(rec("a"));
+        cf.data.entities.push(rec("b"));
+        cf.data.relations.push(rel("a", "b", vec![]));
+        io::write_case(&advisory, &cf).unwrap();
+        assert!(
+            validate(&advisory).unwrap().is_empty(),
+            "an unsourced edge is structurally valid — no structural finding"
+        );
+        assert!(
+            !source_findings(&advisory).unwrap().is_empty(),
+            "but it IS an advisory sourcing finding (would classify exit 1)"
+        );
+        std::fs::remove_dir_all(advisory.root).unwrap();
+
+        let clean = project("split_clean");
+        let mut cf = CaseFile::default();
+        cf.meta = CaseMeta::stamped("c").unwrap();
+        cf.data.entities.push(rec("a"));
+        cf.data.entities.push(rec("b"));
+        cf.data.relations.push(rel("a", "b", vec![src(), src()]));
+        io::write_case(&clean, &cf).unwrap();
+        assert!(validate(&clean).unwrap().is_empty(), "no structural findings");
+        assert!(source_findings(&clean).unwrap().is_empty(), "no advisory findings — exit 0");
+        std::fs::remove_dir_all(clean.root).unwrap();
     }
 }
