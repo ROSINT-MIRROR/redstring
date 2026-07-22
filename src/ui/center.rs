@@ -13,6 +13,11 @@ use super::graphalg;
 
 const CENTER_MARGIN: f32 = 0.85;
 const CENTER_MAX_ZOOM: f32 = 1.5;
+const MIN_CLUSTER: usize = 8;
+const OUTLIER_IQR_K: f32 = 1.5;
+const OUTLIER_SLACK: f32 = 1.1;
+const QUARTILE_LOW: f32 = 0.25;
+const QUARTILE_HIGH: f32 = 0.75;
 
 pub fn center_on_node(loc: Pos2, board: Vec2, zoom: f32) -> Result<Camera, Error> {
     let z = clamp_zoom(zoom)?;
@@ -40,30 +45,104 @@ fn visible_set(g: &RsGraph) -> HashSet<NodeIndex> {
     set
 }
 
-fn cluster_bbox(g: &RsGraph, members: &[NodeIndex]) -> Result<Option<Rect>, Error> {
-    let mut min = Pos2::new(f32::INFINITY, f32::INFINITY);
-    let mut max = Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
-    let mut any = false;
+fn member_points(g: &RsGraph, members: &[NodeIndex]) -> Result<Vec<(Pos2, f32)>, Error> {
+    let mut pts: Vec<(Pos2, f32)> = Vec::new();
     for &idx in members {
         let Some(n) = g.node(idx) else {
             continue;
         };
         let e = n.payload();
         let half = base_radius(e)? * e.size * e.boost;
-        let loc = n.location();
-        min.x = min.x.min(loc.x - half);
-        min.y = min.y.min(loc.y - half);
-        max.x = max.x.max(loc.x + half);
-        max.y = max.y.max(loc.y + half);
-        any = true;
+        pts.push((n.location(), half));
     }
-    if !any {
-        return Ok(None);
-    }
-    Ok(Some(Rect::from_min_max(min, max)))
+    Ok(pts)
 }
 
-pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>, Error> {
+pub fn cluster_bounds(pts: &[(Pos2, f32)]) -> Result<Rect, Error> {
+    if pts.is_empty() {
+        return Err(Error::Render {
+            what: "cluster bounds: no visible nodes".to_owned(),
+        });
+    }
+    if pts.len() < MIN_CLUSTER {
+        return Ok(bounds_of(pts));
+    }
+    let mut xs: Vec<f32> = pts.iter().map(|(p, _)| p.x).collect();
+    let mut ys: Vec<f32> = pts.iter().map(|(p, _)| p.y).collect();
+    let center = Pos2::new(median(&mut xs), median(&mut ys));
+    let mut dists: Vec<f32> = pts.iter().map(|(p, _)| (*p - center).length()).collect();
+    let q1 = percentile(&mut dists, QUARTILE_LOW);
+    let q3 = percentile(&mut dists, QUARTILE_HIGH);
+    let iqr = (q3 - q1).max(0.0);
+    let cut = (q3 + OUTLIER_IQR_K * iqr).max(q3 * OUTLIER_SLACK);
+    let kept: Vec<(Pos2, f32)> = pts
+        .iter()
+        .copied()
+        .filter(|(p, _)| (*p - center).length() <= cut)
+        .collect();
+    if kept.is_empty() {
+        return Ok(bounds_of(pts));
+    }
+    Ok(bounds_of(&kept))
+}
+
+fn bounds_of(pts: &[(Pos2, f32)]) -> Rect {
+    let mut min = Pos2::new(f32::INFINITY, f32::INFINITY);
+    let mut max = Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for (p, half) in pts {
+        min.x = min.x.min(p.x - half);
+        min.y = min.y.min(p.y - half);
+        max.x = max.x.max(p.x + half);
+        max.y = max.y.max(p.y + half);
+    }
+    Rect::from_min_max(min, max)
+}
+
+fn median(vals: &mut [f32]) -> f32 {
+    if vals.is_empty() {
+        return 0.0;
+    }
+    vals.sort_by(f32::total_cmp);
+    let mid = vals.len() / 2;
+    if vals.len() % 2 == 1 {
+        vals[mid]
+    } else {
+        (vals[mid - 1] + vals[mid]) * 0.5
+    }
+}
+
+fn percentile(vals: &mut [f32], p: f32) -> f32 {
+    if vals.is_empty() {
+        return 0.0;
+    }
+    vals.sort_by(f32::total_cmp);
+    let clamped = p.clamp(0.0, 1.0);
+    let idx = ((clamped * (vals.len() as f32 - 1.0)).round() as usize).min(vals.len() - 1);
+    vals[idx]
+}
+
+fn offscreen_count(
+    g: &RsGraph,
+    visible: &HashSet<NodeIndex>,
+    board: Vec2,
+    cam: Camera,
+) -> Result<usize, Error> {
+    let mut off = 0usize;
+    for &idx in visible {
+        let Some(n) = g.node(idx) else {
+            continue;
+        };
+        let loc = n.location();
+        let sx = loc.x * cam.zoom + cam.x;
+        let sy = loc.y * cam.zoom + cam.y;
+        if sx < 0.0 || sx > board.x || sy < 0.0 || sy > board.y {
+            off += 1;
+        }
+    }
+    Ok(off)
+}
+
+pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize, usize)>, Error> {
     if board.x < 1.0 || board.y < 1.0 {
         return Ok(None);
     }
@@ -76,11 +155,16 @@ pub fn center_camera(g: &RsGraph, board: Vec2) -> Result<Option<(Camera, usize)>
         return Ok(None);
     };
     let members = &comps[pick];
-    let Some(bbox) = cluster_bbox(g, members)? else {
+    let pts = member_points(g, members)?;
+    if pts.is_empty() {
         return Ok(None);
-    };
-    let cam = fit_box_to_board(bbox, board, CENTER_MARGIN, CENTER_MAX_ZOOM)?;
-    Ok(Some((cam, members.len())))
+    }
+    let bbox = cluster_bounds(&pts)?;
+    let mut radii: Vec<f32> = pts.iter().map(|(_, r)| *r).collect();
+    let medr = median(&mut radii);
+    let cam = fit_box_to_board(bbox, board, CENTER_MARGIN, CENTER_MAX_ZOOM, medr)?;
+    let off = offscreen_count(g, &visible, board, cam)?;
+    Ok(Some((cam, members.len(), off)))
 }
 
 #[cfg(test)]
@@ -92,11 +176,16 @@ mod tests {
 
     use super::super::app::RsGraph;
     use super::super::board::{MAX_ZOOM, MIN_ZOOM};
-    use super::{CENTER_MAX_ZOOM, center_camera, center_on_node};
-    use crate::model::{
-        Author, Camera, Origin, Relation, RelationKind, Verification,
-    };
+    use super::{CENTER_MAX_ZOOM, bounds_of, center_camera, center_on_node, cluster_bounds};
+    use crate::model::{Author, Camera, Origin, Relation, RelationKind, Verification};
+    use crate::shapes::base_radius;
     use crate::ui::testkit::nodes::person;
+
+    fn node_radius(g: &RsGraph, idx: NodeIndex) -> f32 {
+        let n = g.node(idx).expect("node exists");
+        let e = n.payload();
+        base_radius(e).expect("radius") * e.size * e.boost
+    }
 
     fn spawn_at(g: &mut RsGraph, name: &str, x: f32, y: f32) -> NodeIndex {
         g.add_node_with_label_and_location(person(name), name.into(), Pos2::new(x, y))
@@ -159,7 +248,7 @@ mod tests {
         }
 
         let board = Vec2::new(800.0, 600.0);
-        let Ok(Some((cam, n))) = center_camera(&g, board) else {
+        let Ok(Some((cam, n, _off))) = center_camera(&g, board) else {
             panic!("expected a camera for a board with visible nodes");
         };
         assert_eq!(n, 5);
@@ -181,7 +270,7 @@ mod tests {
         let _solo = spawn_at(&mut g, "solo", 300.0, 200.0);
         let board = Vec2::new(800.0, 600.0);
 
-        let Ok(Some((cam, n))) = center_camera(&g, board) else {
+        let Ok(Some((cam, n, _off))) = center_camera(&g, board) else {
             panic!("expected a camera for a single visible node");
         };
         assert_eq!(n, 1);
@@ -245,12 +334,155 @@ mod tests {
         link(&mut g, d0, d1);
 
         let board = Vec2::new(800.0, 600.0);
-        let Ok(Some((cam, n))) = center_camera(&g, board) else {
+        let Ok(Some((cam, n, _off))) = center_camera(&g, board) else {
             panic!("expected a camera");
         };
         assert_eq!(n, 2);
         let c = framed_center(cam, board);
         assert!(c.x.abs() < 50.0, "tie must frame lowest-index cluster, x={}", c.x);
         assert!((c.x - 2000.0).abs() > 100.0);
+    }
+
+    fn pt(x: f32, y: f32) -> (Pos2, f32) {
+        (Pos2::new(x, y), 5.0)
+    }
+
+    #[test]
+    fn empty_cluster_bounds_is_error() {
+        assert!(cluster_bounds(&[]).is_err(), "no nodes must be an error, not a bogus rect");
+    }
+
+    #[test]
+    fn single_node_bounds_that_node() {
+        let r = cluster_bounds(&[pt(100.0, 40.0)]).unwrap();
+        assert!(r.contains(Pos2::new(100.0, 40.0)));
+        assert!(r.width() >= 10.0 && r.height() >= 10.0, "half-extent must inflate the box");
+    }
+
+    #[test]
+    fn far_outlier_dropped_from_bounds() {
+        let mut pts: Vec<(Pos2, f32)> = Vec::new();
+        for i in 0..19 {
+            let a = i as f32 * 0.33;
+            pts.push(pt(200.0 + a.cos() * 30.0, 200.0 + a.sin() * 30.0));
+        }
+        pts.push(pt(5000.0, 5000.0));
+        let clamped = cluster_bounds(&pts).unwrap();
+        let full = bounds_of(&pts);
+        assert!(
+            clamped.max.x < 400.0 && clamped.max.y < 400.0,
+            "the far outlier must be excluded from the fit box, got {clamped:?}"
+        );
+        assert!(
+            full.max.x > 4000.0,
+            "sanity: the full box would include the outlier, got {full:?}"
+        );
+    }
+
+    #[test]
+    fn tight_cluster_keeps_everyone() {
+        let mut pts: Vec<(Pos2, f32)> = Vec::new();
+        for i in 0..12 {
+            let a = i as f32 / 12.0 * std::f32::consts::TAU;
+            pts.push(pt(a.cos() * 50.0, a.sin() * 50.0));
+        }
+        let r = cluster_bounds(&pts).unwrap();
+        assert!(
+            r.width() > 90.0 && r.height() > 90.0,
+            "a spread with no outliers must keep its full extent, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn tight_core_survives_many_outliers() {
+        let mut pts: Vec<(Pos2, f32)> = Vec::new();
+        for ring in 1..=4 {
+            let radius = ring as f32 * 25.0;
+            for k in 0..10 {
+                let a = k as f32 / 10.0 * std::f32::consts::TAU;
+                pts.push(pt(300.0 + a.cos() * radius, 300.0 + a.sin() * radius));
+            }
+        }
+        for (ox, oy) in [
+            (3300.0, 300.0),
+            (-3200.0, 300.0),
+            (300.0, 4300.0),
+            (300.0, -4500.0),
+            (6000.0, 6000.0),
+            (-5000.0, -5000.0),
+            (300.0, 8000.0),
+            (9000.0, 300.0),
+        ] {
+            pts.push(pt(ox, oy));
+        }
+        let r = cluster_bounds(&pts).unwrap();
+        assert!(
+            r.width() < 600.0 && r.height() < 600.0,
+            "the box must hug the tight core, not stretch to the flung outliers, got {r:?}"
+        );
+        assert!(r.contains(Pos2::new(300.0, 300.0)), "the core center stays framed");
+        assert!(
+            r.max.x < 1000.0 && r.max.y < 1000.0 && r.min.x > -1000.0 && r.min.y > -1000.0,
+            "every far outlier must fall outside the fit box, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn small_cluster_frames_fully_with_nothing_offscreen() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let a = spawn_at(&mut g, "a", -40.0, 0.0);
+        let b = spawn_at(&mut g, "b", 40.0, 0.0);
+        let c = spawn_at(&mut g, "c", 0.0, 40.0);
+        link(&mut g, a, b);
+        link(&mut g, b, c);
+
+        let board = Vec2::new(800.0, 600.0);
+        let Ok(Some((cam, n, off))) = center_camera(&g, board) else {
+            panic!("expected a camera");
+        };
+        assert_eq!(n, 3);
+        assert_eq!(off, 0, "a small cluster must fit fully — nothing off-screen");
+        assert!(cam.zoom <= CENTER_MAX_ZOOM + 1e-4, "must not over-zoom past the fit cap");
+        let r = node_radius(&g, a);
+        assert!(r * cam.zoom >= 5.0, "nodes stay legible, on-screen radius={}", r * cam.zoom);
+    }
+
+    #[test]
+    fn wide_cluster_floors_zoom_and_reports_offscreen() {
+        let mut g: RsGraph = Graph::from(&StableGraph::default());
+        let mut prev: Option<NodeIndex> = None;
+        let mut first: Option<NodeIndex> = None;
+        for i in 0..10 {
+            let x = -3000.0 + i as f32 * 667.0;
+            let idx = spawn_at(&mut g, &format!("w{i}"), x, 0.0);
+            if let Some(p) = prev {
+                link(&mut g, p, idx);
+            }
+            if first.is_none() {
+                first = Some(idx);
+            }
+            prev = Some(idx);
+        }
+
+        let board = Vec2::new(800.0, 600.0);
+        let natural_fit = board.x * 0.85 / 6022.0;
+        let Ok(Some((cam, n, off))) = center_camera(&g, board) else {
+            panic!("expected a camera");
+        };
+        assert_eq!(n, 10);
+        let idx = first.expect("a node was spawned");
+        let r = node_radius(&g, idx);
+        assert!(
+            r * cam.zoom >= 5.0,
+            "a cluster too wide to fit must floor zoom so nodes stay >=5px, on-screen radius={}",
+            r * cam.zoom
+        );
+        assert!(
+            cam.zoom > natural_fit * 1.5,
+            "the legibility floor must lift zoom above the raw fit ({natural_fit}), got {}",
+            cam.zoom
+        );
+        assert!(cam.zoom <= CENTER_MAX_ZOOM, "the floor must never exceed the fit cap");
+        assert!(off > 0, "a cluster wider than the viewport must report off-screen nodes");
     }
 }

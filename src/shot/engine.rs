@@ -19,7 +19,9 @@ use crate::shapes::{
     IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX, NODE_RADIUS,
     SourcedEdgeShape, label_box,
 };
-use crate::ui::{RsGraph, apply_visuals, board_color, build_graph, clamp_zoom, fit_box_to_board};
+use crate::ui::{
+    RsGraph, apply_visuals, board_color, build_graph, clamp_zoom, cluster_bounds, fit_box_to_board,
+};
 
 use super::png::render_png;
 
@@ -244,13 +246,28 @@ fn fit_camera(g: &RsGraph, board: Vec2) -> Camera {
     if pts.is_empty() || board.x < 1.0 || board.y < 1.0 {
         return Camera::default();
     }
-    let Ok(bbox) = super::frame::cluster_bounds(&pts) else {
+    let Ok(bbox) = cluster_bounds(&pts) else {
         return Camera::default();
     };
-    let Ok(cam) = fit_box_to_board(bbox, board, MARGIN_FRAC, MAX_FIT_ZOOM) else {
+    let mut radii: Vec<f32> = pts.iter().map(|(_, r)| *r).collect();
+    let medr = median_radius(&mut radii);
+    let Ok(cam) = fit_box_to_board(bbox, board, MARGIN_FRAC, MAX_FIT_ZOOM, medr) else {
         return Camera::default();
     };
     cam
+}
+
+fn median_radius(vals: &mut [f32]) -> f32 {
+    if vals.is_empty() {
+        return 0.0;
+    }
+    vals.sort_by(f32::total_cmp);
+    let mid = vals.len() / 2;
+    if vals.len() % 2 == 1 {
+        vals[mid]
+    } else {
+        (vals[mid - 1] + vals[mid]) * 0.5
+    }
 }
 
 fn layout_pass(g: &mut RsGraph) {
