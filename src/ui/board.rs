@@ -1,6 +1,6 @@
 use std::sync::{Mutex, OnceLock};
 
-use egui::{Pos2, Rect, Vec2};
+use egui::{Color32, Pos2, Rect, Vec2};
 use egui_graphs::{
     GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation, SettingsStyle,
 };
@@ -8,7 +8,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META, Preset};
-use crate::shapes::{SourcedEdgeShape, base_radius};
+use crate::shapes::{SourcedEdgeShape, base_radius, texture_for};
 
 use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
@@ -122,6 +122,14 @@ fn scroll_zoom(ui: &mut egui::Ui) -> Result<(), Error> {
     Ok(())
 }
 
+fn cover_rect(board: Rect, img: Vec2) -> Rect {
+    if img.x <= 0.0 || img.y <= 0.0 {
+        return board;
+    }
+    let scale = (board.width() / img.x).max(board.height() / img.y);
+    Rect::from_center_size(board.center(), img * scale)
+}
+
 impl RedstringApp {
     pub fn zoom_bar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let mut mf = meta(ui)?;
@@ -162,9 +170,29 @@ impl RedstringApp {
         Ok(())
     }
 
+    fn draw_background(&self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
+        let Some(path) = self.prefs.background.as_deref() else {
+            return Ok(());
+        };
+        let Some(tex) = texture_for(ui.ctx(), path)? else {
+            return Ok(());
+        };
+        let tint =
+            Color32::from_white_alpha((self.prefs.background_opacity.clamp(0.0, 1.0) * 255.0) as u8);
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.image(
+            tex.id(),
+            cover_rect(rect, tex.size_vec2()),
+            Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+            tint,
+        );
+        Ok(())
+    }
+
     pub fn board(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let rect = ui.available_rect_before_wrap();
         self.board_size = rect.size();
+        self.draw_background(ui, rect)?;
 
         self.apply_fold()?;
         self.edge_drag_input(ui, rect)?;
@@ -539,5 +567,25 @@ impl RedstringApp {
         let idx = self.add_preset(&preset, canvas)?;
         self.ne_preset = Some(preset);
         self.start_label_edit(idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cover_rect_covers_centered_and_keeps_aspect() {
+        let board = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(800.0, 600.0));
+
+        let wide = cover_rect(board, Vec2::new(1600.0, 400.0));
+        assert!(wide.contains_rect(board));
+        assert!((wide.center() - board.center()).length() < 1e-3);
+        assert!((wide.width() / wide.height() - 1600.0 / 400.0).abs() < 1e-3);
+
+        let tall = cover_rect(board, Vec2::new(400.0, 1600.0));
+        assert!(tall.contains_rect(board));
+        assert!((tall.center() - board.center()).length() < 1e-3);
+        assert!((tall.width() / tall.height() - 400.0 / 1600.0).abs() < 1e-3);
     }
 }
