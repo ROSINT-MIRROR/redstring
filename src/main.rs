@@ -22,11 +22,24 @@ fn main() -> eframe::Result {
 }
 
 fn run_after_check(args: &[String]) -> eframe::Result {
-    let check = args.iter().position(|a| a == "--check");
-    let Some(check_at) = check else {
+    let Some(at) = args.iter().position(|a| a == "--check") else {
+        return run_after_derive(args);
+    };
+    run_check(args.get(at + 1).cloned())
+}
+
+fn run_after_derive(args: &[String]) -> eframe::Result {
+    let Some(at) = args.iter().position(|a| a == "--derive") else {
+        return run_after_export(args);
+    };
+    run_derive(args.get(at + 1).cloned())
+}
+
+fn run_after_export(args: &[String]) -> eframe::Result {
+    let Some(at) = args.iter().position(|a| a == "--export") else {
         return run_after_flags(args);
     };
-    run_check(args.get(check_at + 1).cloned())
+    run_export(args.get(at + 1).cloned())
 }
 
 fn run_shot(args: &[String]) -> ! {
@@ -80,24 +93,111 @@ fn run_check(path: Option<String>) -> ! {
 }
 
 fn check_case(target: &str) -> ! {
-    let result = project::Project::open(Path::new(target)).and_then(|p| {
-        let mut findings = project::validate(&p)?;
-        findings.extend(project::source_findings(&p)?);
-        Ok(findings)
-    });
-    let findings = match result {
-        Ok(f) => f,
+    let opened: Result<(Vec<String>, Vec<String>, project::SourcingSummary), _> =
+        project::Project::open(Path::new(target)).and_then(|p| {
+            let structural = project::validate(&p)?;
+            let (advisory, summary) = project::source_report(&p)?;
+            Ok((structural, advisory, summary))
+        });
+    let (structural, advisory, summary) = match opened {
+        Ok(v) => v,
         Err(err) => {
             eprintln!("error: {err}");
-            std::process::exit(1);
+            std::process::exit(2);
         }
     };
-    if findings.is_empty() {
-        println!("ok: case is consistent");
-        std::process::exit(0);
+    for f in &structural {
+        println!("error: {f}");
     }
-    for f in &findings {
+    for f in &advisory {
         println!("warn: {f}");
     }
-    std::process::exit(1);
+    println!(
+        "summary: {} structural error(s), {} advisory warning(s) — {} unproven (0-src) + {} single-source edge(s), {} uncited obs",
+        structural.len(),
+        advisory.len(),
+        summary.unproven_edges,
+        summary.single_source_edges,
+        summary.uncited_obs,
+    );
+    std::process::exit(check_exit(structural.len(), advisory.len()));
+}
+
+fn check_exit(structural: usize, advisory: usize) -> i32 {
+    if structural > 0 {
+        return 2;
+    }
+    if advisory > 0 {
+        return 1;
+    }
+    0
+}
+
+fn run_derive(path: Option<String>) -> ! {
+    let Some(target) = path else {
+        derive_case(".");
+    };
+    derive_case(&target)
+}
+
+fn derive_case(target: &str) -> ! {
+    let outcome = project::Project::open(Path::new(target)).and_then(|p| {
+        let cf = project::read_case(&p)?;
+        project::write_json(&p, &cf)?;
+        project::write_graph_md(&p, &cf)?;
+        project::write_dossiers(&p, &cf)?;
+        Ok(p.root.clone())
+    });
+    match outcome {
+        Ok(root) => {
+            println!("ok: wrote {}", root.join("case.json").display());
+            println!("ok: wrote {}", root.join("graph.md").display());
+            println!(
+                "ok: wrote per-entity dossiers under {}",
+                root.join("entities").display()
+            );
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            std::process::exit(2);
+        }
+    }
+}
+
+fn run_export(path: Option<String>) -> ! {
+    let Some(target) = path else {
+        export_case(".");
+    };
+    export_case(&target)
+}
+
+fn export_case(target: &str) -> ! {
+    let outcome = project::Project::open(Path::new(target)).and_then(|p| project::export(&p));
+    match outcome {
+        Ok((path, files, sealed)) => {
+            println!(
+                "ok: wrote {} ({files} file(s), {sealed} sealed entities redacted)",
+                path.display()
+            );
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            std::process::exit(2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_exit;
+
+    #[test]
+    fn exit_code_tiers_structural_advisory_clean() {
+        assert_eq!(check_exit(0, 0), 0, "clean case classifies exit 0");
+        assert_eq!(check_exit(0, 3), 1, "advisory-only classifies exit 1");
+        assert_eq!(check_exit(2, 0), 2, "structural findings classify exit 2");
+        assert_eq!(check_exit(1, 5), 2, "any structural finding dominates advisory ones");
+    }
 }
