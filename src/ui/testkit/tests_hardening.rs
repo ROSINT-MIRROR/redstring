@@ -639,7 +639,8 @@ mod tests {
     }
 
     fn fp(app: &crate::ui::RedstringApp) -> String {
-        crate::ui::fingerprint::compute_fingerprint(&app.g, "case", false).unwrap()
+        crate::ui::fingerprint::compute_fingerprint(&app.g, "case", &crate::model::CaseDisplay::default())
+            .unwrap()
     }
 
     fn set_valid_from(app: &mut crate::ui::RedstringApp, e: petgraph::graph::EdgeIndex, v: Option<DateVal>) {

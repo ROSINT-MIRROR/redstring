@@ -9,21 +9,14 @@ use crate::shapes::{IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, NODE_RADIUS};
 
 use super::app::RedstringApp;
 
+pub use crate::model::LayoutKind;
+
 const STEP: f32 = 140.0;
 const STEP_MARGIN: f32 = 30.0;
 const FORCE_ITERS: u32 = 300;
 const GRAVITY: f32 = 0.04;
 const ANIM_SECS: f64 = 0.35;
 const SPREAD_FACTOR: f32 = 1.2;
-
-#[derive(Clone, Copy)]
-pub enum LayoutKind {
-    Grid,
-    Circle,
-    Tree,
-    Force,
-    Radial,
-}
 
 #[derive(Clone, Copy)]
 pub enum Spread {
@@ -50,6 +43,38 @@ impl RedstringApp {
             .filter(|idx| !self.node_hidden(*idx))
             .collect();
         self.run_layout(ui, kind, targets)
+    }
+
+    pub fn nodes_arrived(
+        &mut self,
+        ui: &egui::Ui,
+        added: usize,
+        steps: Vec<(NodeIndex, Pos2, Pos2)>,
+    ) -> Result<(), Error> {
+        if self.relayout_on_add && added > 0 {
+            self.apply_fold()?;
+            return self.relayout_all(ui, self.current_layout);
+        }
+        self.kick_spawn_anim(ui, steps)
+    }
+
+    fn kick_spawn_anim(
+        &mut self,
+        ui: &egui::Ui,
+        steps: Vec<(NodeIndex, Pos2, Pos2)>,
+    ) -> Result<(), Error> {
+        if steps.is_empty() {
+            return Ok(());
+        }
+        let start = ui.input(|i| i.time);
+        ui.ctx().request_repaint();
+        let Some(anim) = self.layout_anim.as_mut() else {
+            self.layout_anim = Some(LayoutAnim { steps, start });
+            return Ok(());
+        };
+        anim.steps.extend(steps);
+        anim.start = start;
+        Ok(())
     }
 
     fn run_layout(

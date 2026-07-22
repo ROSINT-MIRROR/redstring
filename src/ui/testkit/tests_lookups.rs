@@ -496,8 +496,8 @@ mod tests {
         harness::save(&mut app).unwrap();
         assert_eq!(graph::node_count(&app).unwrap(), 1);
 
-        let (watched_path, _) = app.watched.clone().unwrap();
-        app.watched = Some((watched_path, SystemTime::now() - Duration::from_secs(5)));
+        let (watched_path, _) = app.watcher.baseline.clone().unwrap();
+        app.watcher.baseline = Some((watched_path, SystemTime::now() - Duration::from_secs(5)));
 
         let raw = fixtures::fixture("dnsx.jsonl").unwrap();
         let ron = fixtures::module_ron("dnsx").unwrap();
@@ -529,7 +529,7 @@ mod tests {
             "raw stdout is archived into the case tree — this is the write that trips the watcher"
         );
 
-        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
         harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
 
         assert_eq!(
@@ -696,8 +696,8 @@ mod tests {
 
         graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
         graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
-        harness::save(&mut app).unwrap();
         app.relayout_on_add = true;
+        harness::save(&mut app).unwrap();
         app.layout_anim = None;
 
         let mut cf = crate::project::read_case(&project).unwrap();
@@ -706,9 +706,9 @@ mod tests {
             .push(graph::entity_rec(EntityKind::Domain, "c.example", "c.example").unwrap());
         crate::project::write_case(&project, &cf).unwrap();
 
-        let (path, _) = app.watched.clone().unwrap();
-        app.watched = Some((path, SystemTime::now() - Duration::from_secs(5)));
-        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        let (path, _) = app.watcher.baseline.clone().unwrap();
+        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
         harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
 
         assert_eq!(
@@ -733,17 +733,17 @@ mod tests {
 
         graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
         graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
-        harness::save(&mut app).unwrap();
         app.relayout_on_add = true;
+        harness::save(&mut app).unwrap();
         app.layout_anim = None;
 
         let mut cf = crate::project::read_case(&project).unwrap();
         cf.meta.name = "renamed by an external editor".to_owned();
         crate::project::write_case(&project, &cf).unwrap();
 
-        let (path, _) = app.watched.clone().unwrap();
-        app.watched = Some((path, SystemTime::now() - Duration::from_secs(5)));
-        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        let (path, _) = app.watcher.baseline.clone().unwrap();
+        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
         harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
 
         assert_eq!(

@@ -157,19 +157,35 @@ fn full_confidence() -> u8 {
     DEFAULT_CONFIDENCE
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum LayoutKind {
+    Grid,
+    Circle,
+    Tree,
+    #[default]
+    Force,
+    Radial,
+}
+
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct CaseDisplay {
     #[serde(default)]
     pub camera: Camera,
-    
+
     #[serde(default)]
     pub positions: BTreeMap<String, (f32, f32)>,
-    
+
     #[serde(default)]
     pub sizes: BTreeMap<String, f32>,
 
     #[serde(default)]
     pub size_by_degree: bool,
+
+    #[serde(default)]
+    pub layout: LayoutKind,
+
+    #[serde(default)]
+    pub relayout_on_add: bool,
 
     #[serde(default)]
     pub collapsed: std::collections::BTreeSet<String>,
@@ -327,11 +343,22 @@ mod tests {
             y: -7.5,
             zoom: 1.25,
         };
+        cf.display.layout = LayoutKind::Radial;
+        cf.display.relayout_on_add = true;
 
         let s = ron::ser::to_string_pretty(&cf, ron::ser::PrettyConfig::default()).unwrap();
         let back: CaseFile = ron::from_str(&s).unwrap();
         assert_eq!(cf, back);
         assert_eq!(back.display.sizes.get("doe").copied(), Some(3.5));
+        assert_eq!(
+            back.display.layout,
+            LayoutKind::Radial,
+            "the case's board layout must round-trip through display state"
+        );
+        assert!(
+            back.display.relayout_on_add,
+            "the relayout-on-add policy must round-trip through display state"
+        );
         assert!(back.data.entities[0].sealed, "a sealed entity must round-trip through save→load");
         assert!(
             back.data.relations[0].sealed,
@@ -354,6 +381,22 @@ mod tests {
             })),
             "occupation facet must round-trip"
         );
+    }
+
+    #[test]
+    fn display_without_layout_policy_fields_loads_with_defaults() {
+        let legacy = r#"(
+            camera: (x: 4.0, y: -2.0, zoom: 1.5),
+            positions: {"doe": (10.0, 20.0)},
+            sizes: {},
+            size_by_degree: true,
+            collapsed: [],
+        )"#;
+        let d: CaseDisplay = ron::from_str(legacy).expect("a pre-policy display.ron must parse");
+        assert_eq!(d.layout, LayoutKind::Force, "layout omitted → Force");
+        assert!(!d.relayout_on_add, "relayout_on_add omitted → off");
+        assert!(d.size_by_degree, "the fields it does carry survive");
+        assert_eq!(d.positions.get("doe").copied(), Some((10.0, 20.0)));
     }
 
     #[test]

@@ -110,9 +110,9 @@ mod tests {
         )
         .unwrap();
         harness::save(&mut app).unwrap();
-        let (watched_path, _) = app.watched.clone().unwrap();
+        let (watched_path, _) = app.watcher.baseline.clone().unwrap();
         let sentinel = (watched_path, SystemTime::now() - Duration::from_secs(5));
-        app.watched = Some(sentinel.clone());
+        app.watcher.baseline = Some(sentinel.clone());
 
         let raw = fixtures::fixture("dnsx.jsonl").unwrap();
         let ron = fixtures::module_ron("dnsx").unwrap();
@@ -144,7 +144,7 @@ mod tests {
             "nothing is written into the case that did not launch the run"
         );
         assert_eq!(
-            app.watched,
+            app.watcher.baseline,
             Some(sentinel),
             "the open case's watch baseline is untouched — a pending external edit is not swallowed"
         );
@@ -163,9 +163,9 @@ mod tests {
         harness::load(&mut app).unwrap();
         graph::add_valued(&mut app, EntityKind::Domain, "kept.example", "kept.example").unwrap();
         harness::save(&mut app).unwrap();
-        let (watched_path, _) = app.watched.clone().unwrap();
+        let (watched_path, _) = app.watcher.baseline.clone().unwrap();
         let stale = SystemTime::now() - Duration::from_secs(5);
-        app.watched = Some((watched_path, stale));
+        app.watcher.baseline = Some((watched_path, stale));
 
         let raw = fixtures::fixture("dnsx.jsonl").unwrap();
         let ron = fixtures::module_ron("dnsx").unwrap();
@@ -187,7 +187,7 @@ mod tests {
         );
         assert_eq!(graph::node_count(&app).unwrap(), 1, "nothing is applied without its target");
         assert!(app.status.contains("no longer on the board"), "status: {}", app.status);
-        let (_, seen) = app.watched.clone().unwrap();
+        let (_, seen) = app.watcher.baseline.clone().unwrap();
         assert!(
             seen > stale,
             "the watcher re-baselines over its own evidence write so the archive does not read back as an external edit"
@@ -252,8 +252,8 @@ mod tests {
         graph::link(&mut app, dash, ip, RelationKind::ResolvesTo).unwrap();
         graph::link(&mut app, hetzner, ip, RelationKind::ResolvesTo).unwrap();
         app.toggle_collapse(ip).unwrap();
-        harness::save(&mut app).unwrap();
         app.relayout_on_add = true;
+        harness::save(&mut app).unwrap();
         app.layout_anim = None;
 
         let mut cf = crate::project::read_case(&project).unwrap();
@@ -262,9 +262,9 @@ mod tests {
             .push(graph::entity_rec(EntityKind::Domain, "new.example", "new.example").unwrap());
         crate::project::write_case(&project, &cf).unwrap();
 
-        let (path, _) = app.watched.clone().unwrap();
-        app.watched = Some((path, SystemTime::now() - Duration::from_secs(5)));
-        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        let (path, _) = app.watcher.baseline.clone().unwrap();
+        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
         harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
 
         assert_eq!(graph::node_count(&app).unwrap(), 4, "the external edit reloaded");

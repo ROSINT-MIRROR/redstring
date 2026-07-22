@@ -20,6 +20,14 @@ const TB_NAME: f32 = 16.0;
 const TB_PATH: f32 = 12.0;
 
 fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+    tb_widget(ui, icon, label, None)
+}
+
+fn tb_toggle(ui: &mut egui::Ui, icon: &str, label: &str, on: bool) -> egui::Response {
+    tb_widget(ui, icon, label, Some(on))
+}
+
+fn tb_widget(ui: &mut egui::Ui, icon: &str, label: &str, on: Option<bool>) -> egui::Response {
     let icon_galley = ui.painter().layout_no_wrap(
         icon.to_owned(),
         FontId::proportional(TB_ICON),
@@ -34,7 +42,7 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     let w = icon_galley.size().x.max(text_galley.size().x) + 2.0 * pad.x;
     let h = icon_galley.size().y + text_galley.size().y + 2.0 * pad.y + TB_GAP;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
-    let visuals = ui.style().interact(&resp);
+    let visuals = tb_visuals(ui.style(), &resp, on);
     ui.painter().rect(
         rect,
         visuals.corner_radius,
@@ -60,45 +68,15 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     resp
 }
 
-fn tb_toggle(ui: &mut egui::Ui, icon: &str, label: &str, on: bool) -> egui::Response {
-    let icon_galley = ui.painter().layout_no_wrap(
-        icon.to_owned(),
-        FontId::proportional(TB_ICON),
-        Color32::PLACEHOLDER,
-    );
-    let text_galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        FontId::proportional(TB_TEXT),
-        Color32::PLACEHOLDER,
-    );
-    let pad = ui.spacing().button_padding;
-    let w = icon_galley.size().x.max(text_galley.size().x) + 2.0 * pad.x;
-    let h = icon_galley.size().y + text_galley.size().y + 2.0 * pad.y + TB_GAP;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
-    let visuals = ui.style().interact_selectable(&resp, on);
-    ui.painter().rect(
-        rect,
-        visuals.corner_radius,
-        visuals.weak_bg_fill,
-        visuals.bg_stroke,
-        StrokeKind::Inside,
-    );
-    let cx = rect.center().x;
-    let top = rect.top() + pad.y;
-    ui.painter().galley(
-        Pos2::new(cx - icon_galley.size().x / 2.0, top),
-        icon_galley.clone(),
-        visuals.text_color(),
-    );
-    ui.painter().galley(
-        Pos2::new(
-            cx - text_galley.size().x / 2.0,
-            top + icon_galley.size().y + TB_GAP,
-        ),
-        text_galley,
-        visuals.text_color(),
-    );
-    resp
+fn tb_visuals(
+    style: &egui::Style,
+    resp: &egui::Response,
+    on: Option<bool>,
+) -> egui::style::WidgetVisuals {
+    let Some(selected) = on else {
+        return *style.interact(resp);
+    };
+    style.interact_selectable(resp, selected)
 }
 
 impl RedstringApp {
