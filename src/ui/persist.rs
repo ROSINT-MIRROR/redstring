@@ -247,6 +247,15 @@ impl RedstringApp {
         self.node_drag = None;
         self.resize = None;
         self.layout_anim = None;
+        self.right_press = None;
+        self.node_menu = None;
+        self.node_menu_just_opened = false;
+        self.label_edit = None;
+        self.delete_confirm = None;
+        self.seal_confirm = None;
+        self.merge_confirm = None;
+        self.active_path = None;
+        self.band = None;
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
         self.watch_current()?;
@@ -309,10 +318,11 @@ impl RedstringApp {
             let before = self.g.g().node_count();
             self.load(ui)?;
             let after = self.g.g().node_count();
-            self.status = format!("external edit detected — reloaded {path}");
             if self.relayout_on_add && after > before {
+                self.apply_fold()?;
                 self.relayout_all(ui, self.current_layout)?;
             }
+            self.status = format!("external edit detected — reloaded {path}");
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(1100));

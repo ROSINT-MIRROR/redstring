@@ -15,7 +15,6 @@ use super::app::{RedstringApp, RsGraph};
 use super::layout::LayoutAnim;
 use super::style;
 
-
 pub struct Job {
     pub run_id: u64,
     pub module_id: String,
@@ -75,7 +74,6 @@ impl RedstringApp {
         Ok(run_module)
     }
 
-
     fn job_rows(&self, ui: &mut egui::Ui) -> Result<(), Error> {
         for job in &self.jobs {
             ui.horizontal(|ui| {
@@ -110,7 +108,6 @@ impl RedstringApp {
         Ok(())
     }
 
-
     pub fn jobs_chip(&self, ui: &mut egui::Ui) -> Result<(), Error> {
         if self.jobs.is_empty() {
             return Ok(());
@@ -132,7 +129,6 @@ impl RedstringApp {
             .iter()
             .any(|j| j.module_id == module_id && j.target_slug == slug)
     }
-
 
     pub fn start_module_request(
         &mut self,
@@ -208,7 +204,6 @@ impl RedstringApp {
         }))
     }
 
-
     pub fn poll_module_runs(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         loop {
             let Ok(run) = self.module_rx.try_recv() else {
@@ -262,12 +257,17 @@ impl RedstringApp {
     }
 
     fn apply_run(&mut self, ui: &egui::Ui, run: ModuleRun) -> Result<(), Error> {
+        let source = super::evidence::evidence_source(&run)?;
+        if run.project_root.as_deref() != self.project.as_ref().map(|p| p.root.as_path()) {
+            self.status =
+                format!("{}: finished for another case — raw output archived there", run.module_id);
+            return Ok(());
+        }
+        self.watch_current()?;
         let Some(tidx) = node_by_slug(&self.g, &run.target_slug) else {
             self.status = "lookup target no longer on the board — result dropped".into();
             return Ok(());
         };
-        let source = super::evidence::evidence_source(&run)?;
-        self.watch_current()?;
         if run.shape_id.is_empty() {
             self.status = format!(
                 "{}: no known output shape — raw output archived, nothing parsed",
@@ -338,8 +338,7 @@ impl RedstringApp {
                 }
             }
         }
-        let added = spawned > 0 || linked > 0;
-        if self.relayout_on_add && added {
+        if self.relayout_on_add && spawned > 0 {
             self.relayout_all(ui, self.current_layout)?;
         } else {
             self.kick_spawn_anim(ui, steps)?;

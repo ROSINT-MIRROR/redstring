@@ -32,3 +32,5 @@ mod tests_merge;
 mod tests_flows;
 #[cfg(test)]
 mod tests_hardening;
+#[cfg(test)]
+mod tests_reload_guard;
