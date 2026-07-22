@@ -130,6 +130,14 @@ fn cover_rect(board: Rect, img: Vec2) -> Rect {
     Rect::from_center_size(board.center(), img * scale)
 }
 
+fn pan_should_start(primary_pressed: bool, middle_pressed: bool, on_empty: bool) -> bool {
+    middle_pressed || (primary_pressed && on_empty)
+}
+
+fn band_should_start(secondary_pressed: bool, on_empty: bool) -> bool {
+    secondary_pressed && on_empty
+}
+
 impl RedstringApp {
     pub fn zoom_bar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let mut mf = meta(ui)?;
@@ -266,6 +274,19 @@ impl RedstringApp {
         Ok(Some((idx, Rect::from_center_size(corner, Vec2::splat(14.0)))))
     }
 
+    fn press_on_empty(&self, ui: &egui::Ui, rect: Rect, p: Pos2) -> Result<bool, Error> {
+        if !rect.contains(p) {
+            return Ok(false);
+        }
+        if self
+            .resize_handle_rect(ui, rect)?
+            .is_some_and(|(_, h)| h.contains(p))
+        {
+            return Ok(false);
+        }
+        Ok(self.node_at_screen(ui, rect, p)?.is_none())
+    }
+
     fn node_drag_input(&mut self, ui: &egui::Ui, rect: Rect) -> Result<(), Error> {
         let (pressed, down, pointer) = ui.input(|i| {
             (
@@ -349,21 +370,26 @@ impl RedstringApp {
     }
 
     fn pan_input(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
-        let (mid_pressed, sec_pressed, mid_down, sec_down, pointer, delta) = ui.input(|i| {
+        let (mid_pressed, primary_pressed, mid_down, primary_down, pointer, delta) = ui.input(|i| {
             (
                 i.pointer.button_pressed(egui::PointerButton::Middle),
-                i.pointer.secondary_pressed(),
+                i.pointer.primary_pressed(),
                 i.pointer.button_down(egui::PointerButton::Middle),
-                i.pointer.secondary_down(),
+                i.pointer.primary_down(),
                 i.pointer.interact_pos(),
                 i.pointer.delta(),
             )
         });
 
-        let sec_on_empty = matches!(self.right_press, Some((None, _)));
         if !self.panning
-            && pointer.is_some_and(|p| rect.contains(p))
-            && (mid_pressed || (sec_pressed && sec_on_empty))
+            && (mid_pressed || primary_pressed)
+            && self.node_drag.is_none()
+            && self.edge_drag.is_none()
+            && self.resize.is_none()
+            && self.band.is_none()
+            && self.label_edit.is_none()
+            && let Some(p) = pointer.filter(|p| rect.contains(*p))
+            && pan_should_start(primary_pressed, mid_pressed, self.press_on_empty(ui, rect, p)?)
         {
             self.panning = true;
             crate::dlog_debug!("board", "pan start");
@@ -371,7 +397,7 @@ impl RedstringApp {
         if !self.panning {
             return Ok(());
         }
-        if !mid_down && !sec_down {
+        if !mid_down && !primary_down {
             self.panning = false;
             return Ok(());
         }
@@ -388,8 +414,8 @@ impl RedstringApp {
     fn band_select(&mut self, ui: &mut egui::Ui, rect: Rect) -> Result<(), Error> {
         let (pressed, down, pointer) = ui.input(|i| {
             (
-                i.pointer.primary_pressed(),
-                i.pointer.primary_down(),
+                i.pointer.secondary_pressed(),
+                i.pointer.secondary_down(),
                 i.pointer.interact_pos(),
             )
         });
@@ -400,11 +426,8 @@ impl RedstringApp {
             && self.edge_drag.is_none()
             && self.resize.is_none()
             && self.label_edit.is_none()
-            && let Some(p) = pointer.filter(|p| rect.contains(*p))
-            && !self
-                .resize_handle_rect(ui, rect)?
-                .is_some_and(|(_, h)| h.contains(p))
-            && self.node_at_screen(ui, rect, p)?.is_none()
+            && let Some(p) = pointer
+            && band_should_start(pressed, self.press_on_empty(ui, rect, p)?)
         {
             self.band = Some(p);
             crate::dlog_debug!("board", "rubber-band start");
@@ -587,5 +610,179 @@ mod tests {
         assert!(tall.contains_rect(board));
         assert!((tall.center() - board.center()).length() < 1e-3);
         assert!((tall.width() / tall.height() - 400.0 / 1600.0).abs() < 1e-3);
+    }
+
+    use crate::ui::testkit::{graph, harness};
+
+    fn board_rect() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))
+    }
+
+    fn raw(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(board_rect()),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn moved(to: Pos2) -> egui::RawInput {
+        raw(vec![egui::Event::PointerMoved(to)])
+    }
+
+    fn button(pos: Pos2, which: egui::PointerButton, pressed: bool) -> egui::RawInput {
+        raw(vec![egui::Event::PointerButton {
+            pos,
+            button: which,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        }])
+    }
+
+    fn drive(app: &mut RedstringApp, ctx: &egui::Context, input: egui::RawInput) -> Camera {
+        let mut cam = Camera::default();
+        let _full = ctx.run_ui(input, |ui| {
+            let rect = board_rect();
+            app.board_size = rect.size();
+            app.edge_drag_input(ui, rect).unwrap();
+            app.pan_input(ui, rect).unwrap();
+            app.node_drag_input(ui, rect).unwrap();
+            app.band_select(ui, rect).unwrap();
+            cam = camera_read(ui).unwrap();
+        });
+        cam
+    }
+
+    fn set_loc(app: &mut RedstringApp, idx: NodeIndex, p: Pos2) {
+        app.g.node_mut(idx).unwrap().set_location(p);
+    }
+
+    #[test]
+    fn primary_on_empty_or_middle_starts_a_pan() {
+        assert!(pan_should_start(true, false, true), "left press on empty pans");
+        assert!(
+            !pan_should_start(true, false, false),
+            "left press on a node falls through to node drag, not pan"
+        );
+        assert!(pan_should_start(false, true, false), "middle press pans over a node");
+        assert!(pan_should_start(false, true, true), "middle press pans on empty too");
+        assert!(!pan_should_start(false, false, true), "no button, no pan");
+    }
+
+    #[test]
+    fn secondary_on_empty_starts_a_band() {
+        assert!(band_should_start(true, true), "right press on empty rubber-bands");
+        assert!(
+            !band_should_start(true, false),
+            "right press on a node falls through to edge drag, not band"
+        );
+        assert!(!band_should_start(false, true), "no right press, no band");
+    }
+
+    #[test]
+    fn left_drag_on_empty_pans_and_selects_nothing() {
+        let mut app = harness::app().unwrap();
+        let ctx = egui::Context::default();
+        let start = Pos2::new(400.0, 300.0);
+
+        drive(&mut app, &ctx, moved(start));
+        let cam0 = drive(&mut app, &ctx, button(start, egui::PointerButton::Primary, true));
+        assert!(app.panning, "a left press on empty space starts a pan");
+        assert!(app.band.is_none(), "left-drag pans, it does not rubber-band");
+
+        let cam1 = drive(&mut app, &ctx, moved(Pos2::new(460.0, 340.0)));
+        assert!((cam1.x - cam0.x - 60.0).abs() < 0.5, "camera panned x by ~60, got {}", cam1.x - cam0.x);
+        assert!((cam1.y - cam0.y - 40.0).abs() < 0.5, "camera panned y by ~40, got {}", cam1.y - cam0.y);
+        assert_eq!(app.g.selected_nodes().len(), 0, "panning selects nothing");
+
+        drive(&mut app, &ctx, button(Pos2::new(460.0, 340.0), egui::PointerButton::Primary, false));
+        assert!(!app.panning, "releasing the button ends the pan");
+    }
+
+    #[test]
+    fn middle_drag_still_pans() {
+        let mut app = harness::app().unwrap();
+        let ctx = egui::Context::default();
+        let start = Pos2::new(200.0, 200.0);
+
+        drive(&mut app, &ctx, moved(start));
+        drive(&mut app, &ctx, button(start, egui::PointerButton::Middle, true));
+        assert!(app.panning, "a middle press starts a pan");
+        let cam0 = drive(&mut app, &ctx, moved(start));
+        let cam1 = drive(&mut app, &ctx, moved(Pos2::new(230.0, 250.0)));
+        assert!(
+            (cam1.x - cam0.x - 30.0).abs() < 0.5 && (cam1.y - cam0.y - 50.0).abs() < 0.5,
+            "middle-drag pans by the delta"
+        );
+        drive(&mut app, &ctx, button(Pos2::new(230.0, 250.0), egui::PointerButton::Middle, false));
+        assert!(!app.panning);
+    }
+
+    #[test]
+    fn right_drag_on_empty_bands_and_does_not_pan() {
+        let mut app = harness::app().unwrap();
+        let ctx = egui::Context::default();
+        let start = Pos2::new(100.0, 100.0);
+
+        drive(&mut app, &ctx, moved(start));
+        drive(&mut app, &ctx, button(start, egui::PointerButton::Secondary, true));
+        assert!(app.band.is_some(), "a right press on empty space starts a rubber-band");
+        assert!(!app.panning, "right-drag selects, it does not pan");
+
+        drive(&mut app, &ctx, moved(Pos2::new(300.0, 260.0)));
+        assert!(app.band.is_some(), "the band stays active while the button is held");
+
+        drive(&mut app, &ctx, button(Pos2::new(300.0, 260.0), egui::PointerButton::Secondary, false));
+        assert!(app.band.is_none(), "releasing the button ends the band");
+    }
+
+    #[test]
+    fn rubber_band_selects_the_nodes_it_covers() {
+        let mut app = harness::app().unwrap();
+        let inside = graph::add(&mut app, EntityKind::Person, "Inside").unwrap();
+        let outside = graph::add(&mut app, EntityKind::Person, "Outside").unwrap();
+        set_loc(&mut app, inside, Pos2::new(120.0, 120.0));
+        set_loc(&mut app, outside, Pos2::new(600.0, 500.0));
+
+        let ctx = egui::Context::default();
+        let _full = ctx.run_ui(raw(vec![]), |ui| {
+            camera_write(ui, Camera { x: 0.0, y: 0.0, zoom: 1.0 }).unwrap();
+            let band = Rect::from_min_max(Pos2::new(80.0, 80.0), Pos2::new(220.0, 220.0));
+            app.apply_band(ui, board_rect(), band).unwrap();
+        });
+        assert!(app.g.node(inside).unwrap().selected(), "a node inside the band is selected");
+        assert!(!app.g.node(outside).unwrap().selected(), "a node outside the band is left alone");
+    }
+
+    #[test]
+    fn left_drag_on_a_node_moves_it() {
+        let mut app = harness::app().unwrap();
+        let idx = graph::add(&mut app, EntityKind::Person, "Movable").unwrap();
+        set_loc(&mut app, idx, Pos2::new(100.0, 100.0));
+        let ctx = egui::Context::default();
+
+        drive(&mut app, &ctx, moved(Pos2::new(100.0, 100.0)));
+        let _full = ctx.run_ui(
+            button(Pos2::new(100.0, 100.0), egui::PointerButton::Primary, true),
+            |ui| {
+                camera_write(ui, Camera { x: 0.0, y: 0.0, zoom: 1.0 }).unwrap();
+                app.begin_node_drag(idx, Pos2::new(100.0, 100.0));
+                app.node_drag_input(ui, board_rect()).unwrap();
+            },
+        );
+        assert!(app.node_drag.is_some(), "the node drag is armed");
+        assert!(!app.panning, "dragging a node does not pan the board");
+
+        drive(&mut app, &ctx, moved(Pos2::new(180.0, 150.0)));
+        let at = app.g.node(idx).unwrap().location();
+        assert!(
+            (at.x - 180.0).abs() < 0.5 && (at.y - 150.0).abs() < 0.5,
+            "the node followed the pointer, at ({}, {})",
+            at.x,
+            at.y
+        );
+
+        drive(&mut app, &ctx, button(Pos2::new(180.0, 150.0), egui::PointerButton::Primary, false));
+        assert!(app.node_drag.is_none(), "releasing ends the node drag");
     }
 }

@@ -73,8 +73,10 @@ impl RedstringApp {
         ui.separator();
         ui.label(RichText::new("select an entity or relation").weak());
         ui.add_space(style::GAP);
-        ui.label("• drag to move · scroll to zoom");
-        ui.label("• right-drag entity → entity to link");
+        ui.label("• left-drag empty = pan · right-drag empty = select");
+        ui.label("• left-drag node = move · left-click = select");
+        ui.label("• right-drag node → node = link · right-click node = menu");
+        ui.label("• middle-drag = pan · wheel = zoom · double-click = fold");
         ui.label("• red dashed link = unsourced");
         ui.label("• green link = has ≥1 source");
         Ok(())
