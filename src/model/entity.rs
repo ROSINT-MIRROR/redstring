@@ -61,6 +61,7 @@ pub const CATEGORY_META: [CategoryMeta; 10] = [
 pub enum EntityKind {
     Person,
     Alias,
+    Cohort,
     Organization,
     Court,
     Bank,
@@ -80,7 +81,6 @@ pub enum EntityKind {
     Contract,
     Invoice,
     RegistryRecord,
-    Money,
     Location,
     Address,
     Property,
@@ -100,7 +100,6 @@ pub enum EntityKind {
     CourtRecord,
     Event,
     Meeting,
-    Payment,
     Travel,
     Other,
     WebPage,
@@ -164,9 +163,10 @@ const fn k(
 }
 
 #[rustfmt::skip]
-pub const KIND_META: [KindMeta; 63] = [
-    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
+pub const KIND_META: [KindMeta; 62] = [
+    k(EntityKind::Person, "Person", egui_phosphor::regular::USER, Category::People, (100, 170, 255), &["first_name", "last_name", "dob", "dod", "nationality"], &["individual", "human", "people", "name", "judge", "official", "politician", "lawyer"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
     k(EntityKind::Alias, "Alias", egui_phosphor::regular::USER_SWITCH, Category::People, (140, 150, 235), &["context", "first_seen", "last_seen"], &["aka", "nickname", "pseudonym", "handle"], ValueFormat::Free, &[Facet::Role, Facet::Occupation]),
+    k(EntityKind::Cohort, "Cohort", egui_phosphor::regular::USERS_FOUR, Category::People, (120, 165, 245), &["members", "description", "age_range"], &["group of people", "victims", "minors", "cohort", "anonymous group"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Organization, "Organization", egui_phosphor::regular::BUILDINGS, Category::Organizations, (255, 170, 80), &["type", "country", "founded"], &["org", "group", "association", "company", "corporation", "business", "firm", "llc", "enterprise", "shell company", "shell", "offshore", "front", "spv", "letterbox", "ngo", "nonprofit", "charity", "foundation", "government agency", "government body", "agency", "ministry", "department", "authority", "law firm", "lawyers", "attorneys", "legal", "counsel", "media outlet", "news", "press", "tv", "newspaper", "publication", "political party", "party", "criminal org", "mafia", "cartel", "gang", "mob", "syndicate"], ValueFormat::Free, &[Facet::Role, Facet::OrgType]),
     k(EntityKind::Court, "Court", egui_phosphor::regular::GAVEL, Category::Organizations, (235, 165, 105), &["jurisdiction", "level"], &["tribunal", "judiciary"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Bank, "Bank", egui_phosphor::regular::VAULT, Category::Organizations, (225, 155, 70), &["swift_bic", "jurisdiction", "regulator"], &["financial institution", "lender"], ValueFormat::Free, &[Facet::Role]),
@@ -180,14 +180,13 @@ pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::Device, "Device", egui_phosphor::regular::DEVICE_MOBILE, Category::Digital, (105, 220, 205), &["type", "imei", "owner"], &["laptop", "computer", "hardware", "gadget"], ValueFormat::Free, &[]),
     k(EntityKind::CryptoWallet, "Crypto wallet", egui_phosphor::regular::CURRENCY_BTC, Category::Digital, (60, 195, 155), &["chain", "address", "custodian"], &["bitcoin", "btc", "eth", "blockchain", "crypto"], ValueFormat::Free, &[]),
     k(EntityKind::BankAccount, "Bank account", egui_phosphor::regular::CREDIT_CARD, Category::Financial, (230, 205, 75), &["iban", "bank", "holder", "currency"], &["iban", "account", "swift"], ValueFormat::Free, &[]),
-    k(EntityKind::Transaction, "Transaction", egui_phosphor::regular::ARROWS_LEFT_RIGHT, Category::Financial, (250, 215, 110), &["date", "amount", "currency", "from_account", "to_account"], &["transfer", "wire", "remittance"], ValueFormat::Free, &[]),
+    k(EntityKind::Transaction, "Transaction", egui_phosphor::regular::ARROWS_LEFT_RIGHT, Category::Financial, (250, 215, 110), &["date", "amount", "currency", "from_account", "to_account", "method"], &["transfer", "wire", "remittance", "payment", "payout", "fee", "bribe", "kickback"], ValueFormat::Free, &[]),
     k(EntityKind::Loan, "Loan", egui_phosphor::regular::HAND_COINS, Category::Financial, (215, 185, 90), &["amount", "currency", "lender", "borrower", "date", "terms"], &["credit", "debt", "mortgage"], ValueFormat::Free, &[]),
     k(EntityKind::Donation, "Donation", egui_phosphor::regular::GIFT, Category::Financial, (245, 225, 135), &["amount", "currency", "donor", "recipient", "date"], &["contribution", "funding", "grant"], ValueFormat::Free, &[]),
     k(EntityKind::Contract, "Contract", egui_phosphor::regular::SCROLL, Category::Financial, (235, 210, 120), &["parties", "value", "signed", "subject"], &["agreement", "deal", "mou"], ValueFormat::Free, &[]),
     k(EntityKind::Invoice, "Invoice", egui_phosphor::regular::RECEIPT, Category::Financial, (225, 200, 100), &["number", "amount", "currency", "issuer", "billed_to", "date"], &["bill"], ValueFormat::Free, &[]),
     k(EntityKind::RegistryRecord, "Registry record", egui_phosphor::regular::ARCHIVE, Category::Financial, (205, 185, 70), &["registry", "record_no", "filed", "subject"], &["filing", "registration", "incorporation record"], ValueFormat::Free, &[]),
-    k(EntityKind::Money, "Money", egui_phosphor::regular::MONEY, Category::Financial, (240, 220, 90), &["amount", "currency"], &["cash", "funds", "sum"], ValueFormat::Free, &[]),
-    k(EntityKind::Location, "Location", egui_phosphor::regular::MAP_PIN, Category::Physical, (170, 150, 110), &["country", "country_code", "city", "region", "coordinates"], &["place", "spot", "coordinates", "geo"], ValueFormat::Free, &[]),
+    k(EntityKind::Location, "Location", egui_phosphor::regular::MAP_PIN, Category::Physical, (170, 150, 110), &["country", "country_code", "city", "region", "coordinates"], &["place", "spot", "coordinates", "geo"], ValueFormat::Free, &[Facet::LocationType]),
     k(EntityKind::Address, "Address", egui_phosphor::regular::HOUSE_LINE, Category::Physical, (190, 165, 125), &["street", "city", "country", "postcode"], &["street", "residence", "domicile"], ValueFormat::Free, &[]),
     k(EntityKind::Property, "Property", egui_phosphor::regular::BUILDING_APARTMENT, Category::Physical, (160, 135, 95), &["address", "type", "value", "registered_owner"], &["real estate", "estate", "building", "land", "villa", "mansion"], ValueFormat::Free, &[]),
     k(EntityKind::Vehicle, "Vehicle", egui_phosphor::regular::CAR, Category::Physical, (200, 175, 135), &["plate", "make_model", "vin", "registered_owner"], &["car", "truck", "auto", "motorcycle"], ValueFormat::Free, &[]),
@@ -195,7 +194,7 @@ pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::Aircraft, "Aircraft", egui_phosphor::regular::AIRPLANE, Category::Physical, (205, 185, 150), &["registration", "type", "operator", "owner"], &["plane", "jet", "helicopter"], ValueFormat::Free, &[]),
     k(EntityKind::Shipment, "Shipment", egui_phosphor::regular::PACKAGE, Category::Physical, (180, 155, 115), &["bill_of_lading", "origin", "destination", "cargo", "date"], &["cargo", "container", "freight", "parcel"], ValueFormat::Free, &[]),
     k(EntityKind::Weapon, "Weapon", egui_phosphor::regular::CROSSHAIR, Category::Physical, (140, 115, 85), &["type", "serial_no", "origin"], &["gun", "firearm", "arms", "pistol", "rifle", "knife"], ValueFormat::Free, &[]),
-    k(EntityKind::Asset, "Asset", egui_phosphor::regular::DIAMOND, Category::Physical, (210, 180, 140), &["type", "value", "currency", "owner"], &["valuables", "holding", "artwork", "jewelry"], ValueFormat::Free, &[]),
+    k(EntityKind::Asset, "Asset", egui_phosphor::regular::DIAMOND, Category::Physical, (210, 180, 140), &["type", "value", "currency", "owner"], &["valuables", "holding", "artwork", "jewelry", "cash", "funds", "sum"], ValueFormat::Free, &[]),
     k(EntityKind::Document, "Document", egui_phosphor::regular::FILE_TEXT, Category::Documents, (200, 200, 200), &["date", "author", "file"], &["file", "paper", "doc", "memo"], ValueFormat::Free, &[]),
     k(EntityKind::Passport, "Passport", egui_phosphor::regular::IDENTIFICATION_CARD, Category::Documents, (185, 190, 205), &["number", "country", "issued", "expires", "holder"], &["travel document", "visa", "id"], ValueFormat::Free, &[]),
     k(EntityKind::Leak, "Leak", egui_phosphor::regular::DROP, Category::Documents, (170, 190, 200), &["date", "size", "origin", "obtained_via"], &["dump", "breach", "disclosure"], ValueFormat::Free, &[]),
@@ -206,7 +205,6 @@ pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::CourtRecord, "Court record", egui_phosphor::regular::STAMP, Category::Documents, (180, 180, 165), &["case_no", "court", "date", "type"], &["case file", "docket", "ruling", "verdict", "indictment", "deposition"], ValueFormat::Free, &[]),
     k(EntityKind::Event, "Event", egui_phosphor::regular::CALENDAR, Category::Events, (255, 120, 120), &["date", "place"], &["incident", "happening", "occurrence"], ValueFormat::Free, &[]),
     k(EntityKind::Meeting, "Meeting", egui_phosphor::regular::USERS_THREE, Category::Events, (240, 145, 145), &["date", "place", "participants"], &["encounter", "appointment", "summit", "rendezvous"], ValueFormat::Free, &[]),
-    k(EntityKind::Payment, "Payment", egui_phosphor::regular::CURRENCY_CIRCLE_DOLLAR, Category::Events, (255, 110, 140), &["date", "amount", "currency", "method"], &["payout", "fee", "bribe", "kickback"], ValueFormat::Free, &[]),
     k(EntityKind::Travel, "Travel", egui_phosphor::regular::SUITCASE_ROLLING, Category::Events, (230, 125, 105), &["date", "from", "to", "traveler", "purpose"], &["trip", "flight", "journey", "visit"], ValueFormat::Free, &[]),
     k(EntityKind::Other, "Other", egui_phosphor::regular::QUESTION, Category::Other, (170, 170, 170), &[], &["misc", "unknown", "custom"], ValueFormat::Free, &[]),
     k(EntityKind::WebPage, "Web page", egui_phosphor::regular::FILE_HTML, Category::Web, (165, 140, 235), &["path", "status_code", "title"], &["url", "page", "path", "route"], ValueFormat::Url, &[]),
@@ -221,7 +219,7 @@ pub const KIND_META: [KindMeta; 63] = [
     k(EntityKind::TrackerId, "Tracker ID", egui_phosphor::regular::CHART_LINE_UP, Category::Digital, (110, 205, 160), &["vendor", "tracker_id"], &["analytics", "pixel", "ga", "gtm", "ga4", "clarity"], ValueFormat::Free, &[]),
     k(EntityKind::Product, "Product", egui_phosphor::regular::PILL, Category::Commerce, (224, 128, 168), &["brand", "claimed_cure", "category", "price", "currency", "registry_status"], &["supplement", "drug", "medicine", "sku", "pill", "remedy"], ValueFormat::Free, &[]),
     k(EntityKind::Favicon, "Favicon", egui_phosphor::regular::IMAGE, Category::Digital, (120, 210, 205), &["mmh3_hash", "sha256", "source_url"], &["favicon", "icon", "favicon-hash"], ValueFormat::Free, &[]),
-    k(EntityKind::Claim, "Claim", egui_phosphor::regular::SEAL_QUESTION, Category::Documents, (185, 180, 205), &["statement", "status", "verdict", "confidence"], &["claim", "assertion", "allegation", "finding"], ValueFormat::Free, &[Facet::ClaimType]),
+    k(EntityKind::Claim, "Claim", egui_phosphor::regular::SEAL_QUESTION, Category::Documents, (185, 180, 205), &["statement"], &["claim", "assertion", "allegation", "finding"], ValueFormat::Free, &[Facet::ClaimType, Facet::ClaimStatus]),
     k(EntityKind::CareInstitution, "Care institution", egui_phosphor::regular::FIRST_AID, Category::Organizations, (245, 150, 110), &["operator", "oversight_body", "capacity", "license_no", "accreditation"], &["orphanage", "placement center", "shelter", "care home", "children's home", "group home"], ValueFormat::Free, &[Facet::Role]),
     k(EntityKind::Statute, "Statute", egui_phosphor::regular::SCROLL, Category::Documents, (205, 195, 175), &["jurisdiction", "citation", "year"], &["law", "statute", "regulation", "treaty", "sofa", "legal instrument"], ValueFormat::Free, &[]),
     k(EntityKind::Offense, "Offense", egui_phosphor::regular::PROHIBIT, Category::Documents, (210, 160, 160), &["category", "severity", "statute_ref"], &["offense", "charge", "crime", "count"], ValueFormat::Free, &[]),
@@ -457,7 +455,7 @@ mod tests {
         use crate::model::Facet;
         for m in &KIND_META {
             let human = matches!(m.kind, EntityKind::Person | EntityKind::Alias);
-            let actor = human || m.category == Category::Organizations;
+            let actor = human || m.category == Category::Organizations || m.kind == EntityKind::Cohort;
             assert_eq!(
                 m.facets.contains(&Facet::Occupation),
                 human,
@@ -500,6 +498,18 @@ mod tests {
                 "{:?}: ClaimType is the Claim subtype only",
                 m.kind
             );
+            assert_eq!(
+                m.facets.contains(&Facet::ClaimStatus),
+                m.kind == EntityKind::Claim,
+                "{:?}: ClaimStatus is the Claim verdict facet only",
+                m.kind
+            );
+            assert_eq!(
+                m.facets.contains(&Facet::LocationType),
+                m.kind == EntityKind::Location,
+                "{:?}: LocationType is the Location subtype only",
+                m.kind
+            );
             let subtype = matches!(
                 m.kind,
                 EntityKind::Organization
@@ -507,6 +517,7 @@ mod tests {
                     | EntityKind::Domain
                     | EntityKind::Website
                     | EntityKind::Claim
+                    | EntityKind::Location
             );
             if !actor && !subtype {
                 assert!(m.facets.is_empty(), "{:?} must declare no facets at all", m.kind);
@@ -527,6 +538,7 @@ mod tests {
             EntityKind::Court,
             EntityKind::Bank,
             EntityKind::CareInstitution,
+            EntityKind::Cohort,
         ] {
             let f = KIND_META[kind as usize].facets;
             assert!(f.contains(&Facet::Role), "{kind:?} needs Role");
@@ -537,11 +549,9 @@ mod tests {
             EntityKind::Email,
             EntityKind::WebPage,
             EntityKind::Secret,
-            EntityKind::Money,
             EntityKind::Vehicle,
             EntityKind::Document,
             EntityKind::TlsCertificate,
-            EntityKind::Location,
             EntityKind::Event,
         ] {
             assert!(
@@ -555,6 +565,8 @@ mod tests {
             (EntityKind::SocialAccount, Facet::AccountType),
             (EntityKind::Domain, Facet::DomainType),
             (EntityKind::Website, Facet::SiteType),
+            (EntityKind::Location, Facet::LocationType),
+            (EntityKind::Claim, Facet::ClaimStatus),
         ] {
             assert!(
                 KIND_META[kind as usize].facets.contains(&facet),
@@ -660,47 +672,6 @@ mod tests {
     }
 
     #[test]
-    fn folded_org_subtypes_resolve_to_organization_and_round_trip() {
-        use crate::model::{Facet, FacetValue, subtype_value};
-
-        let by_slug =
-            |want: &str| KIND_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
-        for gone in ["law_firm", "media_outlet", "political_party", "criminal_org"] {
-            assert_eq!(by_slug(gone), None, "{gone} is no longer a base kind");
-        }
-        assert_eq!(by_slug("organization"), Some(EntityKind::Organization));
-        assert_eq!(by_slug("court"), Some(EntityKind::Court), "Court stays a distinct kind");
-        assert_eq!(by_slug("bank"), Some(EntityKind::Bank), "Bank stays a distinct kind");
-
-        assert_eq!(
-            subtype_value(Facet::OrgType, 7).unwrap().expect("law-firm vocab row").label,
-            "Law firm",
-            "the folded LawFirm kind survives as an OrgType vocab value"
-        );
-
-        let mut e = Entity {
-            slug: "acme_legal".into(),
-            kind: EntityKind::Organization,
-            label: "Acme Legal".into(),
-            ..Default::default()
-        };
-        e.facets.insert(Facet::OrgType, FacetValue::Indexed(7));
-
-        let ron_s = ron::to_string(&e).unwrap();
-        let from_ron: Entity = ron::from_str(&ron_s).unwrap();
-        assert_eq!(from_ron.kind, EntityKind::Organization);
-        assert_eq!(
-            from_ron.facets.get(&Facet::OrgType),
-            Some(&FacetValue::Indexed(7)),
-            "an Organization tagged OrgType=Law firm survives RON (entity.ron)"
-        );
-
-        let json = serde_json::to_string(&e).unwrap();
-        let from_json: Entity = serde_json::from_str(&json).unwrap();
-        assert_eq!(from_json.facets.get(&Facet::OrgType), Some(&FacetValue::Indexed(7)));
-    }
-
-    #[test]
     fn occupation_is_a_facet_not_a_suggested_attr() {
         let p = &KIND_META[EntityKind::Person as usize];
         assert!(
@@ -760,7 +731,10 @@ mod tests {
             "an institution is not an individual — no occupation facet"
         );
         let cf = KIND_META[EntityKind::Claim as usize].facets;
-        assert!(cf.len() == 1 && cf.contains(&Facet::ClaimType), "Claim carries only ClaimType");
+        assert!(
+            cf.len() == 2 && cf.contains(&Facet::ClaimType) && cf.contains(&Facet::ClaimStatus),
+            "Claim carries ClaimType plus the ClaimStatus verdict facet"
+        );
         for kind in [EntityKind::Statute, EntityKind::Offense, EntityKind::EmailMessage] {
             assert!(KIND_META[kind as usize].facets.is_empty(), "{kind:?} is not an actor — no facets");
         }

@@ -43,6 +43,7 @@ pub enum RelationKind {
     Called,
     Messaged,
     Introduced,
+    SentTo,
     Paid,
     Financed,
     LoanedTo,
@@ -57,8 +58,11 @@ pub enum RelationKind {
     Charged,
     Prosecuted,
     Investigated,
+    Surveilled,
     Sanctioned,
+    Seized,
     ConvictedOf,
+    AcquittedOf,
     Violated,
     WitnessIn,
     RegulatedBy,
@@ -86,6 +90,7 @@ pub enum RelationKind {
     Witnessed,
     MentionedIn,
     AppearedIn,
+    Concerns,
     RelatedTo,
     Serves,
     LinksTo,
@@ -106,6 +111,7 @@ pub enum RelationKind {
     RedirectsTo,
     Sells,
     AdvertisedOn,
+    AffiliateOf,
     Trafficked,
     Recruited,
     Groomed,
@@ -121,7 +127,7 @@ pub enum RelationKind {
     SexuallyAssaulted,
     Killed,
     Kidnapped,
-    HarmedBy,
+    Harmed,
     Accused,
     AllegedToCommit,
     Denounced,
@@ -133,17 +139,15 @@ pub enum RelationKind {
     Cites,
     Defrauded,
     Impersonates,
+    Fronts,
     CoveredUp,
-    SuppressedRecordOf,
     Redacted,
     Shielded,
     Dismissed,
     GrantedImmunity,
+    Pardoned,
     ModeledOn,
-    ReplicaOf,
     Resembles,
-    Translated,
-    Thanked,
     Credited,
     Endorsed,
 }
@@ -163,7 +167,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 139] = [
+pub const RELATION_META: [RelMeta; 143] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -200,6 +204,7 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::Called, "called", "comms/meetings"),
     r(RelationKind::Messaged, "messaged", "comms/meetings"),
     r(RelationKind::Introduced, "introduced", "comms/meetings"),
+    r(RelationKind::SentTo, "sent to", "comms/meetings"),
     r(RelationKind::Paid, "paid", "money"),
     r(RelationKind::Financed, "financed", "money"),
     r(RelationKind::LoanedTo, "loaned to", "money"),
@@ -214,8 +219,11 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::Charged, "charged", "legal/state"),
     r(RelationKind::Prosecuted, "prosecuted", "legal/state"),
     r(RelationKind::Investigated, "investigated", "legal/state"),
+    r(RelationKind::Surveilled, "surveilled", "legal/state"),
     r(RelationKind::Sanctioned, "sanctioned", "legal/state"),
+    r(RelationKind::Seized, "seized", "legal/state"),
     r(RelationKind::ConvictedOf, "convicted of", "legal/state"),
+    r(RelationKind::AcquittedOf, "acquitted of", "legal/state"),
     r(RelationKind::Violated, "violated", "legal/state"),
     r(RelationKind::WitnessIn, "witness in", "legal/state"),
     r(RelationKind::RegulatedBy, "regulated by", "legal/state"),
@@ -243,6 +251,7 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::Witnessed, "witnessed", "info"),
     r(RelationKind::MentionedIn, "mentioned in", "info"),
     r(RelationKind::AppearedIn, "appeared in", "info"),
+    r(RelationKind::Concerns, "concerns", "info"),
     r(RelationKind::RelatedTo, "related to", "fallback"),
     r(RelationKind::Serves, "serves", "web/infra"),
     r(RelationKind::LinksTo, "links to", "web/infra"),
@@ -263,6 +272,7 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::RedirectsTo, "redirects to", "web/infra"),
     r(RelationKind::Sells, "sells", "commerce"),
     r(RelationKind::AdvertisedOn, "advertised on", "commerce"),
+    r(RelationKind::AffiliateOf, "affiliate of", "commerce"),
     r(RelationKind::Trafficked, "trafficked", "trafficking"),
     r(RelationKind::Recruited, "recruited", "trafficking"),
     r(RelationKind::Groomed, "groomed", "trafficking"),
@@ -278,7 +288,7 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::SexuallyAssaulted, "sexually assaulted", "abuse/violence"),
     r(RelationKind::Killed, "killed", "abuse/violence"),
     r(RelationKind::Kidnapped, "kidnapped", "abuse/violence"),
-    r(RelationKind::HarmedBy, "harmed by", "abuse/violence"),
+    r(RelationKind::Harmed, "harmed", "abuse/violence"),
     r(RelationKind::Accused, "accused", "accusation"),
     r(RelationKind::AllegedToCommit, "alleged to commit", "accusation"),
     r(RelationKind::Denounced, "denounced", "accusation"),
@@ -290,17 +300,15 @@ pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::Cites, "cites", "evidence"),
     r(RelationKind::Defrauded, "defrauded", "fraud"),
     r(RelationKind::Impersonates, "impersonates", "fraud"),
+    r(RelationKind::Fronts, "fronts for", "fraud"),
     r(RelationKind::CoveredUp, "covered up", "suppression"),
-    r(RelationKind::SuppressedRecordOf, "suppressed record of", "suppression"),
     r(RelationKind::Redacted, "redacted", "suppression"),
     r(RelationKind::Shielded, "shielded", "impunity"),
     r(RelationKind::Dismissed, "dismissed", "impunity"),
     r(RelationKind::GrantedImmunity, "granted immunity", "impunity"),
+    r(RelationKind::Pardoned, "pardoned", "impunity"),
     r(RelationKind::ModeledOn, "modeled on", "resemblance"),
-    r(RelationKind::ReplicaOf, "replica of", "resemblance"),
     r(RelationKind::Resembles, "resembles", "resemblance"),
-    r(RelationKind::Translated, "translated", "resemblance"),
-    r(RelationKind::Thanked, "thanked", "endorsement"),
     r(RelationKind::Credited, "credited", "endorsement"),
     r(RelationKind::Endorsed, "endorsed", "endorsement"),
 ];
@@ -395,12 +403,12 @@ mod tests {
         let by_slug =
             |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
         assert_eq!(by_slug("impersonates"), Some(RelationKind::Impersonates));
-        assert_eq!(by_slug("harmed_by"), Some(RelationKind::HarmedBy));
+        assert_eq!(by_slug("harmed"), Some(RelationKind::Harmed));
         assert_eq!(by_slug("sells"), Some(RelationKind::Sells));
         assert_eq!(by_slug("advertised_on"), Some(RelationKind::AdvertisedOn));
 
         assert_eq!(RELATION_META[RelationKind::Impersonates as usize].category, "fraud");
-        assert_eq!(RELATION_META[RelationKind::HarmedBy as usize].category, "abuse/violence");
+        assert_eq!(RELATION_META[RelationKind::Harmed as usize].category, "abuse/violence");
         assert_eq!(RELATION_META[RelationKind::Sells as usize].category, "commerce");
         assert_eq!(RELATION_META[RelationKind::AdvertisedOn as usize].category, "commerce");
     }
@@ -478,10 +486,8 @@ mod tests {
             |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
         assert_eq!(by_slug("defrauded"), Some(RelationKind::Defrauded));
         assert_eq!(by_slug("covered_up"), Some(RelationKind::CoveredUp));
-        assert_eq!(by_slug("suppressed_record_of"), Some(RelationKind::SuppressedRecordOf));
         assert_eq!(by_slug("granted_immunity"), Some(RelationKind::GrantedImmunity));
         assert_eq!(by_slug("modeled_on"), Some(RelationKind::ModeledOn));
-        assert_eq!(by_slug("translated"), Some(RelationKind::Translated));
         assert_eq!(by_slug("endorsed"), Some(RelationKind::Endorsed));
 
         for (k, fam) in [
@@ -490,13 +496,52 @@ mod tests {
             (RelationKind::Redacted, "suppression"),
             (RelationKind::Shielded, "impunity"),
             (RelationKind::Dismissed, "impunity"),
-            (RelationKind::ReplicaOf, "resemblance"),
+            (RelationKind::ModeledOn, "resemblance"),
             (RelationKind::Resembles, "resemblance"),
-            (RelationKind::Thanked, "endorsement"),
             (RelationKind::Credited, "endorsement"),
         ] {
             assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
         }
+    }
+
+    #[test]
+    fn round3_verbs_resolve_by_slug_and_cut_verbs_are_gone() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("sent_to"), Some(RelationKind::SentTo));
+        assert_eq!(by_slug("acquitted_of"), Some(RelationKind::AcquittedOf));
+        assert_eq!(by_slug("surveilled"), Some(RelationKind::Surveilled));
+        assert_eq!(by_slug("seized"), Some(RelationKind::Seized));
+        assert_eq!(by_slug("concerns"), Some(RelationKind::Concerns));
+        assert_eq!(by_slug("affiliate_of"), Some(RelationKind::AffiliateOf));
+        assert_eq!(by_slug("fronts_for"), Some(RelationKind::Fronts));
+        assert_eq!(by_slug("pardoned"), Some(RelationKind::Pardoned));
+
+        for gone in ["translated", "replica_of", "thanked", "suppressed_record_of", "harmed_by"] {
+            assert_eq!(by_slug(gone), None, "{gone} was cut or renamed in round 3");
+        }
+
+        for (k, fam) in [
+            (RelationKind::SentTo, "comms/meetings"),
+            (RelationKind::AcquittedOf, "legal/state"),
+            (RelationKind::Surveilled, "legal/state"),
+            (RelationKind::Seized, "legal/state"),
+            (RelationKind::Concerns, "info"),
+            (RelationKind::AffiliateOf, "commerce"),
+            (RelationKind::Fronts, "fraud"),
+            (RelationKind::Pardoned, "impunity"),
+            (RelationKind::Harmed, "abuse/violence"),
+        ] {
+            assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
+        }
+
+        assert_eq!(
+            RELATION_META[RelationKind::Harmed as usize].label,
+            "harmed",
+            "Harmed is active voice — perpetrator at the arrow tail, victim at the head"
+        );
+        assert_eq!(RELATION_META.len(), 143, "round-3 verb count");
     }
 
     #[test]
