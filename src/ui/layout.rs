@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use egui::{Pos2, Vec2};
 use petgraph::Direction::{Incoming, Outgoing};
@@ -22,6 +22,7 @@ pub enum LayoutKind {
     Circle,
     Tree,
     Force,
+    Radial,
 }
 
 #[derive(Clone, Copy)]
@@ -38,6 +39,25 @@ pub struct LayoutAnim {
 impl RedstringApp {
     pub fn apply_layout(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
         let targets = self.layout_targets();
+        self.run_layout(ui, kind, targets)
+    }
+
+    pub fn relayout_all(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
+        let targets: Vec<NodeIndex> = self
+            .g
+            .g()
+            .node_indices()
+            .filter(|idx| !self.node_hidden(*idx))
+            .collect();
+        self.run_layout(ui, kind, targets)
+    }
+
+    fn run_layout(
+        &mut self,
+        ui: &egui::Ui,
+        kind: LayoutKind,
+        targets: Vec<NodeIndex>,
+    ) -> Result<(), Error> {
         if targets.len() < 2 {
             self.status = if self.g.g().node_count() >= 2 {
                 "select 2+ nodes to lay out, or clear the selection to arrange all".into()
@@ -54,6 +74,7 @@ impl RedstringApp {
             LayoutKind::Circle => self.circle_positions(&targets, center, step),
             LayoutKind::Tree => self.tree_positions(&targets, center, step),
             LayoutKind::Force => self.force_positions(&targets, center, step),
+            LayoutKind::Radial => self.radial_positions(&targets, center, step),
         };
         let mut steps = Vec::new();
         for (idx, to) in placed {
@@ -73,6 +94,7 @@ impl RedstringApp {
             LayoutKind::Circle => "circle",
             LayoutKind::Tree => "tree",
             LayoutKind::Force => "force",
+            LayoutKind::Radial => "radial",
         };
         let scope = if partial { " (selection)" } else { "" };
         self.status = format!("{name} layout: {moved} nodes{scope}");
@@ -416,6 +438,98 @@ impl RedstringApp {
 
         order.into_iter().zip(p).collect()
     }
+
+    fn radial_positions(
+        &self,
+        targets: &[NodeIndex],
+        center: Pos2,
+        step: f32,
+    ) -> HashMap<NodeIndex, Pos2> {
+        let set: HashSet<NodeIndex> = targets.iter().copied().collect();
+        let mut adj: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+        for idx in targets {
+            let mut ns: Vec<NodeIndex> = self
+                .g
+                .g()
+                .neighbors_undirected(*idx)
+                .filter(|k| set.contains(k) && k != idx)
+                .collect();
+            ns.sort_by_key(|k| k.index());
+            ns.dedup();
+            adj.insert(*idx, ns);
+        }
+        let mut ordered: Vec<NodeIndex> = targets.to_vec();
+        ordered.sort_by_key(|idx| idx.index());
+        let Some(first) = ordered.first().copied() else {
+            return HashMap::new();
+        };
+        let Some(first_ns) = adj.get(&first) else {
+            return HashMap::new();
+        };
+        let mut best_deg = first_ns.len();
+        let mut focus = first;
+        for idx in &ordered {
+            let Some(ns) = adj.get(idx) else {
+                continue;
+            };
+            if ns.len() > best_deg {
+                best_deg = ns.len();
+                focus = *idx;
+            }
+        }
+        let mut layer: HashMap<NodeIndex, usize> = HashMap::new();
+        let mut queue: VecDeque<NodeIndex> = VecDeque::new();
+        layer.insert(focus, 0);
+        queue.push_back(focus);
+        loop {
+            let Some(cur) = queue.pop_front() else {
+                break;
+            };
+            let Some(&depth) = layer.get(&cur) else {
+                continue;
+            };
+            let Some(neighbors) = adj.get(&cur) else {
+                continue;
+            };
+            for n in neighbors {
+                if layer.contains_key(n) {
+                    continue;
+                }
+                layer.insert(*n, depth + 1);
+                queue.push_back(*n);
+            }
+        }
+        let mut max_layer = 0usize;
+        for depth in layer.values() {
+            max_layer = max_layer.max(*depth);
+        }
+        let outer = max_layer + 1;
+        let mut by_layer: BTreeMap<usize, Vec<NodeIndex>> = BTreeMap::new();
+        for idx in &ordered {
+            let Some(depth) = layer.get(idx).copied() else {
+                by_layer.entry(outer).or_default().push(*idx);
+                continue;
+            };
+            by_layer.entry(depth).or_default().push(*idx);
+        }
+        let mut out = HashMap::new();
+        for (depth, members) in by_layer {
+            if depth == 0 {
+                for idx in members {
+                    out.insert(idx, center);
+                }
+                continue;
+            }
+            let radius = depth as f32 * step;
+            let count = members.len() as f32;
+            for (i, idx) in members.into_iter().enumerate() {
+                let angle =
+                    i as f32 / count * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+                out.insert(idx, center + Vec2::new(angle.cos(), angle.sin()) * radius);
+            }
+        }
+        out
+    }
 }
 
 fn place(
@@ -579,5 +693,39 @@ mod tests {
         assert!(scale_about_centroid(&[], 1.2).is_empty());
         let one = vec![(nix(0), Pos2::new(3.0, 4.0))];
         assert!(scale_about_centroid(&one, 1.2).is_empty());
+    }
+
+    #[test]
+    fn radial_puts_the_hub_at_center_and_grows_rings_with_bfs_depth() {
+        use crate::model::{EntityKind, RelationKind};
+        use crate::ui::testkit::{graph, harness};
+
+        let mut app = harness::app().unwrap();
+        let hub = graph::add(&mut app, EntityKind::Person, "hub").unwrap();
+        let a = graph::add(&mut app, EntityKind::Person, "a").unwrap();
+        let b = graph::add(&mut app, EntityKind::Person, "b").unwrap();
+        let c = graph::add(&mut app, EntityKind::Person, "c").unwrap();
+        graph::link(&mut app, hub, a, RelationKind::AssociateOf).unwrap();
+        graph::link(&mut app, hub, b, RelationKind::AssociateOf).unwrap();
+        graph::link(&mut app, a, c, RelationKind::AssociateOf).unwrap();
+
+        let targets: Vec<NodeIndex> = app.g.g().node_indices().collect();
+        let center = Pos2::new(500.0, 500.0);
+        let step = 120.0;
+        let placed = app.radial_positions(&targets, center, step);
+
+        let hub_pos = placed[&hub];
+        assert!(
+            (hub_pos - center).length() < 1e-3,
+            "the busiest node lands at the ring center"
+        );
+
+        let ring_a = (placed[&a] - center).length();
+        let ring_b = (placed[&b] - center).length();
+        let ring_c = (placed[&c] - center).length();
+        assert!((ring_a - step).abs() < 1e-2, "a depth-1 node sits on the first ring");
+        assert!((ring_b - step).abs() < 1e-2, "a depth-1 node sits on the first ring");
+        assert!((ring_c - 2.0 * step).abs() < 1e-2, "a depth-2 node sits on the second ring");
+        assert!(ring_c > ring_a + 1.0, "ring radius grows with BFS depth");
     }
 }

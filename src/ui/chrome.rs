@@ -163,13 +163,34 @@ impl RedstringApp {
                         crate::log::set_open(!open)?;
                     }
                     ui.separator();
+                    if tb_button(ui, egui_phosphor::regular::FRAME_CORNERS, "Center")
+                        .on_hover_text("frame the biggest cluster of visible nodes in view")
+                        .clicked()
+                    {
+                        self.center_graph()?;
+                    }
+                    ui.separator();
+                    if tb_button(ui, egui_phosphor::regular::ARROWS_OUT, "Loosen")
+                        .on_hover_text("spread nodes apart — proportional to current spacing; selection if any, else all")
+                        .clicked()
+                    {
+                        self.apply_spread(ui, Spread::Loosen)?;
+                    }
+                    if tb_button(ui, egui_phosphor::regular::ARROWS_IN, "Tighten")
+                        .on_hover_text("pull nodes closer — proportional to current spacing; selection if any, else all")
+                        .clicked()
+                    {
+                        self.apply_spread(ui, Spread::Tighten)?;
+                    }
+                    ui.separator();
                     let layouts = [
                         (egui_phosphor::regular::SQUARES_FOUR, "Grid", "block grid, grouped by kind", LayoutKind::Grid),
                         (egui_phosphor::regular::CIRCLE_DASHED, "Circle", "everything on a ring", LayoutKind::Circle),
                         (egui_phosphor::regular::TREE_STRUCTURE, "Tree", "hierarchy — roots on top", LayoutKind::Tree),
                         (egui_phosphor::regular::GRAPH, "Force", "organic — force-directed", LayoutKind::Force),
+                        (egui_phosphor::regular::CIRCLES_THREE, "Radial", "concentric rings around the busiest hub", LayoutKind::Radial),
                     ];
-                    for (icon, name, hover, kind) in layouts {
+                    for (icon, name, hover, kind) in layouts.into_iter().rev() {
                         if tb_button(ui, icon, name)
                             .on_hover_text(format!("{hover} — selection if any, else all"))
                             .clicked()
@@ -184,30 +205,11 @@ impl RedstringApp {
                         self.relayout_on_add,
                     )
                     .on_hover_text(
-                        "relayout on add — re-run the selected layout whenever a lookup adds nodes",
+                        "re-arrange the board when nodes are added — by a transform or an external/AI edit — using the last-picked layout",
                     )
                     .clicked()
                     {
                         self.relayout_on_add = !self.relayout_on_add;
-                    }
-                    if tb_button(ui, egui_phosphor::regular::ARROWS_IN, "Tighten")
-                        .on_hover_text("pull nodes closer — proportional to current spacing; selection if any, else all")
-                        .clicked()
-                    {
-                        self.apply_spread(ui, Spread::Tighten)?;
-                    }
-                    if tb_button(ui, egui_phosphor::regular::ARROWS_OUT, "Loosen")
-                        .on_hover_text("spread nodes apart — proportional to current spacing; selection if any, else all")
-                        .clicked()
-                    {
-                        self.apply_spread(ui, Spread::Loosen)?;
-                    }
-                    ui.separator();
-                    if tb_button(ui, egui_phosphor::regular::FRAME_CORNERS, "Center")
-                        .on_hover_text("frame the biggest cluster of visible nodes in view")
-                        .clicked()
-                    {
-                        self.center_graph()?;
                     }
                     Ok(())
                 },

@@ -306,8 +306,13 @@ impl RedstringApp {
         };
         if t > seen {
             crate::dlog_info!("persist", "hot-reload: external edit on {path}");
+            let before = self.g.g().node_count();
             self.load(ui)?;
+            let after = self.g.g().node_count();
             self.status = format!("external edit detected — reloaded {path}");
+            if self.relayout_on_add && after > before {
+                self.relayout_all(ui, self.current_layout)?;
+            }
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(1100));
