@@ -15,6 +15,7 @@ use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
 use super::board;
+use super::layout::LayoutKind;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
@@ -107,6 +108,9 @@ pub struct RedstringApp {
 
     pub layout_anim: Option<super::layout::LayoutAnim>,
 
+    pub current_layout: LayoutKind,
+    pub relayout_on_add: bool,
+
     pub active_path: Option<Vec<super::graphalg::PathHop>>,
 
     pub find_open: bool,
@@ -164,6 +168,8 @@ impl RedstringApp {
             band: None,
             panning: false,
             layout_anim: None,
+            current_layout: LayoutKind::Force,
+            relayout_on_add: false,
             active_path: None,
             find_open: false,
             find_query: String::new(),
@@ -260,6 +266,11 @@ impl RedstringApp {
             e.set_selected(false);
         }
         Ok(())
+    }
+
+    pub fn choose_layout(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
+        self.current_layout = kind;
+        self.apply_layout(ui, kind)
     }
 
     fn save_chip(&self, ui: &mut egui::Ui) -> Result<(), Error> {

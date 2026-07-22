@@ -60,6 +60,47 @@ fn tb_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
     resp
 }
 
+fn tb_toggle(ui: &mut egui::Ui, icon: &str, label: &str, on: bool) -> egui::Response {
+    let icon_galley = ui.painter().layout_no_wrap(
+        icon.to_owned(),
+        FontId::proportional(TB_ICON),
+        Color32::PLACEHOLDER,
+    );
+    let text_galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        FontId::proportional(TB_TEXT),
+        Color32::PLACEHOLDER,
+    );
+    let pad = ui.spacing().button_padding;
+    let w = icon_galley.size().x.max(text_galley.size().x) + 2.0 * pad.x;
+    let h = icon_galley.size().y + text_galley.size().y + 2.0 * pad.y + TB_GAP;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let visuals = ui.style().interact_selectable(&resp, on);
+    ui.painter().rect(
+        rect,
+        visuals.corner_radius,
+        visuals.weak_bg_fill,
+        visuals.bg_stroke,
+        StrokeKind::Inside,
+    );
+    let cx = rect.center().x;
+    let top = rect.top() + pad.y;
+    ui.painter().galley(
+        Pos2::new(cx - icon_galley.size().x / 2.0, top),
+        icon_galley.clone(),
+        visuals.text_color(),
+    );
+    ui.painter().galley(
+        Pos2::new(
+            cx - text_galley.size().x / 2.0,
+            top + icon_galley.size().y + TB_GAP,
+        ),
+        text_galley,
+        visuals.text_color(),
+    );
+    resp
+}
+
 impl RedstringApp {
     pub fn toolbar(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         ui.horizontal(|ui| -> Result<(), Error> {
@@ -133,8 +174,21 @@ impl RedstringApp {
                             .on_hover_text(format!("{hover} — selection if any, else all"))
                             .clicked()
                         {
-                            self.apply_layout(ui, kind)?;
+                            self.choose_layout(ui, kind)?;
                         }
+                    }
+                    if tb_toggle(
+                        ui,
+                        egui_phosphor::regular::MAGIC_WAND,
+                        "Relayout",
+                        self.relayout_on_add,
+                    )
+                    .on_hover_text(
+                        "relayout on add — re-run the selected layout whenever a lookup adds nodes",
+                    )
+                    .clicked()
+                    {
+                        self.relayout_on_add = !self.relayout_on_add;
                     }
                     if tb_button(ui, egui_phosphor::regular::ARROWS_IN, "Tighten")
                         .on_hover_text("pull nodes closer — proportional to current spacing; selection if any, else all")
