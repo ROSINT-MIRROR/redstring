@@ -17,6 +17,8 @@ const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 pub const MIN_ZOOM: f32 = 0.01;
 pub const MAX_ZOOM: f32 = 30.0;
 
+const LEGIBLE_RADIUS_PX: f32 = 5.5;
+
 static LAST_SEL: OnceLock<Mutex<Vec<usize>>> = OnceLock::new();
 
 fn log_selection(g: &RsGraph) {
@@ -56,12 +58,23 @@ pub fn clamp_zoom(z: f32) -> Result<f32, Error> {
     Ok(z.clamp(MIN_ZOOM, MAX_ZOOM))
 }
 
-pub fn fit_box_to_board(bbox: Rect, board: Vec2, margin: f32, max_zoom: f32) -> Result<Camera, Error> {
+pub fn fit_box_to_board(
+    bbox: Rect,
+    board: Vec2,
+    margin: f32,
+    max_zoom: f32,
+    median_radius: f32,
+) -> Result<Camera, Error> {
     let span = bbox.size();
     let w = span.x.max(1.0);
     let h = span.y.max(1.0);
     let fit = (board.x * margin / w).min(board.y * margin / h);
-    let zoom = clamp_zoom(fit.min(max_zoom))?;
+    let floor = if median_radius > 0.0 {
+        LEGIBLE_RADIUS_PX / median_radius
+    } else {
+        0.0
+    };
+    let zoom = clamp_zoom(fit.max(floor).min(max_zoom))?;
     let pan = board / 2.0 - bbox.center().to_vec2() * zoom;
     Ok(Camera {
         x: pan.x,
@@ -131,13 +144,21 @@ impl RedstringApp {
     }
 
     pub fn center_graph(&mut self) -> Result<(), Error> {
-        let Some((cam, n)) = super::center::center_camera(&self.g, self.board_size)? else {
+        let Some((cam, n, off)) = super::center::center_camera(&self.g, self.board_size)? else {
             self.status = "center — no visible nodes to frame".to_owned();
             return Ok(());
         };
-        crate::dlog_info!("board", "center biggest visible cluster n={n} zoom={:.3}", cam.zoom);
+        crate::dlog_info!(
+            "board",
+            "center biggest visible cluster n={n} zoom={:.3} off={off}",
+            cam.zoom
+        );
         self.pending_camera = Some(cam);
-        self.status = format!("centered on biggest visible cluster — {n} node(s)");
+        self.status = if off > 0 {
+            format!("centered on biggest cluster — {n} node(s) · {off} off-screen")
+        } else {
+            format!("centered on biggest cluster — {n} node(s)")
+        };
         Ok(())
     }
 
