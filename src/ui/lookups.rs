@@ -7,12 +7,11 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{
-    Author, EntityKind, Observation, Origin, RELATION_META, Relation, Verification, slugify,
+    Author, EntityKind, Observation, Origin, RELATION_META, Relation, Source, Verification, slugify,
 };
 use crate::modules::{Fact, ModuleRun, ModuleStatus, ObsKind, RunInput, parse_obs_value};
 
 use super::app::{RedstringApp, RsGraph};
-use super::layout::LayoutAnim;
 use super::style;
 
 pub struct Job {
@@ -256,14 +255,20 @@ impl RedstringApp {
         format!("{} on {}", job.module_label, job.target_label)
     }
 
+    fn archive_run(&mut self, run: &ModuleRun) -> Result<Source, Error> {
+        let Some(root) = run.project_root.clone() else {
+            return super::evidence::evidence_source(run);
+        };
+        self.self_write(&root, |_app| super::evidence::evidence_source(run))
+    }
+
     fn apply_run(&mut self, ui: &egui::Ui, run: ModuleRun) -> Result<(), Error> {
-        let source = super::evidence::evidence_source(&run)?;
+        let source = self.archive_run(&run)?;
         if run.project_root.as_deref() != self.project.as_ref().map(|p| p.root.as_path()) {
             self.status =
                 format!("{}: finished for another case — raw output archived there", run.module_id);
             return Ok(());
         }
-        self.watch_current()?;
         let Some(tidx) = node_by_slug(&self.g, &run.target_slug) else {
             self.status = "lookup target no longer on the board — result dropped".into();
             return Ok(());
@@ -338,11 +343,7 @@ impl RedstringApp {
                 }
             }
         }
-        if self.relayout_on_add && spawned > 0 {
-            self.relayout_all(ui, self.current_layout)?;
-        } else {
-            self.kick_spawn_anim(ui, steps)?;
-        }
+        self.nodes_arrived(ui, spawned, steps)?;
         let total = self.bump_job_found(run.run_id, linked);
         crate::dlog_info!(
             "lookups",
@@ -367,25 +368,6 @@ impl RedstringApp {
         };
         job.found += linked;
         job.found
-    }
-
-    fn kick_spawn_anim(
-        &mut self,
-        ui: &egui::Ui,
-        steps: Vec<(NodeIndex, Pos2, Pos2)>,
-    ) -> Result<(), Error> {
-        if steps.is_empty() {
-            return Ok(());
-        }
-        let start = ui.input(|i| i.time);
-        ui.ctx().request_repaint();
-        let Some(anim) = self.layout_anim.as_mut() else {
-            self.layout_anim = Some(LayoutAnim { steps, start });
-            return Ok(());
-        };
-        anim.steps.extend(steps);
-        anim.start = start;
-        Ok(())
     }
 
     fn apply_attr_fact(

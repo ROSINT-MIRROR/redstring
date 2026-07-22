@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::{Instant, SystemTime};
 
 use egui::Pos2;
 use egui_graphs::Graph;
@@ -68,6 +67,8 @@ impl RedstringApp {
         }
         cf.display.camera = camera_read(ui)?;
         cf.display.size_by_degree = self.size_by_degree;
+        cf.display.layout = self.current_layout;
+        cf.display.relayout_on_add = self.relayout_on_add;
         Ok(cf)
     }
 
@@ -91,7 +92,16 @@ impl RedstringApp {
 
 
     pub fn fingerprint(&self) -> Result<String, Error> {
-        compute_fingerprint(&self.g, &self.case_name, self.size_by_degree)
+        compute_fingerprint(&self.g, &self.case_name, &self.board_policy())
+    }
+
+    fn board_policy(&self) -> CaseDisplay {
+        CaseDisplay {
+            size_by_degree: self.size_by_degree,
+            layout: self.current_layout,
+            relayout_on_add: self.relayout_on_add,
+            ..CaseDisplay::default()
+        }
     }
 
     pub fn dirty(&self) -> Result<bool, Error> {
@@ -104,8 +114,7 @@ impl RedstringApp {
             return Ok(());
         };
         let cf = self.to_case_file(ui)?;
-        self.write_all(&project, &cf)?;
-        self.watch_current()?;
+        self.self_write(&project.root, |app| app.write_all(&project, &cf))?;
         self.saved_fp = self.fingerprint()?;
         self.last_saved_at = Some(now_unix()?);
         crate::dlog_info!(
@@ -242,6 +251,8 @@ impl RedstringApp {
         self.g = g;
         self.case_name = cf.meta.name.clone();
         self.size_by_degree = cf.display.size_by_degree;
+        self.current_layout = cf.display.layout;
+        self.relayout_on_add = cf.display.relayout_on_add;
         self.edge_drag = None;
         self.pending_edge = None;
         self.node_drag = None;
@@ -258,7 +269,7 @@ impl RedstringApp {
         self.band = None;
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
-        self.watch_current()?;
+        self.watch_project()?;
         self.saved_fp = self.fingerprint()?;
         crate::dlog_info!(
             "persist",
@@ -284,57 +295,6 @@ impl RedstringApp {
             self.status += &format!(" · SKIPPED unknown slugs: {}", skipped.join(", "));
         }
         Ok(())
-    }
-
-    pub fn watch_current(&mut self) -> Result<(), Error> {
-        let Some(project) = &self.project else {
-            self.watched = None;
-            return Ok(());
-        };
-        let path = project.case_path()?.display().to_string();
-        self.watched = newest_mtime(&project.root)?.map(|t| (path, t));
-        Ok(())
-    }
-
-    pub fn poll_external_edit(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
-        if self.last_watch_poll.elapsed().as_millis() < 1000 {
-            return Ok(());
-        }
-        self.last_watch_poll = Instant::now();
-        let Some((path, seen)) = self.watched.clone() else {
-            return Ok(());
-        };
-        if Some(path.as_str()) != self.current_case_path().as_deref() {
-            return Ok(());
-        }
-        let Some(project) = self.project.clone() else {
-            return Ok(());
-        };
-        let Some(t) = newest_mtime(&project.root)? else {
-            return Ok(());
-        };
-        if t > seen {
-            crate::dlog_info!("persist", "hot-reload: external edit on {path}");
-            let before = self.g.g().node_count();
-            self.load(ui)?;
-            let after = self.g.g().node_count();
-            if self.relayout_on_add && after > before {
-                self.apply_fold()?;
-                self.relayout_all(ui, self.current_layout)?;
-            }
-            self.status = format!("external edit detected — reloaded {path}");
-        }
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(1100));
-        Ok(())
-    }
-
-    fn current_case_path(&self) -> Option<String> {
-        let project = self.project.as_ref()?;
-        let Ok(path) = project.case_path() else {
-            return None;
-        };
-        Some(path.display().to_string())
     }
 
     pub fn project_label(&self) -> Result<String, Error> {
@@ -459,40 +419,6 @@ fn healed_pos(display: &CaseDisplay, slug: &str, i: usize, healed: &mut usize) -
         return spiral(i);
     };
     Ok(Pos2::new(x, y))
-}
-
-fn newest_mtime(root: &Path) -> Result<Option<SystemTime>, Error> {
-    let mut times: Vec<SystemTime> = Vec::new();
-    walk_mtime(root, &mut times)?;
-    Ok(times.into_iter().max())
-}
-
-fn walk_mtime(dir: &Path, times: &mut Vec<SystemTime>) -> Result<(), Error> {
-    let rd = std::fs::read_dir(dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
-    for entry in rd {
-        let entry = entry.map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
-        let ft = entry
-            .file_type()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        if ft.is_dir() {
-            if entry.file_name().to_str() == Some(".git") {
-                continue;
-            }
-            walk_mtime(&entry.path(), times)?;
-            continue;
-        }
-        if entry.file_name().to_str().is_some_and(|n| n.ends_with(".zip")) {
-            continue;
-        }
-        let meta = entry
-            .metadata()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        let t = meta
-            .modified()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        times.push(t);
-    }
-    Ok(())
 }
 
 fn open_picker(current: Option<&Project>) -> rfd::FileDialog {

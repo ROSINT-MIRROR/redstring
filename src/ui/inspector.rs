@@ -298,8 +298,9 @@ impl RedstringApp {
             self.status = "image linked in place — save the case first to copy it in".into();
             return Ok(src.to_owned());
         };
-        let imported = crate::project::import_entity_image(&project, &slug, std::path::Path::new(src));
-        self.watch_current()?;
+        let imported = self.self_write(&project.root, |_app| {
+            crate::project::import_entity_image(&project, &slug, std::path::Path::new(src))
+        });
         match imported {
             Ok(abs) => {
                 let abs = abs.display().to_string();
@@ -457,8 +458,10 @@ impl RedstringApp {
             self.status = "save the case first — evidence is copied into the case dir".into();
             return Ok(());
         };
-        let imported = crate::project::import_source_file(&project, self.ns_kind, &p);
-        self.watch_current()?;
+        let kind = self.ns_kind;
+        let imported = self.self_write(&project.root, |_app| {
+            crate::project::import_source_file(&project, kind, &p)
+        });
         match imported {
             Ok(rel) => {
                 self.ns_ref = rel;

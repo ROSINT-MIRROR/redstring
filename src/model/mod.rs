@@ -10,7 +10,7 @@ mod source;
 mod subtype;
 mod value;
 
-pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, MAX_CASE_NAME, RelationRec};
+pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, LayoutKind, MAX_CASE_NAME, RelationRec};
 pub use civil::{days_from_civil, fmt_civil_date, fnv1a};
 pub use entity::{CATEGORY_META, CategoryMeta, DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, KindMeta, pretty_key, slugify};
 pub use facet::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge, occupation_of, retain_declared_facets, role_of, set_occupation, set_role, set_subtype, subtype_of};

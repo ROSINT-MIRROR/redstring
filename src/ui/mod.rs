@@ -21,6 +21,7 @@ mod search;
 mod style;
 #[cfg(test)]
 pub mod testkit;
+mod watch;
 mod welcome;
 
 pub use app::{RedstringApp, RsGraph};

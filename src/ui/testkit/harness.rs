@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::time::Instant;
 
 use egui::Vec2;
 use egui_graphs::Graph;
@@ -17,6 +16,7 @@ use crate::project::{Project, read_case, write_case};
 use crate::ui::RedstringApp;
 use crate::ui::chrome::SettingsTab;
 use crate::ui::layout::LayoutKind;
+use crate::ui::watch::Watcher;
 
 pub fn test_author() -> Result<Author, Error> {
     Ok(Author {
@@ -38,8 +38,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         status: String::new(),
         prefs: Prefs::default(),
         author,
-        watched: None,
-        last_watch_poll: Instant::now(),
+        watcher: Watcher::default(),
         pending_load: false,
         pending_camera: None,
         ne_kind: EntityKind::Person,

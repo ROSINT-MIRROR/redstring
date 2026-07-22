@@ -103,6 +103,45 @@ mod tests {
     }
 
     #[test]
+    fn layout_policy_flips_dirty_and_round_trips_through_display_ron() {
+        use crate::ui::layout::LayoutKind;
+
+        let (td, project) = harness::temp_project().unwrap();
+        let root = project.root.clone();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project);
+        graph::add(&mut app, EntityKind::Person, "alpha").unwrap();
+        harness::save(&mut app).unwrap();
+        assert!(!app.dirty().unwrap(), "a freshly saved case is clean");
+
+        app.relayout_on_add = true;
+        assert!(app.dirty().unwrap(), "toggling relayout-on-add must mark the case dirty");
+        app.current_layout = LayoutKind::Radial;
+        harness::save(&mut app).unwrap();
+        assert!(!app.dirty().unwrap(), "saving the policy settles the fingerprint");
+
+        let display_path = Project::open(&root).unwrap().display_path().unwrap();
+        let display = String::from_utf8(read_bytes(display_path)).unwrap();
+        assert!(display.contains("Radial"), "the picked layout must persist to display.ron: {display}");
+        assert!(
+            display.contains("relayout_on_add: true"),
+            "the relayout policy must persist to display.ron: {display}"
+        );
+
+        let mut app2 = harness::app().unwrap();
+        app2.project = Some(Project::open(&root).unwrap());
+        harness::load(&mut app2).unwrap();
+        assert_eq!(
+            app2.current_layout,
+            LayoutKind::Radial,
+            "the case's layout must survive a restart"
+        );
+        assert!(app2.relayout_on_add, "the relayout policy must survive a restart");
+        assert!(!app2.dirty().unwrap(), "a fresh load of the saved policy is clean");
+        drop(td);
+    }
+
+    #[test]
     fn validate_stays_clean_across_a_mutation_sequence() {
         let (td, project) = harness::temp_project().unwrap();
         let root = project.root.clone();

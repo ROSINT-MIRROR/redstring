@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::{Instant, SystemTime};
 
 use eframe::App;
 use egui::{Color32, Margin, Pos2, RichText, Vec2};
@@ -16,6 +15,7 @@ use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
 use super::board;
 use super::layout::LayoutKind;
+use super::watch::Watcher;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
 
@@ -36,8 +36,7 @@ pub struct RedstringApp {
 
     pub author: Author,
 
-    pub watched: Option<(String, SystemTime)>,
-    pub last_watch_poll: Instant,
+    pub watcher: Watcher,
 
     pub pending_load: bool,
 
@@ -143,8 +142,7 @@ impl RedstringApp {
             status: "no case open".to_owned(),
             prefs: Prefs::default(),
             author: resolve_identity(None)?,
-            watched: None,
-            last_watch_poll: Instant::now(),
+            watcher: Watcher::default(),
             pending_load: false,
             pending_camera: None,
             ne_kind: EntityKind::Person,

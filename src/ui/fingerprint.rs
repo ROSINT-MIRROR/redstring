@@ -11,11 +11,13 @@ fn dirty_state(case_open: bool, fp: &str, saved_fp: &str) -> bool {
     case_open && fp != saved_fp
 }
 
-pub fn compute_fingerprint(graph: &RsGraph, case_name: &str, size_by_degree: bool) -> Result<String, Error> {
+pub fn compute_fingerprint(graph: &RsGraph, case_name: &str, board: &CaseDisplay) -> Result<String, Error> {
     let g = graph.g();
     let mut recs: Vec<String> = Vec::new();
     let mut display = CaseDisplay {
-        size_by_degree,
+        size_by_degree: board.size_by_degree,
+        layout: board.layout,
+        relayout_on_add: board.relayout_on_add,
         ..CaseDisplay::default()
     };
     for n in g.node_weights() {
@@ -78,8 +80,15 @@ fn edge_fp_line(from: &str, to: &str, r: &Relation) -> Result<String, Error> {
 }
 
 fn display_fp(d: &CaseDisplay) -> Result<String, Error> {
-    let body = serde_json::to_string(&(&d.positions, &d.sizes, &d.collapsed, d.size_by_degree))
-        .map_err(|source| Error::JsonSer { source })?;
+    let body = serde_json::to_string(&(
+        &d.positions,
+        &d.sizes,
+        &d.collapsed,
+        d.size_by_degree,
+        d.layout,
+        d.relayout_on_add,
+    ))
+    .map_err(|source| Error::JsonSer { source })?;
     Ok(format!("d|{body}"))
 }
 
@@ -90,7 +99,7 @@ mod tests {
     };
     use crate::model::{
         Author, Camera, CaseDisplay, DatePrecision, DateVal, Entity, EntityKind, Facet, FacetValue,
-        Occupation, OccupationIcon, Origin, Relation, RelationKind, Verification,
+        LayoutKind, Occupation, OccupationIcon, Origin, Relation, RelationKind, Verification,
     };
     use crate::ui::testkit::nodes;
     use egui::Pos2;
@@ -254,6 +263,65 @@ mod tests {
     }
 
     #[test]
+    fn layout_policy_changes_flip_dirty() {
+        let saved = display_fp(&CaseDisplay::default()).unwrap();
+
+        let relayout_on = CaseDisplay {
+            relayout_on_add: true,
+            ..CaseDisplay::default()
+        };
+        let toggled = display_fp(&relayout_on).unwrap();
+        assert_ne!(saved, toggled, "toggling relayout-on-add must change the fingerprint");
+        assert!(
+            dirty_state(true, &toggled, &saved),
+            "toggling relayout-on-add must mark the case dirty"
+        );
+
+        let radial = CaseDisplay {
+            layout: LayoutKind::Radial,
+            ..CaseDisplay::default()
+        };
+        let relaid = display_fp(&radial).unwrap();
+        assert_ne!(saved, relaid, "picking a layout must change the fingerprint");
+        assert!(
+            dirty_state(true, &relaid, &saved),
+            "picking a layout must mark the case dirty"
+        );
+    }
+
+    #[test]
+    fn layout_policy_flips_dirty_through_the_full_fingerprint() {
+        let g = tiny_graph(50, Verification::Unreviewed);
+        let saved = compute_fingerprint(&g, "case", &CaseDisplay::default()).unwrap();
+        let toggled = compute_fingerprint(
+            &g,
+            "case",
+            &CaseDisplay {
+                relayout_on_add: true,
+                ..CaseDisplay::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            dirty_state(true, &toggled, &saved),
+            "relayout-on-add must flip dirty through the full fingerprint"
+        );
+        let relaid = compute_fingerprint(
+            &g,
+            "case",
+            &CaseDisplay {
+                layout: LayoutKind::Grid,
+                ..CaseDisplay::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            dirty_state(true, &relaid, &saved),
+            "the picked layout must flip dirty through the full fingerprint"
+        );
+    }
+
+    #[test]
     fn camera_change_leaves_fingerprint_stable() {
         let mut d = CaseDisplay::default();
         d.positions.insert("p".into(), (4.0, 9.0));
@@ -277,24 +345,26 @@ mod tests {
 
     #[test]
     fn full_fingerprint_round_trip_and_edge_flip() {
+        let board = CaseDisplay::default();
         let saved =
-            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", false).unwrap();
+            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", &board).unwrap();
         let reloaded =
-            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", false).unwrap();
+            compute_fingerprint(&tiny_graph(50, Verification::Unreviewed), "case", &board).unwrap();
         assert!(
             !dirty_state(true, &reloaded, &saved),
             "an identical save→load rebuild must not be dirty"
         );
 
         let rebumped =
-            compute_fingerprint(&tiny_graph(80, Verification::Unreviewed), "case", false).unwrap();
+            compute_fingerprint(&tiny_graph(80, Verification::Unreviewed), "case", &board).unwrap();
         assert!(
             dirty_state(true, &rebumped, &saved),
             "edge confidence must flip dirty through the full fingerprint"
         );
 
         let reverified =
-            compute_fingerprint(&tiny_graph(50, Verification::Corroborated), "case", false).unwrap();
+            compute_fingerprint(&tiny_graph(50, Verification::Corroborated), "case", &board)
+                .unwrap();
         assert!(
             dirty_state(true, &reverified, &saved),
             "edge verification must flip dirty through the full fingerprint"
