@@ -8,7 +8,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META, Preset};
-use crate::shapes::{SourcedEdgeShape, base_radius, texture_for};
+use crate::shapes::{SourcedEdgeShape, base_radius, texture_full_for};
 
 use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
@@ -182,7 +182,7 @@ impl RedstringApp {
         let Some(path) = self.prefs.background.as_deref() else {
             return Ok(());
         };
-        let Some(tex) = texture_for(ui.ctx(), path)? else {
+        let Some(tex) = texture_full_for(ui.ctx(), path)? else {
             return Ok(());
         };
         let tint =

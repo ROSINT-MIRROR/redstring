@@ -105,7 +105,8 @@ pub fn claim_edge_label(
     priority: f32,
     force: bool,
 ) -> Result<bool, Error> {
-    Ok(force || claim_label(ctx, id, rect, priority)?)
+    let win = claim_label(ctx, id, rect, priority)?;
+    Ok(force || win)
 }
 
 #[cfg(test)]
@@ -248,6 +249,100 @@ mod tests {
             !verb_win,
             "a gated sourced-verb label overlapping a higher-priority box must be skipped"
         );
+
+        let far = Rect::from_center_size(Pos2::new(400.0, 400.0), Vec2::splat(40.0));
+        let edge = 2u64 | (1u64 << 63);
+        let mut forced_alone = false;
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            forced_alone =
+                claim_edge_label(ui.ctx(), edge, far, 1000.0, true).expect("forced claim, clear spot");
+        });
+        assert!(forced_alone, "a forced edge claim in clear space must draw");
+
+        let mut node_win = true;
+        let _full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            node_win =
+                claim_label(ui.ctx(), 9, far, 5.0).expect("node label over the forced edge claim");
+        });
+        assert!(
+            !node_win,
+            "a lower-priority node label overlapping the previous frame's FORCED edge claim must yield: force overrides the draw decision, never the registration"
+        );
+    }
+
+    #[test]
+    fn moving_edge_claim_self_recognizes_across_frames() {
+        use crate::model::{
+            Author, Entity, EntityKind, Origin, Relation, RelationKind, Source, SourceKind,
+            Verification,
+        };
+        use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
+        use crate::ui::testkit::nodes;
+        use egui_graphs::{DisplayEdge, DrawContext, EdgeProps, MetadataFrame, Node, SettingsStyle};
+        use egui_phosphor::regular::PAPERCLIP;
+        use petgraph::{Directed, stable_graph::DefaultIx};
+
+        SourcedEdgeShape::set_shot_labels(true).expect("enable always-labels");
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        let mut es = SourcedEdgeShape::from(EdgeProps {
+            payload: Relation {
+                kind: RelationKind::Controls,
+                origin: Origin::default(),
+                status: Verification::Unreviewed,
+                confidence: 100,
+                author: Author::default(),
+                created_at: 0,
+                sources: vec![Source {
+                    kind: SourceKind::Note,
+                    reference: "n".into(),
+                    ..Default::default()
+                }],
+                valid_from: None,
+                valid_to: None,
+                sealed: false,
+                hidden: false,
+            },
+            order: 0,
+            selected: false,
+            label: String::new(),
+        });
+        let n1 = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(
+            nodes::entity(EntityKind::Person, "from_slug", "A", ""),
+        );
+        let mut n2 = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(
+            nodes::entity(EntityKind::Person, "to_slug", "B", ""),
+        );
+        for x in [200.0f32, 214.0] {
+            n2.set_location(Pos2::new(x, 6.0));
+            let mut drawn = false;
+            let _full = ctx.run_ui(input.clone(), |ui| {
+                let c = ui.ctx();
+                let painter = c.debug_painter();
+                let style = SettingsStyle::default();
+                let meta = MetadataFrame::default();
+                let dctx = DrawContext {
+                    ctx: c,
+                    painter: &painter,
+                    style: &style,
+                    is_directed: true,
+                    meta: &meta,
+                };
+                for s in &es.shapes(&n1, &n2, &dctx) {
+                    if let egui::Shape::Text(t) = s {
+                        if t.galley.text().contains(PAPERCLIP) {
+                            drawn = true;
+                        }
+                    }
+                }
+            });
+            assert!(
+                drawn,
+                "a gated sourced label must stay drawn while its endpoint moves (x={x}): the slug-keyed claim id must self-recognize the previous frame's claim instead of losing to its own ghost"
+            );
+        }
+        SourcedEdgeShape::set_shot_labels(false).expect("reset always-labels");
     }
 
     #[test]
