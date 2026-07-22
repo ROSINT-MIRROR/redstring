@@ -340,10 +340,7 @@ impl RedstringApp {
         }
         let added = spawned > 0 || linked > 0;
         if self.relayout_on_add && added {
-            if self.g.selected_nodes().len() < 2 {
-                self.clear_selection()?;
-            }
-            self.apply_layout(ui, self.current_layout)?;
+            self.relayout_all(ui, self.current_layout)?;
         } else {
             self.kick_spawn_anim(ui, steps)?;
         }

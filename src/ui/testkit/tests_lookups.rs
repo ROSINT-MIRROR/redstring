@@ -2,6 +2,7 @@
 mod tests {
     use std::time::{Duration, Instant, SystemTime};
 
+    use egui::Pos2;
     use petgraph::graph::NodeIndex;
 
     use crate::model::{EntityKind, Origin, RelationKind, Verification};
@@ -465,6 +466,18 @@ mod tests {
         anim.steps.iter().map(|(i, _, _)| *i).collect()
     }
 
+    fn anim_targets_pos(app: &RedstringApp) -> Vec<(NodeIndex, Pos2)> {
+        let Some(anim) = app.layout_anim.as_ref() else {
+            return Vec::new();
+        };
+        anim.steps.iter().map(|(i, _, to)| (*i, *to)).collect()
+    }
+
+    fn select_only(app: &mut RedstringApp, idx: NodeIndex) {
+        app.g.set_selected_nodes(vec![idx]);
+        app.g.node_mut(idx).expect("selected node").set_selected(true);
+    }
+
     #[test]
     fn transform_apply_survives_the_hot_reload_watcher() {
         let (td, project) = harness::temp_project().unwrap();
@@ -539,6 +552,7 @@ mod tests {
             "evil-corp.example",
         )
         .unwrap();
+        select_only(&mut app, dom);
         let raw = fixtures::fixture("dnsx.jsonl").unwrap();
         let ron = fixtures::module_ron("dnsx").unwrap();
         apply::apply_to(&mut app, &ron, "dnsx", dom, &raw).unwrap();
@@ -548,7 +562,7 @@ mod tests {
         assert_eq!(
             targets.len(),
             graph::node_count(&app).unwrap(),
-            "relayout arranges every node on the board, not just the newly spawned ones"
+            "relayout arranges every node on the board, not just the newly spawned ones — the single-selected source does not narrow it"
         );
         assert!(
             targets.contains(&dom),
@@ -602,5 +616,146 @@ mod tests {
             matches!(app.current_layout, LayoutKind::Circle),
             "the tracked layout follows the most recent choice"
         );
+    }
+
+    #[test]
+    fn relayout_on_add_keeps_the_source_selected_so_the_inspector_holds_focus() {
+        let mut app = harness::app().unwrap();
+        app.relayout_on_add = true;
+        let dom = graph::add_valued(
+            &mut app,
+            EntityKind::Domain,
+            "evil-corp.example",
+            "evil-corp.example",
+        )
+        .unwrap();
+        select_only(&mut app, dom);
+
+        let raw = fixtures::fixture("dnsx.jsonl").unwrap();
+        let ron = fixtures::module_ron("dnsx").unwrap();
+        apply::apply_to(&mut app, &ron, "dnsx", dom, &raw).unwrap();
+
+        assert_eq!(
+            app.g.selected_nodes(),
+            [dom].as_slice(),
+            "the source stays the sole selection — the auto-relayout never clears it"
+        );
+        assert!(
+            app.g.node(dom).expect("source node").selected(),
+            "the source node's selected flag survives, so the inspector keeps focus on it"
+        );
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
+    fn relayout_on_add_spreads_spawned_nodes_instead_of_stacking_them_on_the_source() {
+        let mut app = harness::app().unwrap();
+        app.relayout_on_add = true;
+        let dom = graph::add_valued(
+            &mut app,
+            EntityKind::Domain,
+            "evil-corp.example",
+            "evil-corp.example",
+        )
+        .unwrap();
+        select_only(&mut app, dom);
+
+        let raw = fixtures::fixture("dnsx.jsonl").unwrap();
+        let ron = fixtures::module_ron("dnsx").unwrap();
+        apply::apply_to(&mut app, &ron, "dnsx", dom, &raw).unwrap();
+
+        assert!(
+            app.layout_anim.is_some(),
+            "with the source selected the old path early-returned and moved nothing — now it lays out"
+        );
+        let spawned: Vec<Pos2> = anim_targets_pos(&app)
+            .into_iter()
+            .filter(|(idx, _)| *idx != dom)
+            .map(|(_, to)| to)
+            .collect();
+        assert_eq!(spawned.len(), 5, "all five dnsx nodes are animated to real slots");
+        let mut max_spread = 0.0f32;
+        for i in 0..spawned.len() {
+            for j in (i + 1)..spawned.len() {
+                max_spread = max_spread.max((spawned[i] - spawned[j]).length());
+            }
+        }
+        assert!(
+            max_spread > 20.0,
+            "spawned nodes fan out instead of piling under the source (spread={max_spread})"
+        );
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
+    fn an_external_edit_that_adds_nodes_auto_relays_out_the_board() {
+        let (td, project) = harness::temp_project().unwrap();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project.clone());
+        harness::load(&mut app).unwrap();
+
+        graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
+        graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
+        harness::save(&mut app).unwrap();
+        app.relayout_on_add = true;
+        app.layout_anim = None;
+
+        let mut cf = crate::project::read_case(&project).unwrap();
+        cf.data
+            .entities
+            .push(graph::entity_rec(EntityKind::Domain, "c.example", "c.example").unwrap());
+        crate::project::write_case(&project, &cf).unwrap();
+
+        let (path, _) = app.watched.clone().unwrap();
+        app.watched = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+
+        assert_eq!(
+            graph::node_count(&app).unwrap(),
+            3,
+            "the external/AI edit is reloaded, growing the board"
+        );
+        assert!(
+            app.layout_anim.is_some(),
+            "a node-count-growing external edit fires the same relayout as a transform"
+        );
+        invariant::check_graph(&app).unwrap();
+        drop(td);
+    }
+
+    #[test]
+    fn an_external_edit_that_adds_no_nodes_leaves_the_board_put() {
+        let (td, project) = harness::temp_project().unwrap();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project.clone());
+        harness::load(&mut app).unwrap();
+
+        graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
+        graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
+        harness::save(&mut app).unwrap();
+        app.relayout_on_add = true;
+        app.layout_anim = None;
+
+        let mut cf = crate::project::read_case(&project).unwrap();
+        cf.meta.name = "renamed by an external editor".to_owned();
+        crate::project::write_case(&project, &cf).unwrap();
+
+        let (path, _) = app.watched.clone().unwrap();
+        app.watched = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+
+        assert_eq!(
+            app.case_name, "renamed by an external editor",
+            "the external edit did reload"
+        );
+        assert_eq!(graph::node_count(&app).unwrap(), 2, "no node was added");
+        assert!(
+            app.layout_anim.is_none(),
+            "a trivial external edit (no new nodes) must not reshuffle the board"
+        );
+        invariant::check_graph(&app).unwrap();
+        drop(td);
     }
 }
