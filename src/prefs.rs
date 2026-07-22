@@ -28,6 +28,11 @@ pub struct Prefs {
     pub recent: Vec<String>,
 
     pub api_keys: Vec<(String, String)>,
+
+    pub background: Option<String>,
+
+    #[serde(default = "default_bg_opacity")]
+    pub background_opacity: f32,
 }
 
 impl Default for Prefs {
@@ -40,6 +45,8 @@ impl Default for Prefs {
             theme: Theme::Dark,
             recent: Vec::new(),
             api_keys: Vec::new(),
+            background: None,
+            background_opacity: default_bg_opacity(),
         }
     }
 }
@@ -94,6 +101,10 @@ fn default_palette_width() -> f32 {
     280.0
 }
 
+fn default_bg_opacity() -> f32 {
+    0.5
+}
+
 pub fn config_base() -> Result<PathBuf, Error> {
     let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) else {
         let Some(home) = std::env::var_os("HOME").filter(|v| !v.is_empty()) else {
@@ -114,6 +125,8 @@ mod tests {
         assert!(p.sidebar_collapsed);
         assert_eq!(p.ui_scale, Prefs::default().ui_scale);
         assert_eq!(p.theme, Theme::Dark);
+        assert_eq!(p.background, None);
+        assert_eq!(p.background_opacity, 0.5);
 
         let p: Prefs = ron::from_str("()").unwrap();
         assert_eq!(p, Prefs::default());
@@ -129,6 +142,8 @@ mod tests {
             theme: Theme::Light,
             recent: vec!["/tmp/case_a".into(), "/tmp/case_b".into()],
             api_keys: vec![("opensanctions".into(), "key123".into())],
+            background: Some("/tmp/bg.png".into()),
+            background_opacity: 0.3,
         };
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();

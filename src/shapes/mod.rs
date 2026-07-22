@@ -7,4 +7,4 @@ mod texture;
 pub use edge::SourcedEdgeShape;
 pub use label::{LABEL_GAP, LABEL_SIZE, LABEL_WRAP, MAX_FONT_PX, LabelAnchor, label_box};
 pub use node::{EntityNodeShape, IMG_RADIUS, NODE_RADIUS, base_radius};
-pub use texture::invalidate_texture;
+pub use texture::{invalidate_texture, texture_for};

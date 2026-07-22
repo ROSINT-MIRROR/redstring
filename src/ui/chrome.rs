@@ -405,7 +405,51 @@ fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
         changed |= ui.selectable_value(&mut prefs.theme, Theme::Dark, "dark").clicked();
         changed |= ui.selectable_value(&mut prefs.theme, Theme::Light, "light").clicked();
     });
+    ui.add_space(super::style::GAP_SM);
+    let mut clear = false;
+    ui.horizontal(|ui| {
+        ui.label(format!("{} board background", egui_phosphor::regular::IMAGE));
+        if ui.button("choose image…").clicked()
+            && let Some(path) = pick_background()
+        {
+            prefs.background = Some(path);
+            changed = true;
+        }
+        let Some(bg) = prefs.background.as_deref() else {
+            return;
+        };
+        ui.label(RichText::new(background_name(bg)).weak().small());
+        clear = ui.button("clear").clicked();
+    });
+    if clear {
+        prefs.background = None;
+        changed = true;
+    }
+    if prefs.background.is_some() {
+        ui.horizontal(|ui| {
+            ui.label("opacity");
+            let slider =
+                ui.add(egui::Slider::new(&mut prefs.background_opacity, 0.0..=1.0).step_by(0.01));
+            if slider.drag_stopped() || slider.lost_focus() {
+                changed = true;
+            }
+        });
+    }
     changed
+}
+
+fn pick_background() -> Option<String> {
+    let path = rfd::FileDialog::new()
+        .add_filter("image", &["png", "jpg", "jpeg", "webp", "bmp", "gif"])
+        .pick_file()?;
+    Some(path.to_string_lossy().into_owned())
+}
+
+fn background_name(path: &str) -> String {
+    let Some(name) = std::path::Path::new(path).file_name() else {
+        return path.to_owned();
+    };
+    name.to_string_lossy().into_owned()
 }
 
 
