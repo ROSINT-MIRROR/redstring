@@ -54,10 +54,12 @@ pub enum RelationKind {
     LaunderedThrough,
     Owes,
     Sued,
+    Charged,
     Prosecuted,
     Investigated,
     Sanctioned,
     ConvictedOf,
+    Violated,
     WitnessIn,
     RegulatedBy,
     LicensedBy,
@@ -121,6 +123,7 @@ pub enum RelationKind {
     Kidnapped,
     HarmedBy,
     Accused,
+    AllegedToCommit,
     Denounced,
     ComplainedAgainst,
     Supports,
@@ -160,7 +163,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 136] = [
+pub const RELATION_META: [RelMeta; 139] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -208,10 +211,12 @@ pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::LaunderedThrough, "laundered through", "money"),
     r(RelationKind::Owes, "owes", "money"),
     r(RelationKind::Sued, "sued", "legal/state"),
+    r(RelationKind::Charged, "charged", "legal/state"),
     r(RelationKind::Prosecuted, "prosecuted", "legal/state"),
     r(RelationKind::Investigated, "investigated", "legal/state"),
     r(RelationKind::Sanctioned, "sanctioned", "legal/state"),
     r(RelationKind::ConvictedOf, "convicted of", "legal/state"),
+    r(RelationKind::Violated, "violated", "legal/state"),
     r(RelationKind::WitnessIn, "witness in", "legal/state"),
     r(RelationKind::RegulatedBy, "regulated by", "legal/state"),
     r(RelationKind::LicensedBy, "licensed by", "legal/state"),
@@ -275,6 +280,7 @@ pub const RELATION_META: [RelMeta; 136] = [
     r(RelationKind::Kidnapped, "kidnapped", "abuse/violence"),
     r(RelationKind::HarmedBy, "harmed by", "abuse/violence"),
     r(RelationKind::Accused, "accused", "accusation"),
+    r(RelationKind::AllegedToCommit, "alleged to commit", "accusation"),
     r(RelationKind::Denounced, "denounced", "accusation"),
     r(RelationKind::ComplainedAgainst, "complained against", "accusation"),
     r(RelationKind::Supports, "supports", "evidence"),
@@ -488,6 +494,24 @@ mod tests {
             (RelationKind::Resembles, "resemblance"),
             (RelationKind::Thanked, "endorsement"),
             (RelationKind::Credited, "endorsement"),
+        ] {
+            assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
+        }
+    }
+
+    #[test]
+    fn charging_and_statute_verbs_resolve_by_slug_in_legal_and_accusation_families() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        assert_eq!(by_slug("charged"), Some(RelationKind::Charged));
+        assert_eq!(by_slug("alleged_to_commit"), Some(RelationKind::AllegedToCommit));
+        assert_eq!(by_slug("violated"), Some(RelationKind::Violated));
+
+        for (k, fam) in [
+            (RelationKind::Charged, "legal/state"),
+            (RelationKind::Violated, "legal/state"),
+            (RelationKind::AllegedToCommit, "accusation"),
         ] {
             assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
         }
