@@ -65,6 +65,7 @@ pub struct EntityNodeShape {
     collapsed: bool,
     sealed: bool,
     hidden: bool,
+    id: u64,
 }
 
 impl From<NodeProps<Entity>> for EntityNodeShape {
@@ -80,6 +81,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
             collapsed: props.payload.collapsed,
             sealed: props.payload.sealed,
             hidden: props.payload.hidden,
+            id: slug_id(&props.payload.slug),
             circle,
             tex_ok: false,
         }
@@ -117,6 +119,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
         self.name = display_label(&state.payload.label);
+        self.id = slug_id(&state.payload.slug);
         self.facets = state.payload.facets.clone();
         self.size = state.payload.size * state.payload.boost;
         self.collapsed = state.payload.collapsed;
@@ -269,7 +272,7 @@ impl EntityNodeShape {
             return res;
         };
         let priority = if self.circle.selected { f32::INFINITY } else { self.size };
-        let Ok(draw) = claim_label(ctx.ctx, box_rect, priority) else {
+        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, priority) else {
             return res;
         };
         if !draw {
@@ -363,7 +366,7 @@ impl EntityNodeShape {
             return res;
         };
         let priority = if self.circle.selected { f32::INFINITY } else { self.size };
-        let Ok(draw) = claim_label(ctx.ctx, box_rect, priority) else {
+        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, priority) else {
             return res;
         };
         if !draw {
@@ -394,6 +397,15 @@ fn mute_node(c: Color32) -> Color32 {
     let lum = 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
     let gray = Color32::from_gray(lum.clamp(0.0, 255.0) as u8);
     c.lerp_to_gamma(gray, SEALED_DESAT)
+}
+
+fn slug_id(slug: &str) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in slug.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash & !(1u64 << 63)
 }
 
 fn collapse_slot(tl: Pos2, sealed: bool, badge_r: f32) -> Pos2 {
@@ -659,9 +671,9 @@ mod tests {
         );
     }
 
-    fn disc_node(label: &str) -> Node<Entity, Relation, Directed, DefaultIx, EntityNodeShape> {
+    fn disc_node(slug: &str, label: &str) -> Node<Entity, Relation, Directed, DefaultIx, EntityNodeShape> {
         let ent = Entity {
-            slug: "n".into(),
+            slug: slug.into(),
             kind: EntityKind::Person,
             label: label.into(),
             size: (LABEL_MIN_PX * 2.0) / LABEL_SIZE,
@@ -690,8 +702,8 @@ mod tests {
                     is_directed: true,
                     meta: &meta,
                 };
-                for _ in 0..2 {
-                    let mut node = disc_node("Overlap Label");
+                for slug in ["n1", "n2"] {
+                    let mut node = disc_node(slug, "Overlap Label");
                     let shapes = <EntityNodeShape as DisplayNode<
                         Entity,
                         Relation,
