@@ -292,11 +292,13 @@ impl RedstringApp {
 
     fn canonical_image(&mut self, nidx: NodeIndex, src: &str) -> Result<String, Error> {
         let slug = self.node_slug(nidx)?;
-        let Some(project) = &self.project else {
+        let Some(project) = self.project.clone() else {
             self.status = "image linked in place — save the case first to copy it in".into();
             return Ok(src.to_owned());
         };
-        match crate::project::import_entity_image(project, &slug, std::path::Path::new(src)) {
+        let imported = crate::project::import_entity_image(&project, &slug, std::path::Path::new(src));
+        self.watch_current()?;
+        match imported {
             Ok(abs) => {
                 let abs = abs.display().to_string();
                 self.status = format!("image copied → {}", project.rel_or_self(&abs)?);
@@ -449,11 +451,13 @@ impl RedstringApp {
         let Some(p) = rfd::FileDialog::new().pick_file() else {
             return Ok(());
         };
-        let Some(project) = &self.project else {
+        let Some(project) = self.project.clone() else {
             self.status = "save the case first — evidence is copied into the case dir".into();
             return Ok(());
         };
-        match crate::project::import_source_file(project, self.ns_kind, &p) {
+        let imported = crate::project::import_source_file(&project, self.ns_kind, &p);
+        self.watch_current()?;
+        match imported {
             Ok(rel) => {
                 self.ns_ref = rel;
                 self.status = "file copied into the case — add the source".into();

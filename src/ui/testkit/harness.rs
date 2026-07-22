@@ -83,6 +83,8 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         band: None,
         panning: false,
         layout_anim: None,
+        current_layout: LayoutKind::Force,
+        relayout_on_add: false,
         active_path: None,
         find_open: false,
         find_query: String::new(),

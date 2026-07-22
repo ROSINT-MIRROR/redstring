@@ -1,7 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant, SystemTime};
+
+    use petgraph::graph::NodeIndex;
+
     use crate::model::{EntityKind, Origin, RelationKind, Verification};
-    use crate::modules::{Fact, ObsKind};
+    use crate::modules::{Fact, ModuleRun, ObsKind};
+    use crate::ui::RedstringApp;
+    use crate::ui::layout::LayoutKind;
     use crate::ui::testkit::{apply, fixtures, graph, harness, invariant};
 
     fn ent(
@@ -450,5 +456,151 @@ mod tests {
             "the emitted domain must converge onto the existing node, not duplicate"
         );
         invariant::check_graph(&app).unwrap();
+    }
+
+    fn anim_targets(app: &RedstringApp) -> Vec<NodeIndex> {
+        let Some(anim) = app.layout_anim.as_ref() else {
+            return Vec::new();
+        };
+        anim.steps.iter().map(|(i, _, _)| *i).collect()
+    }
+
+    #[test]
+    fn transform_apply_survives_the_hot_reload_watcher() {
+        let (td, project) = harness::temp_project().unwrap();
+        let root = project.root.clone();
+        let mut app = harness::app().unwrap();
+        app.project = Some(project);
+        harness::load(&mut app).unwrap();
+
+        let dom = graph::add_valued(
+            &mut app,
+            EntityKind::Domain,
+            "evil-corp.example",
+            "evil-corp.example",
+        )
+        .unwrap();
+        harness::save(&mut app).unwrap();
+        assert_eq!(graph::node_count(&app).unwrap(), 1);
+
+        let (watched_path, _) = app.watched.clone().unwrap();
+        app.watched = Some((watched_path, SystemTime::now() - Duration::from_secs(5)));
+
+        let raw = fixtures::fixture("dnsx.jsonl").unwrap();
+        let ron = fixtures::module_ron("dnsx").unwrap();
+        let (shape_id, facts) = apply::parse(&ron, &raw).unwrap();
+        let run = ModuleRun {
+            run_id: app.next_run_id,
+            module_id: "dnsx".to_owned(),
+            module_label: "dnsx".to_owned(),
+            target_slug: graph::slug_of(&app, dom).unwrap(),
+            target_label: "evil-corp.example".to_owned(),
+            project_root: Some(root.clone()),
+            shape_id,
+            facts,
+            raw,
+            stderr_tail: String::new(),
+            ok: true,
+            cancelled: false,
+            evidence_rel: "evidence/docs/dnsx-evil-corp-test.txt".to_owned(),
+            last: true,
+        };
+        app.next_run_id += 1;
+        app.module_tx.send(run).unwrap();
+        harness::frame(&mut app, |a, ui| a.poll_module_runs(ui)).unwrap();
+
+        let after_apply = graph::node_count(&app).unwrap();
+        assert_eq!(after_apply, 6, "dnsx spawns 2 IPs + 3 servers onto the domain");
+        assert!(
+            root.join("evidence/docs/dnsx-evil-corp-test.txt").exists(),
+            "raw stdout is archived into the case tree — this is the write that trips the watcher"
+        );
+
+        app.last_watch_poll = Instant::now() - Duration::from_millis(1100);
+        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+
+        assert_eq!(
+            graph::node_count(&app).unwrap(),
+            after_apply,
+            "apply_run re-baselines the watcher, so its own evidence write is not seen as an external edit — spawned nodes are not wiped"
+        );
+        invariant::check_graph(&app).unwrap();
+        drop(td);
+    }
+
+    #[test]
+    fn relayout_on_add_relays_out_the_whole_board_not_the_spawn_spiral() {
+        let mut app = harness::app().unwrap();
+        app.relayout_on_add = true;
+        let dom = graph::add_valued(
+            &mut app,
+            EntityKind::Domain,
+            "evil-corp.example",
+            "evil-corp.example",
+        )
+        .unwrap();
+        let raw = fixtures::fixture("dnsx.jsonl").unwrap();
+        let ron = fixtures::module_ron("dnsx").unwrap();
+        apply::apply_to(&mut app, &ron, "dnsx", dom, &raw).unwrap();
+
+        assert!(app.layout_anim.is_some(), "a layout animation is queued");
+        let targets = anim_targets(&app);
+        assert_eq!(
+            targets.len(),
+            graph::node_count(&app).unwrap(),
+            "relayout arranges every node on the board, not just the newly spawned ones"
+        );
+        assert!(
+            targets.contains(&dom),
+            "the whole-board relayout repositions the pre-existing source node too"
+        );
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
+    fn default_add_keeps_the_spawn_spiral_and_leaves_existing_nodes_put() {
+        let mut app = harness::app().unwrap();
+        assert!(!app.relayout_on_add, "relayout-on-add is off by default");
+        let dom = graph::add_valued(
+            &mut app,
+            EntityKind::Domain,
+            "evil-corp.example",
+            "evil-corp.example",
+        )
+        .unwrap();
+        let raw = fixtures::fixture("dnsx.jsonl").unwrap();
+        let ron = fixtures::module_ron("dnsx").unwrap();
+        apply::apply_to(&mut app, &ron, "dnsx", dom, &raw).unwrap();
+
+        assert!(app.layout_anim.is_some(), "the spawn-spiral animation is queued");
+        let targets = anim_targets(&app);
+        assert_eq!(targets.len(), 5, "only the 5 spawned nodes ride the spawn-spiral");
+        assert!(
+            !targets.contains(&dom),
+            "the spawn-spiral never touches the pre-existing source node"
+        );
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
+    fn choosing_a_layout_tracks_it_as_the_current_layout() {
+        let mut app = harness::app().unwrap();
+        assert!(
+            matches!(app.current_layout, LayoutKind::Force),
+            "the board starts on the force layout"
+        );
+        graph::add(&mut app, EntityKind::Person, "alpha").unwrap();
+        graph::add(&mut app, EntityKind::Person, "beta").unwrap();
+
+        harness::frame(&mut app, |a, ui| a.choose_layout(ui, LayoutKind::Grid)).unwrap();
+        assert!(
+            matches!(app.current_layout, LayoutKind::Grid),
+            "clicking a layout button records it as the selected layout"
+        );
+        harness::frame(&mut app, |a, ui| a.choose_layout(ui, LayoutKind::Circle)).unwrap();
+        assert!(
+            matches!(app.current_layout, LayoutKind::Circle),
+            "the tracked layout follows the most recent choice"
+        );
     }
 }

@@ -267,6 +267,7 @@ impl RedstringApp {
             return Ok(());
         };
         let source = super::evidence::evidence_source(&run)?;
+        self.watch_current()?;
         if run.shape_id.is_empty() {
             self.status = format!(
                 "{}: no known output shape — raw output archived, nothing parsed",
@@ -337,7 +338,15 @@ impl RedstringApp {
                 }
             }
         }
-        self.kick_spawn_anim(ui, steps)?;
+        let added = spawned > 0 || linked > 0;
+        if self.relayout_on_add && added {
+            if self.g.selected_nodes().len() < 2 {
+                self.clear_selection()?;
+            }
+            self.apply_layout(ui, self.current_layout)?;
+        } else {
+            self.kick_spawn_anim(ui, steps)?;
+        }
         let total = self.bump_job_found(run.run_id, linked);
         crate::dlog_info!(
             "lookups",
