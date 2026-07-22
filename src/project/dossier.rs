@@ -121,6 +121,8 @@ fn facet_lines(e: &EntityRec) -> Result<Vec<String>, Error> {
         Facet::DomainType,
         Facet::SiteType,
         Facet::ClaimType,
+        Facet::ClaimStatus,
+        Facet::LocationType,
     ] {
         let Some(i) = subtype_of(&e.facets, facet)? else {
             continue;

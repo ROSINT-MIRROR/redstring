@@ -94,17 +94,22 @@ const fn ps(
 }
 
 #[rustfmt::skip]
-pub const PRESETS: [Preset; 66] = [
+pub const PRESETS: [Preset; 77] = [
     ps("Suspect", egui_phosphor::regular::USER_FOCUS, EntityKind::Person, Some(Role::Suspect), None, None, None),
     ps("Perpetrator", egui_phosphor::regular::HAND_FIST, EntityKind::Person, Some(Role::Perpetrator), None, None, None),
     ps("Victim", egui_phosphor::regular::BANDAIDS, EntityKind::Person, Some(Role::Victim), None, None, None),
     ps("Witness", egui_phosphor::regular::EYE, EntityKind::Person, Some(Role::Witness), None, None, None),
     ps("Source", egui_phosphor::regular::USER_SOUND, EntityKind::Person, Some(Role::Source), None, None, None),
+    ps("Whistleblower", egui_phosphor::regular::MEGAPHONE, EntityKind::Person, Some(Role::Whistleblower), None, None, None),
+    ps("Informant", egui_phosphor::regular::EAR, EntityKind::Person, Some(Role::Informant), None, None, None),
+    ps("Impersonated", egui_phosphor::regular::MASK_HAPPY, EntityKind::Person, Some(Role::Impersonated), None, None, None),
     ps("Judge", egui_phosphor::regular::SCALES, EntityKind::Person, None, Some(("Judge", OccupationIcon::Scales)), None, None),
     ps("Journalist", egui_phosphor::regular::PEN_NIB, EntityKind::Person, None, Some(("Journalist", OccupationIcon::PenNib)), None, None),
     ps("Lawyer", egui_phosphor::regular::BRIEFCASE, EntityKind::Person, None, Some(("Lawyer", OccupationIcon::Briefcase)), None, None),
     ps("Police officer", egui_phosphor::regular::SHIELD_STAR, EntityKind::Person, None, Some(("Police officer", OccupationIcon::Shield)), None, None),
     ps("Politician", egui_phosphor::regular::MICROPHONE_STAGE, EntityKind::Person, None, Some(("Politician", OccupationIcon::Microphone)), None, None),
+    ps("Doctor", egui_phosphor::regular::STETHOSCOPE, EntityKind::Person, None, Some(("Doctor", OccupationIcon::Stethoscope)), None, None),
+    ps("Military officer", egui_phosphor::regular::SWORD, EntityKind::Person, None, Some(("Military officer", OccupationIcon::Sword)), None, None),
     ps("Company", egui_phosphor::regular::BUILDING_OFFICE, EntityKind::Organization, None, None, Some((Facet::OrgType, 0)), None),
     ps("Shell company", egui_phosphor::regular::CUBE_TRANSPARENT, EntityKind::Organization, None, None, Some((Facet::OrgType, 1)), None),
     ps("NGO", egui_phosphor::regular::HAND_HEART, EntityKind::Organization, None, None, Some((Facet::OrgType, 2)), None),
@@ -121,11 +126,15 @@ pub const PRESETS: [Preset; 66] = [
     ps("Pharmacy", egui_phosphor::regular::PILL, EntityKind::Organization, None, None, Some((Facet::OrgType, 13)), None),
     ps("Cult / secret society", egui_phosphor::regular::EYE, EntityKind::Organization, None, None, Some((Facet::OrgType, 14)), None),
     ps("Ad platform", egui_phosphor::regular::TARGET, EntityKind::Organization, None, None, Some((Facet::OrgType, 15)), None),
+    ps("Tech platform", egui_phosphor::regular::CPU, EntityKind::Organization, None, None, Some((Facet::OrgType, 16)), None),
+    ps("Military / intelligence unit", egui_phosphor::regular::SHIELD_SLASH, EntityKind::Organization, None, None, Some((Facet::OrgType, 17)), None),
     ps("Burner", egui_phosphor::regular::FLAME, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 0)), None),
     ps("Sockpuppet", egui_phosphor::regular::MASK_HAPPY, EntityKind::SocialAccount, None, None, Some((Facet::AccountType, 1)), None),
     ps("Parked", egui_phosphor::regular::PARK, EntityKind::Domain, None, None, Some((Facet::DomainType, 0)), None),
     ps("Typosquat", egui_phosphor::regular::WARNING, EntityKind::Domain, None, None, Some((Facet::DomainType, 1)), None),
     ps("Drop-caught", egui_phosphor::regular::HAND_GRABBING, EntityKind::Domain, None, None, Some((Facet::DomainType, 2)), None),
+    ps("Lookalike", egui_phosphor::regular::COPY, EntityKind::Domain, None, None, Some((Facet::DomainType, 3)), None),
+    ps("Disposable", egui_phosphor::regular::TRASH, EntityKind::Domain, None, None, Some((Facet::DomainType, 4)), None),
     ps("A", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "A"))),
     ps("AAAA", egui_phosphor::regular::NETWORK, EntityKind::DnsRecord, None, None, None, Some(("record_type", "AAAA"))),
     ps("MX", egui_phosphor::regular::ENVELOPE, EntityKind::DnsRecord, None, None, None, Some(("record_type", "MX"))),
@@ -156,11 +165,13 @@ pub const PRESETS: [Preset; 66] = [
     ps("Upload", egui_phosphor::regular::UPLOAD_SIMPLE, EntityKind::Endpoint, None, None, None, Some(("purpose", "Upload"))),
     ps("Search", egui_phosphor::regular::MAGNIFYING_GLASS, EntityKind::Endpoint, None, None, None, Some(("purpose", "Search"))),
     ps("API call", egui_phosphor::regular::WEBHOOKS_LOGO, EntityKind::Endpoint, None, None, None, Some(("purpose", "API call"))),
-    ps("WooCommerce store", egui_phosphor::regular::SHOPPING_CART, EntityKind::Website, None, None, Some((Facet::SiteType, 0)), None),
-    ps("Cloaker", egui_phosphor::regular::EYE_SLASH, EntityKind::Website, None, None, Some((Facet::SiteType, 1)), None),
-    ps("Landing page", egui_phosphor::regular::ROCKET_LAUNCH, EntityKind::Website, None, None, Some((Facet::SiteType, 2)), None),
-    ps("Storefront", egui_phosphor::regular::STOREFRONT, EntityKind::Website, None, None, Some((Facet::SiteType, 3)), None),
-    ps("Blog", egui_phosphor::regular::ARTICLE, EntityKind::Website, None, None, Some((Facet::SiteType, 4)), None),
+    ps("Cloaker", egui_phosphor::regular::EYE_SLASH, EntityKind::Website, None, None, Some((Facet::SiteType, 0)), None),
+    ps("Landing page", egui_phosphor::regular::ROCKET_LAUNCH, EntityKind::Website, None, None, Some((Facet::SiteType, 1)), None),
+    ps("Storefront", egui_phosphor::regular::STOREFRONT, EntityKind::Website, None, None, Some((Facet::SiteType, 2)), None),
+    ps("Blog", egui_phosphor::regular::ARTICLE, EntityKind::Website, None, None, Some((Facet::SiteType, 3)), None),
+    ps("Military base", egui_phosphor::regular::SHIELD_CHEVRON, EntityKind::Location, None, None, Some((Facet::LocationType, 0)), None),
+    ps("Religious site", egui_phosphor::regular::CHURCH, EntityKind::Location, None, None, Some((Facet::LocationType, 1)), None),
+    ps("Victim cohort", egui_phosphor::regular::USERS_FOUR, EntityKind::Cohort, Some(Role::Victim), None, None, None),
 ];
 
 pub fn apply_preset(e: &mut Entity, preset: &Preset, author: &Author) -> Result<(), Error> {
@@ -363,13 +374,17 @@ mod tests {
             ("CPA network", EntityKind::Organization, Facet::OrgType, 6),
             ("Law firm", EntityKind::Organization, Facet::OrgType, 7),
             ("Criminal org", EntityKind::Organization, Facet::OrgType, 10),
+            ("Tech platform", EntityKind::Organization, Facet::OrgType, 16),
+            ("Military / intelligence unit", EntityKind::Organization, Facet::OrgType, 17),
             ("Burner", EntityKind::SocialAccount, Facet::AccountType, 0),
             ("Sockpuppet", EntityKind::SocialAccount, Facet::AccountType, 1),
             ("Parked", EntityKind::Domain, Facet::DomainType, 0),
             ("Typosquat", EntityKind::Domain, Facet::DomainType, 1),
-            ("WooCommerce store", EntityKind::Website, Facet::SiteType, 0),
-            ("Cloaker", EntityKind::Website, Facet::SiteType, 1),
-            ("Blog", EntityKind::Website, Facet::SiteType, 4),
+            ("Lookalike", EntityKind::Domain, Facet::DomainType, 3),
+            ("Disposable", EntityKind::Domain, Facet::DomainType, 4),
+            ("Cloaker", EntityKind::Website, Facet::SiteType, 0),
+            ("Blog", EntityKind::Website, Facet::SiteType, 3),
+            ("Military base", EntityKind::Location, Facet::LocationType, 0),
         ];
         for (label, base, facet, index) in cases {
             let p = PRESETS.iter().find(|p| p.label == label).expect("preset present");
@@ -404,9 +419,42 @@ mod tests {
                 EntityKind::Parameter,
                 EntityKind::Endpoint,
                 EntityKind::Website,
+                EntityKind::Location,
+                EntityKind::Cohort,
             ],
             "preset base-kind order pinned"
         );
+    }
+
+    #[test]
+    fn round3_presets_stamp_new_roles_occupations_and_cohort() {
+        for (label, role) in [
+            ("Whistleblower", Role::Whistleblower),
+            ("Informant", Role::Informant),
+            ("Impersonated", Role::Impersonated),
+        ] {
+            let p = PRESETS.iter().find(|p| p.label == label).expect("preset present");
+            assert_eq!(p.base_kind, EntityKind::Person, "{label} base kind");
+            assert_eq!(p.role, Some(role), "{label} stamps its role");
+            assert_eq!(p.occupation, None, "{label} sets no occupation");
+            assert_eq!(p.facet, None, "{label} sets no subtype facet");
+        }
+
+        assert!(
+            !PRESETS.iter().any(|p| p.label == "WooCommerce store"),
+            "the vendor-name site preset died with its vocab row"
+        );
+
+        let cohort = PRESETS.iter().find(|p| p.label == "Victim cohort").expect("cohort preset");
+        assert_eq!(cohort.base_kind, EntityKind::Cohort);
+        assert_eq!(cohort.role, Some(Role::Victim), "one-click sealed-aggregation pattern");
+        assert_eq!(cohort.facet, None);
+
+        let mut e = person("residents");
+        e.kind = EntityKind::Cohort;
+        apply_preset(&mut e, cohort, &Author::default()).unwrap();
+        assert_eq!(role_of(&e.facets).unwrap(), Role::Victim);
+        assert!(e.observations.is_empty(), "cohort preset stamps no observation");
     }
 
     #[test]
@@ -434,6 +482,8 @@ mod tests {
             ("Lawyer", OccupationIcon::Briefcase, egui_phosphor::regular::BRIEFCASE),
             ("Police officer", OccupationIcon::Shield, egui_phosphor::regular::SHIELD_STAR),
             ("Politician", OccupationIcon::Microphone, egui_phosphor::regular::MICROPHONE_STAGE),
+            ("Doctor", OccupationIcon::Stethoscope, egui_phosphor::regular::STETHOSCOPE),
+            ("Military officer", OccupationIcon::Sword, egui_phosphor::regular::SWORD),
         ];
         for (label, icon, glyph) in expected {
             let p = PRESETS.iter().find(|p| p.label == label).expect("preset present");

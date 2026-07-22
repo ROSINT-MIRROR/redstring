@@ -75,7 +75,9 @@ fn facet_index_ok(facet: Facet, index: u16) -> Result<bool, Error> {
         | Facet::AccountType
         | Facet::DomainType
         | Facet::SiteType
-        | Facet::ClaimType => Ok(subtype_value(facet, index)?.is_some()),
+        | Facet::ClaimType
+        | Facet::ClaimStatus
+        | Facet::LocationType => Ok(subtype_value(facet, index)?.is_some()),
     }
 }
 

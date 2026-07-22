@@ -39,7 +39,9 @@ pub fn facet_rows(
             | Facet::AccountType
             | Facet::DomainType
             | Facet::SiteType
-            | Facet::ClaimType => {
+            | Facet::ClaimType
+            | Facet::ClaimStatus
+            | Facet::LocationType => {
                 ui.horizontal(|ui| -> Result<(), Error> {
                     ui.label(meta.label).on_hover_text(meta.hint);
                     subtype_field(ui, facets, *facet)
@@ -264,5 +266,33 @@ mod tests {
     fn website_form_renders_site_type_row() {
         let texts = painted_texts(EntityKind::Website);
         assert!(has(&texts, "site type"), "Website must render a site-type row: {texts:?}");
+    }
+
+    #[test]
+    fn claim_form_renders_both_claim_type_and_claim_status_rows() {
+        let texts = painted_texts(EntityKind::Claim);
+        assert!(has(&texts, "claim type"), "Claim must render its claim-type row: {texts:?}");
+        assert!(has(&texts, "claim status"), "Claim must render its claim-status row: {texts:?}");
+        assert!(!has(&texts, "role"), "Claim is not an actor — no role row: {texts:?}");
+    }
+
+    #[test]
+    fn location_form_renders_location_type_row() {
+        let texts = painted_texts(EntityKind::Location);
+        assert!(
+            has(&texts, "location type"),
+            "Location must render its location-type row: {texts:?}"
+        );
+        assert!(!has(&texts, "role"), "Location is not an actor — no role row: {texts:?}");
+    }
+
+    #[test]
+    fn cohort_form_renders_role_but_not_occupation() {
+        let texts = painted_texts(EntityKind::Cohort);
+        assert!(has(&texts, "role"), "Cohort must render a role row: {texts:?}");
+        assert!(
+            !has(&texts, "occupation"),
+            "Cohort is an aggregate, not an individual — no occupation field: {texts:?}"
+        );
     }
 }
