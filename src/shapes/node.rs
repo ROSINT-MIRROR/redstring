@@ -13,9 +13,10 @@ use crate::model::{Entity, Facet, FacetValue, KIND_META};
 
 use super::badge::{Corners, backdrop, badge_fg, collapsed_badge, draw_facet_badges, sealed_badge};
 use super::label::{
-    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX,
-    badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
+    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_MIN_PX, LABEL_SIZE, LABEL_WRAP, LabelAnchor,
+    MAX_FONT_PX, badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
 };
+use super::reveal::{display_label, reveal_label};
 use super::texture::{cover_uv, texture_for};
 
 pub const IMG_RADIUS: f32 = 10.0;
@@ -36,12 +37,6 @@ pub fn base_radius(e: &Entity) -> Result<f32, Error> {
 
 const ICON_SIZE: f32 = 15.0;
 
-const LABEL_MIN_PX: f32 = 9.0;
-
-const LABEL_ELIDE_CHARS: usize = 18;
-const LABEL_HEAD_CHARS: usize = 8;
-const LABEL_TAIL_CHARS: usize = 6;
-
 const DISC_FILL_DARK: f32 = 0.25;
 const DISC_FILL_LIGHT: f32 = 0.5;
 
@@ -57,7 +52,7 @@ pub struct EntityNodeShape {
     tex_ok: bool,
 
     icon: String,
-    name: String,
+    full: String,
 
     facets: BTreeMap<Facet, FacetValue>,
 
@@ -75,7 +70,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
         Self {
             image: props.payload.image.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
-            name: display_label(&props.payload.label),
+            full: props.payload.label.trim().to_owned(),
             facets: props.payload.facets.clone(),
             size: props.payload.size * props.payload.boost,
             collapsed: props.payload.collapsed,
@@ -118,7 +113,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
             self.tex_ok = false;
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
-        self.name = display_label(&state.payload.label);
+        self.full = state.payload.label.trim().to_owned();
         self.id = slug_id(&state.payload.slug);
         self.facets = state.payload.facets.clone();
         self.size = state.payload.size * state.payload.boost;
@@ -183,6 +178,30 @@ impl EntityNodeShape {
             return self.frame_color(ctx);
         };
         c
+    }
+
+    fn label_priority(&self) -> f32 {
+        if self.circle.selected || self.circle.hovered {
+            return f32::INFINITY;
+        }
+        self.size
+    }
+
+    fn reveals(&self, elided: bool, claimed: bool) -> bool {
+        self.circle.hovered && (elided || !claimed)
+    }
+
+    fn reveal_hover(
+        &self,
+        ctx: &DrawContext,
+        anchor: LabelAnchor,
+        center: Pos2,
+        half: f32,
+    ) -> Result<(), Error> {
+        if !self.circle.hovered {
+            return Ok(());
+        }
+        reveal_label(ctx, anchor, center, half, self.size, &self.full)
     }
 
     fn selection_ring(&self, ctx: &DrawContext) -> Option<Stroke> {
@@ -252,11 +271,14 @@ impl EntityNodeShape {
 
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
+            let Ok(()) = self.reveal_hover(ctx, LabelAnchor::Disc, center, r) else { return res };
             return res;
         }
         let Ok(ink) = badge_fg(bg) else { return res };
+        let Ok(shown) = display_label(&self.full) else { return res };
+        let elided = shown != self.full;
         let mut job = egui::text::LayoutJob::simple(
-            self.name.clone(),
+            shown,
             FontId::new(fpx, FontFamily::Monospace),
             ink,
             ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size),
@@ -271,10 +293,13 @@ impl EntityNodeShape {
         let Ok(lpad) = label_pad_px(fpx) else {
             return res;
         };
-        let priority = if self.circle.selected { f32::INFINITY } else { self.size };
-        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, priority) else {
+        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, self.label_priority()) else {
             return res;
         };
+        if self.reveals(elided, draw) {
+            let Ok(()) = self.reveal_hover(ctx, LabelAnchor::Disc, center, r) else { return res };
+            return res;
+        }
         if !draw {
             return res;
         }
@@ -332,11 +357,17 @@ impl EntityNodeShape {
         let Ok(()) = sealed_badge(self.sealed, ctx, &mut res, corners.tl, img_badge_r) else { return res };
         let Ok(()) = collapsed_badge(self.collapsed, ctx, &mut res, collapse_center, img_badge_r) else { return res };
 
+        let half = rect.height() / 2.0;
         let fpx = font_px(ctx, LABEL_SIZE * self.size);
         if fpx < LABEL_MIN_PX {
+            let Ok(()) = self.reveal_hover(ctx, LabelAnchor::Tile, rect.center(), half) else {
+                return res;
+            };
             return res;
         }
         let Ok(ink) = badge_fg(ctx.ctx.global_style().visuals.panel_fill) else { return res };
+        let Ok(shown) = display_label(&self.full) else { return res };
+        let elided = shown != self.full;
         let name_wrap = ctx.meta.canvas_to_screen_size(LABEL_WRAP * self.size);
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             let icon = f.layout_no_wrap(
@@ -345,7 +376,7 @@ impl EntityNodeShape {
                 color,
             );
             let mut name_job = egui::text::LayoutJob::simple(
-                self.name.clone(),
+                shown,
                 FontId::new(fpx, FontFamily::Monospace),
                 ink,
                 name_wrap,
@@ -356,7 +387,6 @@ impl EntityNodeShape {
         let gap = ctx.meta.canvas_to_screen_size(LABEL_GAP * self.size);
         let total_w = icon.size().x + gap + name.size().x;
         let row_h = icon.size().y.max(name.size().y);
-        let half = rect.height() / 2.0;
         let Ok(box_rect) =
             label_box(LabelAnchor::Tile, rect.center(), half, Vec2::new(total_w, row_h), gap, fpx)
         else {
@@ -365,10 +395,15 @@ impl EntityNodeShape {
         let Ok(pad) = label_pad_px(fpx) else {
             return res;
         };
-        let priority = if self.circle.selected { f32::INFINITY } else { self.size };
-        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, priority) else {
+        let Ok(draw) = claim_label(ctx.ctx, self.id, box_rect, self.label_priority()) else {
             return res;
         };
+        if self.reveals(elided, draw) {
+            let Ok(()) = self.reveal_hover(ctx, LabelAnchor::Tile, rect.center(), half) else {
+                return res;
+            };
+            return res;
+        }
         if !draw {
             return res;
         }
@@ -414,27 +449,6 @@ fn collapse_slot(tl: Pos2, sealed: bool, badge_r: f32) -> Pos2 {
     } else {
         tl
     }
-}
-
-fn display_label(raw: &str) -> String {
-    let trimmed = raw.trim();
-    let count = trimmed.chars().count();
-    let has_space = trimmed.chars().any(|c| c.is_whitespace());
-    if count > LABEL_ELIDE_CHARS && !has_space {
-        return middle_truncate(trimmed, LABEL_HEAD_CHARS, LABEL_TAIL_CHARS);
-    }
-    trimmed.to_owned()
-}
-
-fn middle_truncate(s: &str, head: usize, tail: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= head + tail + 1 {
-        return s.to_owned();
-    }
-    let mut out: String = chars[..head].iter().collect();
-    out.push('…');
-    out.extend(chars[chars.len() - tail..].iter());
-    out
 }
 
 fn rect_boundary_point(center: Pos2, half: f32, dir: Vec2) -> Pos2 {
@@ -646,28 +660,6 @@ mod tests {
             "label ink must invert between themes: dark {} vs light {}",
             luminance(dark),
             luminance(light)
-        );
-    }
-
-    #[test]
-    fn long_token_label_is_middle_truncated() {
-        let raw = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
-        let shown = display_label(raw);
-        assert!(
-            shown.chars().count() < raw.chars().count(),
-            "a long single-token label must be shortened, got {shown:?}"
-        );
-        assert!(shown.contains('…'), "middle truncation must insert an ellipsis, got {shown:?}");
-        assert!(shown.starts_with("bc1qxy2"), "the head must stay visible, got {shown:?}");
-        assert!(shown.ends_with("wlh"), "the tail must stay visible, got {shown:?}");
-        assert!(
-            shown.chars().count() <= LABEL_HEAD_CHARS + LABEL_TAIL_CHARS + 1,
-            "the truncated label must fit roughly one line, got {shown:?}"
-        );
-        assert_eq!(
-            display_label("Meridian Holdings Ltd"),
-            "Meridian Holdings Ltd",
-            "multi-word prose labels must not be middle-truncated"
         );
     }
 

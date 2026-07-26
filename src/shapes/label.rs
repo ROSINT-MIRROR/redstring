@@ -8,6 +8,7 @@ pub const LABEL_SIZE: f32 = 7.0;
 pub const LABEL_GAP: f32 = 2.0;
 pub const LABEL_WRAP: f32 = 75.0;
 pub const LABEL_MAX_ROWS: usize = 2;
+pub const LABEL_MIN_PX: f32 = 9.0;
 
 pub const MAX_FONT_PX: f32 = 256.0;
 

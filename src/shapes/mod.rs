@@ -2,6 +2,7 @@ mod badge;
 mod edge;
 mod label;
 mod node;
+mod reveal;
 mod texture;
 
 pub use edge::SourcedEdgeShape;
