@@ -114,9 +114,8 @@ mod tests {
         harness::save(&mut app).unwrap();
         assert!(!app.dirty().unwrap(), "a freshly saved case is clean");
 
-        app.relayout_on_add = true;
-        assert!(app.dirty().unwrap(), "toggling relayout-on-add must mark the case dirty");
         app.current_layout = LayoutKind::Radial;
+        assert!(app.dirty().unwrap(), "picking a layout must mark the case dirty");
         harness::save(&mut app).unwrap();
         assert!(!app.dirty().unwrap(), "saving the policy settles the fingerprint");
 
@@ -124,8 +123,8 @@ mod tests {
         let display = String::from_utf8(read_bytes(display_path)).unwrap();
         assert!(display.contains("Radial"), "the picked layout must persist to display.ron: {display}");
         assert!(
-            display.contains("relayout_on_add: true"),
-            "the relayout policy must persist to display.ron: {display}"
+            !display.contains("relayout_on_add"),
+            "the relayout-on-add toggle is gone — Free is the layout that means it: {display}"
         );
 
         let mut app2 = harness::app().unwrap();
@@ -136,7 +135,6 @@ mod tests {
             LayoutKind::Radial,
             "the case's layout must survive a restart"
         );
-        assert!(app2.relayout_on_add, "the relayout policy must survive a restart");
         assert!(!app2.dirty().unwrap(), "a fresh load of the saved policy is clean");
         drop(td);
     }

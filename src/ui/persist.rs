@@ -19,7 +19,7 @@ use super::fingerprint::{compute_fingerprint, is_dirty};
 use super::ops::spiral;
 
 impl RedstringApp {
-    fn to_case_file(&self, ui: &egui::Ui) -> Result<CaseFile, Error> {
+    pub fn to_case_file(&self, ui: &egui::Ui) -> Result<CaseFile, Error> {
         let g = self.g.g();
         let mut cf = CaseFile::default();
         cf.meta = CaseMeta::stamped(&self.case_name)?;
@@ -68,7 +68,6 @@ impl RedstringApp {
         cf.display.camera = camera_read(ui)?;
         cf.display.size_by_degree = self.size_by_degree;
         cf.display.layout = self.current_layout;
-        cf.display.relayout_on_add = self.relayout_on_add;
         Ok(cf)
     }
 
@@ -82,14 +81,15 @@ impl RedstringApp {
         Ok(Some(project.rel_or_self(img)?))
     }
 
-    pub fn save(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+    pub fn save(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if self.project.is_none() {
             return self.save_as_dialog(ui);
         }
-        self.save_to_project(ui)
+        if !self.live()? {
+            return self.explore_save(ui);
+        }
+        self.save_full(ui)
     }
-
-
 
     pub fn fingerprint(&self) -> Result<String, Error> {
         compute_fingerprint(&self.g, &self.case_name, &self.board_policy())
@@ -99,7 +99,6 @@ impl RedstringApp {
         CaseDisplay {
             size_by_degree: self.size_by_degree,
             layout: self.current_layout,
-            relayout_on_add: self.relayout_on_add,
             ..CaseDisplay::default()
         }
     }
@@ -109,13 +108,21 @@ impl RedstringApp {
         is_dirty(self.project.is_some(), &fp, &self.saved_fp)
     }
 
-    fn save_to_project(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+    pub fn save_full(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         let Some(project) = self.project.clone() else {
             return Ok(());
         };
         let cf = self.to_case_file(ui)?;
-        self.self_write(&project.root, |app| app.write_all(&project, &cf))?;
+        self.self_write(&project.root, |app| {
+            app.write_source(&project, &cf)?;
+            app.write_derived(&project, &cf)
+        })?;
         self.saved_fp = self.fingerprint()?;
+        self.autosave.last_fp = self.saved_fp.clone();
+        self.autosave.pending_since = None;
+        self.autosave.derive_since = None;
+        self.autosave.camera_since = None;
+        self.autosave.last_camera = cf.display.camera;
         self.last_saved_at = Some(now_unix()?);
         crate::dlog_info!(
             "persist",
@@ -134,12 +141,16 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn write_all(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
+    pub fn write_source(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
         project::write_case(project, cf)?;
         for n in self.g.g().node_weights() {
             let e = n.payload();
             project::write_note(project, &e.slug, &e.note)?;
         }
+        Ok(())
+    }
+
+    pub fn write_derived(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
         project::write_json(project, cf)?;
         project::write_graph_md(project, cf)?;
         project::write_dossiers(project, cf)?;
@@ -151,7 +162,7 @@ impl RedstringApp {
             self.status = "save the case first — a bundle is the case directory, zipped".into();
             return Ok(());
         }
-        self.save_to_project(ui)?;
+        self.save_full(ui)?;
         let Some(project) = &self.project else {
             return Ok(());
         };
@@ -196,6 +207,7 @@ impl RedstringApp {
             Ok(project) => {
                 crate::dlog_info!("persist", "open ok {}", project.root.display());
                 self.project = Some(project);
+                self.mode = super::mode::Mode::Live;
                 self.load(ui)?;
                 self.show_welcome = false;
                 self.remember_project()?;
@@ -219,7 +231,10 @@ impl RedstringApp {
             self.case_name = project.dir_name()?;
         }
         self.project = Some(project);
-        self.save_to_project(ui)?;
+        self.mode = super::mode::Mode::Live;
+        self.autosave.disk_moved = false;
+        self.autosave.conflict = false;
+        self.save_full(ui)?;
         self.show_welcome = false;
         self.remember_project()?;
         Ok(())
@@ -252,7 +267,6 @@ impl RedstringApp {
         self.case_name = cf.meta.name.clone();
         self.size_by_degree = cf.display.size_by_degree;
         self.current_layout = cf.display.layout;
-        self.relayout_on_add = cf.display.relayout_on_add;
         self.edge_drag = None;
         self.pending_edge = None;
         self.node_drag = None;
@@ -271,6 +285,11 @@ impl RedstringApp {
         self.pending_camera = Some(cf.display.camera);
         self.watch_project()?;
         self.saved_fp = self.fingerprint()?;
+        self.autosave.last_fp = self.saved_fp.clone();
+        self.autosave.pending_since = None;
+        self.autosave.derive_since = None;
+        self.autosave.camera_since = None;
+        self.autosave.last_camera = cf.display.camera;
         crate::dlog_info!(
             "persist",
             "load done {} entities / {} links / {healed} healed / {} skipped",
@@ -299,7 +318,7 @@ impl RedstringApp {
 
     pub fn project_label(&self) -> Result<String, Error> {
         let Some(project) = &self.project else {
-            return Ok("unsaved — Ctrl+S creates the case directory".to_owned());
+            return Ok("no directory yet — Ctrl+S picks one and goes live".to_owned());
         };
         Ok(project.root.display().to_string())
     }

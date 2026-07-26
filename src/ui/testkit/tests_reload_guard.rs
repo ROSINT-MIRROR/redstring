@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn linked_only_lookup_never_reshuffles_the_board() {
         let mut app = harness::app().unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = crate::ui::layout::LayoutKind::Grid;
         let dom = graph::add_valued(
             &mut app,
             EntityKind::Domain,
@@ -252,7 +252,7 @@ mod tests {
         graph::link(&mut app, dash, ip, RelationKind::ResolvesTo).unwrap();
         graph::link(&mut app, hetzner, ip, RelationKind::ResolvesTo).unwrap();
         app.toggle_collapse(ip).unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = crate::ui::layout::LayoutKind::Grid;
         harness::save(&mut app).unwrap();
         app.layout_anim = None;
 

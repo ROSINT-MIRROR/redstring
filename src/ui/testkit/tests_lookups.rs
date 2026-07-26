@@ -542,9 +542,9 @@ mod tests {
     }
 
     #[test]
-    fn relayout_on_add_relays_out_the_whole_board_not_the_spawn_spiral() {
+    fn a_picked_layout_relays_out_the_whole_board_not_the_spawn_spiral() {
         let mut app = harness::app().unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = LayoutKind::Grid;
         let dom = graph::add_valued(
             &mut app,
             EntityKind::Domain,
@@ -574,7 +574,11 @@ mod tests {
     #[test]
     fn default_add_keeps_the_spawn_spiral_and_leaves_existing_nodes_put() {
         let mut app = harness::app().unwrap();
-        assert!(!app.relayout_on_add, "relayout-on-add is off by default");
+        assert_eq!(
+            app.current_layout,
+            LayoutKind::Free,
+            "a board nobody arranged is free — arriving nodes must not move what is already placed"
+        );
         let dom = graph::add_valued(
             &mut app,
             EntityKind::Domain,
@@ -600,8 +604,8 @@ mod tests {
     fn choosing_a_layout_tracks_it_as_the_current_layout() {
         let mut app = harness::app().unwrap();
         assert!(
-            matches!(app.current_layout, LayoutKind::Force),
-            "the board starts on the force layout"
+            matches!(app.current_layout, LayoutKind::Free),
+            "the board starts free — hand-placed until the analyst picks a positioner"
         );
         graph::add(&mut app, EntityKind::Person, "alpha").unwrap();
         graph::add(&mut app, EntityKind::Person, "beta").unwrap();
@@ -619,9 +623,9 @@ mod tests {
     }
 
     #[test]
-    fn relayout_on_add_keeps_the_source_selected_so_the_inspector_holds_focus() {
+    fn a_relayout_keeps_the_source_selected_so_the_inspector_holds_focus() {
         let mut app = harness::app().unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = LayoutKind::Grid;
         let dom = graph::add_valued(
             &mut app,
             EntityKind::Domain,
@@ -648,9 +652,9 @@ mod tests {
     }
 
     #[test]
-    fn relayout_on_add_spreads_spawned_nodes_instead_of_stacking_them_on_the_source() {
+    fn a_relayout_spreads_spawned_nodes_instead_of_stacking_them_on_the_source() {
         let mut app = harness::app().unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = LayoutKind::Grid;
         let dom = graph::add_valued(
             &mut app,
             EntityKind::Domain,
@@ -696,7 +700,7 @@ mod tests {
 
         graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
         graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = LayoutKind::Grid;
         harness::save(&mut app).unwrap();
         app.layout_anim = None;
 
@@ -733,7 +737,7 @@ mod tests {
 
         graph::add_valued(&mut app, EntityKind::Domain, "a.example", "a.example").unwrap();
         graph::add_valued(&mut app, EntityKind::Domain, "b.example", "b.example").unwrap();
-        app.relayout_on_add = true;
+        app.current_layout = LayoutKind::Grid;
         harness::save(&mut app).unwrap();
         app.layout_anim = None;
 

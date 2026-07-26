@@ -35,6 +35,21 @@ impl RedstringApp {
         self.run_layout(ui, kind, targets)
     }
 
+    pub fn hand_placed(&mut self) -> Result<(), Error> {
+        if self.current_layout == LayoutKind::Free {
+            return Ok(());
+        }
+        crate::dlog_info!(
+            "layout",
+            "hand drag over {} layout — switching to free",
+            layout_name(self.current_layout)
+        );
+        self.current_layout = LayoutKind::Free;
+        self.status =
+            "moved by hand — layout switched to free so nothing re-arranges it".into();
+        Ok(())
+    }
+
     pub fn relayout_all(&mut self, ui: &egui::Ui, kind: LayoutKind) -> Result<(), Error> {
         let targets: Vec<NodeIndex> = self
             .g
@@ -51,7 +66,7 @@ impl RedstringApp {
         added: usize,
         steps: Vec<(NodeIndex, Pos2, Pos2)>,
     ) -> Result<(), Error> {
-        if self.relayout_on_add && added > 0 {
+        if added > 0 && self.current_layout != LayoutKind::Free {
             self.apply_fold()?;
             return self.relayout_all(ui, self.current_layout);
         }
@@ -83,6 +98,12 @@ impl RedstringApp {
         kind: LayoutKind,
         targets: Vec<NodeIndex>,
     ) -> Result<(), Error> {
+        if kind == LayoutKind::Free {
+            self.status =
+                "free layout — nodes stay where you put them; new ones just land beside their source"
+                    .into();
+            return Ok(());
+        }
         if targets.len() < 2 {
             self.status = if self.g.g().node_count() >= 2 {
                 "select 2+ nodes to lay out, or clear the selection to arrange all".into()
@@ -95,6 +116,7 @@ impl RedstringApp {
         let step = self.layout_step(ui, &targets);
         let center = self.layout_centroid(&targets);
         let placed = match kind {
+            LayoutKind::Free => HashMap::new(),
             LayoutKind::Grid => self.grid_positions(&targets, center, step),
             LayoutKind::Circle => self.circle_positions(&targets, center, step),
             LayoutKind::Tree => self.tree_positions(&targets, center, step),
@@ -114,13 +136,7 @@ impl RedstringApp {
             start: ui.input(|i| i.time),
         });
         ui.ctx().request_repaint();
-        let name = match kind {
-            LayoutKind::Grid => "grid",
-            LayoutKind::Circle => "circle",
-            LayoutKind::Tree => "tree",
-            LayoutKind::Force => "force",
-            LayoutKind::Radial => "radial",
-        };
+        let name = layout_name(kind);
         let scope = if partial { " (selection)" } else { "" };
         self.status = format!("{name} layout: {moved} nodes{scope}");
         Ok(())
@@ -554,6 +570,17 @@ impl RedstringApp {
             }
         }
         out
+    }
+}
+
+fn layout_name(kind: LayoutKind) -> &'static str {
+    match kind {
+        LayoutKind::Free => "free",
+        LayoutKind::Grid => "grid",
+        LayoutKind::Circle => "circle",
+        LayoutKind::Tree => "tree",
+        LayoutKind::Force => "force",
+        LayoutKind::Radial => "radial",
     }
 }
 

@@ -62,7 +62,7 @@ impl RedstringApp {
                 .char_limit(MAX_CASE_NAME),
         );
         if name.changed() {
-            self.status = "case renamed — save to persist".into();
+            self.status = "case renamed".into();
         }
 
         style::section(ui, egui_phosphor::regular::GRAPH, "graph settings")?;

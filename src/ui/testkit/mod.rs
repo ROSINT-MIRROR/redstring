@@ -34,3 +34,5 @@ mod tests_flows;
 mod tests_hardening;
 #[cfg(test)]
 mod tests_reload_guard;
+#[cfg(test)]
+mod tests_autosave;
