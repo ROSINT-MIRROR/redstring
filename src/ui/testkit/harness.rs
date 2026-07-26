@@ -74,6 +74,8 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         allow_close: false,
         saved_fp: String::new(),
         last_saved_at: None,
+        mode: crate::ui::mode::Mode::Live,
+        autosave: crate::ui::mode::Autosave::default(),
         size_by_degree: false,
         show_welcome: false,
         welcome_name: String::new(),
@@ -82,8 +84,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         band: None,
         panning: false,
         layout_anim: None,
-        current_layout: LayoutKind::Force,
-        relayout_on_add: false,
+        current_layout: LayoutKind::Free,
         active_path: None,
         find_open: false,
         find_query: String::new(),
@@ -128,6 +129,22 @@ pub fn frame_input<R>(
         what: "headless egui frame did not execute the panel body".to_owned(),
     })?;
     outcome
+}
+
+pub fn frame_at<R>(
+    app: &mut RedstringApp,
+    time: f64,
+    body: impl FnMut(&mut RedstringApp, &mut egui::Ui) -> Result<R, Error>,
+) -> Result<R, Error> {
+    let input = egui::RawInput {
+        time: Some(time),
+        ..Default::default()
+    };
+    frame_input(app, input, body)
+}
+
+pub fn tick(app: &mut RedstringApp, time: f64) -> Result<(), Error> {
+    frame_at(app, time, |a, ui| a.autosave_tick(ui))
 }
 
 pub fn save(app: &mut RedstringApp) -> Result<(), Error> {

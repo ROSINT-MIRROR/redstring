@@ -159,10 +159,11 @@ fn full_confidence() -> u8 {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum LayoutKind {
+    #[default]
+    Free,
     Grid,
     Circle,
     Tree,
-    #[default]
     Force,
     Radial,
 }
@@ -183,9 +184,6 @@ pub struct CaseDisplay {
 
     #[serde(default)]
     pub layout: LayoutKind,
-
-    #[serde(default)]
-    pub relayout_on_add: bool,
 
     #[serde(default)]
     pub collapsed: std::collections::BTreeSet<String>,
@@ -344,7 +342,6 @@ mod tests {
             zoom: 1.25,
         };
         cf.display.layout = LayoutKind::Radial;
-        cf.display.relayout_on_add = true;
 
         let s = ron::ser::to_string_pretty(&cf, ron::ser::PrettyConfig::default()).unwrap();
         let back: CaseFile = ron::from_str(&s).unwrap();
@@ -354,10 +351,6 @@ mod tests {
             back.display.layout,
             LayoutKind::Radial,
             "the case's board layout must round-trip through display state"
-        );
-        assert!(
-            back.display.relayout_on_add,
-            "the relayout-on-add policy must round-trip through display state"
         );
         assert!(back.data.entities[0].sealed, "a sealed entity must round-trip through save→load");
         assert!(
@@ -393,9 +386,29 @@ mod tests {
             collapsed: [],
         )"#;
         let d: CaseDisplay = ron::from_str(legacy).expect("a pre-policy display.ron must parse");
-        assert_eq!(d.layout, LayoutKind::Force, "layout omitted → Force");
-        assert!(!d.relayout_on_add, "relayout_on_add omitted → off");
+        assert_eq!(
+            d.layout,
+            LayoutKind::Free,
+            "layout omitted → Free: nothing moves a node the analyst placed by hand"
+        );
         assert!(d.size_by_degree, "the fields it does carry survive");
+        assert_eq!(d.positions.get("doe").copied(), Some((10.0, 20.0)));
+    }
+
+    #[test]
+    fn a_display_carrying_the_dropped_relayout_key_still_parses() {
+        let stale = r#"(
+            camera: (x: 0.0, y: 0.0, zoom: 1.0),
+            positions: {"doe": (10.0, 20.0)},
+            sizes: {},
+            size_by_degree: false,
+            layout: Radial,
+            relayout_on_add: true,
+            collapsed: [],
+        )"#;
+        let d: CaseDisplay =
+            ron::from_str(stale).expect("a display.ron with the dropped key must still parse");
+        assert_eq!(d.layout, LayoutKind::Radial, "the surviving fields still load");
         assert_eq!(d.positions.get("doe").copied(), Some((10.0, 20.0)));
     }
 

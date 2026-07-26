@@ -307,7 +307,7 @@ impl RedstringApp {
             && let Some(idx) = self.node_at_screen(ui, rect, p)?
         {
             let canvas_p = meta(ui)?.screen_to_canvas_pos((p - rect.left_top()).to_pos2());
-            self.begin_node_drag(idx, canvas_p);
+            self.begin_node_drag(idx, canvas_p)?;
         }
 
         if self.node_drag.is_none() {
@@ -333,7 +333,7 @@ impl RedstringApp {
         Ok(())
     }
 
-    fn begin_node_drag(&mut self, idx: NodeIndex, canvas_p: Pos2) {
+    pub fn begin_node_drag(&mut self, idx: NodeIndex, canvas_p: Pos2) -> Result<(), Error> {
         self.layout_anim = None;
         let selected = self.g.selected_nodes().to_vec();
         let group = if selected.len() > 1 && selected.contains(&idx) {
@@ -350,10 +350,11 @@ impl RedstringApp {
             drags.push((i, canvas_p - n.location()));
         }
         if drags.is_empty() {
-            return;
+            return Ok(());
         }
         crate::dlog_debug!("board", "node drag start idx={} group={}", idx.index(), drags.len());
         self.node_drag = Some(drags);
+        self.hand_placed()
     }
 
     fn end_node_drag(&mut self) {
@@ -766,7 +767,7 @@ mod tests {
             button(Pos2::new(100.0, 100.0), egui::PointerButton::Primary, true),
             |ui| {
                 camera_write(ui, Camera { x: 0.0, y: 0.0, zoom: 1.0 }).unwrap();
-                app.begin_node_drag(idx, Pos2::new(100.0, 100.0));
+                app.begin_node_drag(idx, Pos2::new(100.0, 100.0)).unwrap();
                 app.node_drag_input(ui, board_rect()).unwrap();
             },
         );

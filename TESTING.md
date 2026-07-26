@@ -71,6 +71,24 @@ harness::save(&mut app).unwrap();                                // save to app.
 harness::load(&mut app).unwrap();                                // reload from disk
 ```
 
+### Driving the autosave clock
+
+The autosave debounce and the idle beat read **egui frame time**, so the clock is injectable
+and no test ever sleeps. `harness::tick(&mut app, t)` runs one headless frame at time `t`
+and calls `app.autosave_tick(ui)`; `harness::frame_at` does the same for any other body.
+
+```rust
+graph::add(&mut app, EntityKind::Person, "late arrival").unwrap();
+harness::tick(&mut app, 0.0).unwrap();    // arms the debounce, writes nothing
+harness::tick(&mut app, 1.6).unwrap();    // > DEBOUNCE_SECS — flushed to disk
+harness::tick(&mut app, 13.0).unwrap();   // > IDLE_SECS — derived artifacts regenerate
+```
+
+Anything that must observe the **camera** has to write and read it inside one `egui::Context`
+(each `harness::frame` builds a fresh context, so camera state does not survive between
+calls) — drive `ctx.run_ui` directly and call `camera_write` then `app.autosave_tick` in the
+same closure. See `tests_autosave.rs`.
+
 ### Round-trip identity
 
 `read_case` returns entities in slug-sorted order, so raw `CaseData` equality is fragile;

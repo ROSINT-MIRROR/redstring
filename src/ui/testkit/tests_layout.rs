@@ -223,6 +223,142 @@ mod tests {
     }
 
     #[test]
+    fn dragging_a_node_by_hand_switches_the_layout_to_free() {
+        for kind in [
+            LayoutKind::Grid,
+            LayoutKind::Circle,
+            LayoutKind::Tree,
+            LayoutKind::Force,
+            LayoutKind::Radial,
+        ] {
+            let mut app = built();
+            app.current_layout = kind;
+            let idx = app.g.g().node_indices().next().unwrap();
+            app.begin_node_drag(idx, egui::Pos2::new(10.0, 10.0)).unwrap();
+            assert_eq!(
+                app.current_layout,
+                LayoutKind::Free,
+                "a hand drag over the {kind:?} layout must switch the board to free"
+            );
+            assert!(
+                app.status.contains("free"),
+                "and must say so: {}",
+                app.status
+            );
+        }
+    }
+
+    #[test]
+    fn a_drag_that_grabs_nothing_leaves_the_layout_alone() {
+        let mut app = built();
+        app.current_layout = LayoutKind::Grid;
+        app.begin_node_drag(NodeIndex::new(9_999), egui::Pos2::ZERO).unwrap();
+        assert!(app.node_drag.is_none(), "no node was grabbed");
+        assert_eq!(
+            app.current_layout,
+            LayoutKind::Grid,
+            "a drag that grabbed nothing is not a hand placement"
+        );
+    }
+
+    #[test]
+    fn programmatic_movement_never_switches_the_layout_to_free() {
+        let mut app = built();
+        app.current_layout = LayoutKind::Radial;
+        settle(&mut app, LayoutKind::Radial);
+        assert_eq!(
+            app.current_layout,
+            LayoutKind::Radial,
+            "running a layout and tweening it home is not a hand placement"
+        );
+
+        run_at_time(&mut app, 0.0, |a, ui| a.apply_spread(ui, crate::ui::layout::Spread::Loosen));
+        run_at_time(&mut app, 1000.0, |a, ui| a.layout_anim_tick(ui));
+        assert_eq!(
+            app.current_layout,
+            LayoutKind::Radial,
+            "loosen/tighten re-space the board without claiming it was hand-placed"
+        );
+
+        let idx = app.g.g().node_indices().next().unwrap();
+        app.g.node_mut(idx).unwrap().set_location(egui::Pos2::new(7.0, 9.0));
+        assert_eq!(
+            app.current_layout,
+            LayoutKind::Radial,
+            "moving a node from code is not a hand placement"
+        );
+
+        app.center_graph().unwrap();
+        assert_eq!(app.current_layout, LayoutKind::Radial, "framing the board moves no node");
+    }
+
+    #[test]
+    fn arriving_nodes_relayout_everything_unless_the_board_is_free() {
+        for kind in [
+            LayoutKind::Grid,
+            LayoutKind::Circle,
+            LayoutKind::Tree,
+            LayoutKind::Force,
+            LayoutKind::Radial,
+        ] {
+            let mut app = built();
+            app.current_layout = kind;
+            app.layout_anim = None;
+            run_at_time(&mut app, 0.0, |a, ui| a.nodes_arrived(ui, 1, Vec::new()));
+            let anim = app
+                .layout_anim
+                .as_ref()
+                .unwrap_or_else(|| panic!("{kind:?} must relayout when nodes arrive"));
+            assert_eq!(
+                anim.steps.len(),
+                graph::node_count(&app).unwrap(),
+                "{kind:?} re-arranges the whole board, not just the newcomers"
+            );
+        }
+    }
+
+    #[test]
+    fn a_free_board_only_spawns_the_newcomer_and_leaves_every_placed_node_put() {
+        let mut app = built();
+        app.current_layout = LayoutKind::Free;
+        app.layout_anim = None;
+        let before = all_locs(&app);
+        let newcomer = graph::add(&mut app, EntityKind::Domain, "arrived.example").unwrap();
+        let steps = vec![(newcomer, egui::Pos2::ZERO, egui::Pos2::new(240.0, 120.0))];
+
+        run_at_time(&mut app, 0.0, |a, ui| a.nodes_arrived(ui, 1, steps.clone()));
+
+        let anim = app.layout_anim.as_ref().expect("the newcomer still pops out");
+        assert_eq!(anim.steps.len(), 1, "only the arriving node is animated");
+        assert_eq!(anim.steps[0].0, newcomer, "and it is the one that arrived");
+
+        run_at_time(&mut app, 1000.0, |a, ui| a.layout_anim_tick(ui));
+        for (idx, x, y) in before {
+            let now = all_locs(&app)
+                .into_iter()
+                .find(|(i, _, _)| *i == idx)
+                .unwrap();
+            assert_eq!(
+                (now.1, now.2),
+                (x, y),
+                "a free board never moves a node that was already placed"
+            );
+        }
+        assert_eq!(loc_of(&app, newcomer), (240.0, 120.0), "the newcomer reached its slot");
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
+    fn running_the_free_layout_moves_nothing() {
+        let mut app = built();
+        let before = all_locs(&app);
+        run_at_time(&mut app, 0.0, |a, ui| a.apply_layout(ui, LayoutKind::Free));
+        assert!(app.layout_anim.is_none(), "free queues no animation");
+        assert_eq!(all_locs(&app), before, "free leaves every node exactly where it is");
+        assert!(app.status.contains("free layout"), "status: {}", app.status);
+    }
+
+    #[test]
     fn a_single_node_is_never_laid_out() {
         let mut app = harness::app().unwrap();
         graph::add(&mut app, EntityKind::Person, "solo").unwrap();

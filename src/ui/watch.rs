@@ -73,15 +73,30 @@ impl RedstringApp {
             return Ok(());
         };
         if t > seen {
-            crate::dlog_info!("watch", "hot-reload: external edit on {path}");
-            let before = self.g.g().node_count();
-            self.load(ui)?;
-            let after = self.g.g().node_count();
-            self.nodes_arrived(ui, after.saturating_sub(before), Vec::new())?;
-            self.status = format!("external edit detected — reloaded {path}");
+            self.absorb_external_edit(ui, &path)?;
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(1100));
+        Ok(())
+    }
+
+    fn absorb_external_edit(&mut self, ui: &mut egui::Ui, path: &str) -> Result<(), Error> {
+        if !self.live()? {
+            if !self.autosave.disk_moved {
+                crate::dlog_warn!("watch", "external edit while exploring — holding {path}");
+                self.status =
+                    "the case changed on disk — explore is holding your sandbox; saving will ask"
+                        .to_owned();
+            }
+            self.autosave.disk_moved = true;
+            return Ok(());
+        }
+        crate::dlog_info!("watch", "hot-reload: external edit on {path}");
+        let before = self.g.g().node_count();
+        self.load(ui)?;
+        let after = self.g.g().node_count();
+        self.nodes_arrived(ui, after.saturating_sub(before), Vec::new())?;
+        self.status = format!("external edit detected — reloaded {path}");
         Ok(())
     }
 

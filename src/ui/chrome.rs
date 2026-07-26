@@ -89,12 +89,6 @@ impl RedstringApp {
             {
                 self.show_welcome = true;
             }
-            if tb_button(ui, egui_phosphor::regular::FLOPPY_DISK, "Save")
-                .on_hover_text("Save (Ctrl+S)")
-                .clicked()
-            {
-                self.save(ui)?;
-            }
             if tb_button(ui, egui_phosphor::regular::FLOPPY_DISK_BACK, "Save as…")
                 .on_hover_text("Save as new case directory… (Ctrl+Shift+S)")
                 .clicked()
@@ -162,6 +156,7 @@ impl RedstringApp {
                     }
                     ui.separator();
                     let layouts = [
+                        (egui_phosphor::regular::HAND, "Free", "hand-placed — nothing re-arranges the board; arriving nodes just land beside their source", LayoutKind::Free),
                         (egui_phosphor::regular::SQUARES_FOUR, "Grid", "block grid, grouped by kind", LayoutKind::Grid),
                         (egui_phosphor::regular::CIRCLE_DASHED, "Circle", "everything on a ring", LayoutKind::Circle),
                         (egui_phosphor::regular::TREE_STRUCTURE, "Tree", "hierarchy — roots on top", LayoutKind::Tree),
@@ -169,26 +164,15 @@ impl RedstringApp {
                         (egui_phosphor::regular::CIRCLES_THREE, "Radial", "concentric rings around the busiest hub", LayoutKind::Radial),
                     ];
                     for (icon, name, hover, kind) in layouts.into_iter().rev() {
-                        if tb_button(ui, icon, name)
-                            .on_hover_text(format!("{hover} — selection if any, else all"))
+                        if tb_toggle(ui, icon, name, self.current_layout == kind)
+                            .on_hover_text(format!("{hover} — re-runs whenever nodes arrive"))
                             .clicked()
                         {
                             self.choose_layout(ui, kind)?;
                         }
                     }
-                    if tb_toggle(
-                        ui,
-                        egui_phosphor::regular::MAGIC_WAND,
-                        "Relayout",
-                        self.relayout_on_add,
-                    )
-                    .on_hover_text(
-                        "re-arrange the board when nodes are added — by a transform or an external/AI edit — using the last-picked layout",
-                    )
-                    .clicked()
-                    {
-                        self.relayout_on_add = !self.relayout_on_add;
-                    }
+                    ui.separator();
+                    self.mode_buttons(ui)?;
                     Ok(())
                 },
             )
@@ -196,6 +180,33 @@ impl RedstringApp {
             Ok(())
         })
         .inner
+    }
+
+    pub fn mode_buttons(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        if self.live()? {
+            if tb_toggle(ui, egui_phosphor::regular::FLASK, "Explore", false)
+                .on_hover_text(
+                    "explore — a RAM-only sandbox: try nodes, edges and theories with nothing written to disk",
+                )
+                .clicked()
+            {
+                self.enter_explore()?;
+            }
+            return Ok(());
+        }
+        if tb_toggle(ui, egui_phosphor::regular::FLOPPY_DISK, "Go live", true)
+            .on_hover_text("exploring — write the sandbox to disk and go back to live autosaving (Ctrl+S)")
+            .clicked()
+        {
+            self.explore_save(ui)?;
+        }
+        if tb_button(ui, egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE, "Discard")
+            .on_hover_text("throw the sandbox away, re-read the case from disk and go back to live")
+            .clicked()
+        {
+            self.explore_discard(ui)?;
+        }
+        Ok(())
     }
 
     pub fn settings_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
@@ -259,12 +270,13 @@ impl RedstringApp {
     }
 
     pub fn request_quit(&mut self, ui: &egui::Ui) -> Result<(), Error> {
-        if self.dirty()? {
-            crate::dlog_info!("quit", "quit requested — dirty, showing confirm");
+        if self.hold_for_sandbox()? {
+            crate::dlog_info!("quit", "quit requested — unsaved sandbox, showing confirm");
             self.quit_confirm = true;
             return Ok(());
         }
-        crate::dlog_info!("quit", "quit requested — clean, closing");
+        self.flush_before_close(ui)?;
+        crate::dlog_info!("quit", "quit requested — settled, closing");
         self.allow_close = true;
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         Ok(())
@@ -274,13 +286,28 @@ impl RedstringApp {
         if self.allow_close || !ui.input(|i| i.viewport().close_requested()) {
             return Ok(());
         }
-        if !self.dirty()? {
+        if !self.hold_for_sandbox()? {
+            self.flush_before_close(ui)?;
             return Ok(());
         }
-        crate::dlog_warn!("quit", "window close intercepted — unsaved changes, cancelling");
+        crate::dlog_warn!("quit", "window close intercepted — unsaved sandbox, cancelling");
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
         self.quit_confirm = true;
         Ok(())
+    }
+
+    fn hold_for_sandbox(&self) -> Result<bool, Error> {
+        if self.live()? {
+            return Ok(false);
+        }
+        self.dirty()
+    }
+
+    fn flush_before_close(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+        if !self.live()? {
+            return Ok(());
+        }
+        self.save_full(ui)
     }
 
     pub fn delete_confirm_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
@@ -329,20 +356,20 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn quit_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+    pub fn quit_window(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if !self.quit_confirm {
             return Ok(());
         }
         let mut save_quit = false;
         let mut discard = false;
         let mut cancel = false;
-        egui::Window::new("unsaved changes")
+        egui::Window::new("unsaved sandbox")
             .collapsible(false)
             .resizable(false)
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ui.ctx().content_rect().center())
             .show(ui.ctx(), |ui| {
-                ui.label("the case has unsaved changes");
+                ui.label("you are exploring — this sandbox has never reached disk");
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     let sq = format!("{} save & quit", egui_phosphor::regular::FLOPPY_DISK);
@@ -353,7 +380,11 @@ impl RedstringApp {
             });
         if save_quit {
             crate::dlog_info!("quit", "save & quit chosen");
-            self.save(ui)?;
+            self.explore_save(ui)?;
+            if self.autosave.conflict {
+                self.quit_confirm = false;
+                return Ok(());
+            }
             if !self.dirty()? {
                 self.quit_confirm = false;
                 self.allow_close = true;

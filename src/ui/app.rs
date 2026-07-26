@@ -91,6 +91,8 @@ pub struct RedstringApp {
 
     pub last_saved_at: Option<i64>,
 
+    pub mode: super::mode::Mode,
+    pub autosave: super::mode::Autosave,
 
     pub size_by_degree: bool,
 
@@ -108,7 +110,6 @@ pub struct RedstringApp {
     pub layout_anim: Option<super::layout::LayoutAnim>,
 
     pub current_layout: LayoutKind,
-    pub relayout_on_add: bool,
 
     pub active_path: Option<Vec<super::graphalg::PathHop>>,
 
@@ -166,8 +167,7 @@ impl RedstringApp {
             band: None,
             panning: false,
             layout_anim: None,
-            current_layout: LayoutKind::Force,
-            relayout_on_add: false,
+            current_layout: LayoutKind::Free,
             active_path: None,
             find_open: false,
             find_query: String::new(),
@@ -187,6 +187,8 @@ impl RedstringApp {
             allow_close: false,
             saved_fp: String::new(),
             last_saved_at: None,
+            mode: super::mode::Mode::Live,
+            autosave: super::mode::Autosave::default(),
             size_by_degree: false,
             show_welcome: false,
             welcome_name: String::new(),
@@ -272,27 +274,49 @@ impl RedstringApp {
     }
 
     fn save_chip(&self, ui: &mut egui::Ui) -> Result<(), Error> {
-        if self.dirty()? {
+        if !self.live()? {
+            ui.separator();
+            ui.colored_label(
+                super::mode::EXPLORE_INK,
+                RichText::new(format!(
+                    "{} EXPLORE — sandbox, nothing is written",
+                    egui_phosphor::regular::FLASK
+                ))
+                .small()
+                .strong(),
+            );
+            return Ok(());
+        }
+        if self.autosave.pending_since.is_some() {
             ui.separator();
             ui.colored_label(
                 DIRTY_AMBER,
                 RichText::new(format!(
-                    "{} unsaved changes",
-                    egui_phosphor::regular::WARNING_CIRCLE
+                    "{} autosaving…",
+                    egui_phosphor::regular::CLOUD_ARROW_UP
                 ))
                 .small(),
             );
             return Ok(());
         }
         let Some(ts) = self.last_saved_at else {
+            ui.separator();
+            ui.colored_label(
+                OK_GREEN,
+                RichText::new(format!(
+                    "{} live — every change autosaves",
+                    egui_phosphor::regular::HARD_DRIVE
+                ))
+                .small(),
+            );
             return Ok(());
         };
         ui.separator();
         ui.colored_label(
             OK_GREEN,
             RichText::new(format!(
-                "{} saved {} UTC",
-                egui_phosphor::regular::CHECK,
+                "{} live · saved {} UTC",
+                egui_phosphor::regular::HARD_DRIVE,
                 hms_utc(ts)
             ))
             .small(),
@@ -354,6 +378,7 @@ impl RedstringApp {
             .inner?;
         self.settings_window(ui)?;
         self.quit_window(ui)?;
+        self.explore_conflict_window(ui)?;
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
         self.seal_confirm_window(ui)?;
@@ -455,11 +480,16 @@ impl RedstringApp {
             .show_inside(ui, |ui| self.board(ui))
             .inner?;
 
+        self.apply_pending_camera(ui)?;
+        self.mode_border(ui)?;
+        self.autosave_tick(ui)
+    }
+
+    fn apply_pending_camera(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let Some(cam) = self.pending_camera.take() else {
             return Ok(());
         };
-        board::camera_write(ui, cam)?;
-        Ok(())
+        board::camera_write(ui, cam)
     }
 
     pub fn apply_seal(&mut self, list: &[NodeIndex], target: bool) -> Result<usize, Error> {

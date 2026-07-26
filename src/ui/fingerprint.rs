@@ -17,7 +17,6 @@ pub fn compute_fingerprint(graph: &RsGraph, case_name: &str, board: &CaseDisplay
     let mut display = CaseDisplay {
         size_by_degree: board.size_by_degree,
         layout: board.layout,
-        relayout_on_add: board.relayout_on_add,
         ..CaseDisplay::default()
     };
     for n in g.node_weights() {
@@ -86,7 +85,6 @@ fn display_fp(d: &CaseDisplay) -> Result<String, Error> {
         &d.collapsed,
         d.size_by_degree,
         d.layout,
-        d.relayout_on_add,
     ))
     .map_err(|source| Error::JsonSer { source })?;
     Ok(format!("d|{body}"))
@@ -265,47 +263,36 @@ mod tests {
     #[test]
     fn layout_policy_changes_flip_dirty() {
         let saved = display_fp(&CaseDisplay::default()).unwrap();
-
-        let relayout_on = CaseDisplay {
-            relayout_on_add: true,
-            ..CaseDisplay::default()
-        };
-        let toggled = display_fp(&relayout_on).unwrap();
-        assert_ne!(saved, toggled, "toggling relayout-on-add must change the fingerprint");
-        assert!(
-            dirty_state(true, &toggled, &saved),
-            "toggling relayout-on-add must mark the case dirty"
+        assert_eq!(
+            CaseDisplay::default().layout,
+            LayoutKind::Free,
+            "a board nobody arranged is free — the fingerprint baseline says so"
         );
 
-        let radial = CaseDisplay {
-            layout: LayoutKind::Radial,
-            ..CaseDisplay::default()
-        };
-        let relaid = display_fp(&radial).unwrap();
-        assert_ne!(saved, relaid, "picking a layout must change the fingerprint");
-        assert!(
-            dirty_state(true, &relaid, &saved),
-            "picking a layout must mark the case dirty"
-        );
+        for kind in [
+            LayoutKind::Grid,
+            LayoutKind::Circle,
+            LayoutKind::Tree,
+            LayoutKind::Force,
+            LayoutKind::Radial,
+        ] {
+            let picked = CaseDisplay {
+                layout: kind,
+                ..CaseDisplay::default()
+            };
+            let relaid = display_fp(&picked).unwrap();
+            assert_ne!(saved, relaid, "picking {kind:?} must change the fingerprint");
+            assert!(
+                dirty_state(true, &relaid, &saved),
+                "picking {kind:?} must mark the case dirty"
+            );
+        }
     }
 
     #[test]
     fn layout_policy_flips_dirty_through_the_full_fingerprint() {
         let g = tiny_graph(50, Verification::Unreviewed);
         let saved = compute_fingerprint(&g, "case", &CaseDisplay::default()).unwrap();
-        let toggled = compute_fingerprint(
-            &g,
-            "case",
-            &CaseDisplay {
-                relayout_on_add: true,
-                ..CaseDisplay::default()
-            },
-        )
-        .unwrap();
-        assert!(
-            dirty_state(true, &toggled, &saved),
-            "relayout-on-add must flip dirty through the full fingerprint"
-        );
         let relaid = compute_fingerprint(
             &g,
             "case",
@@ -318,6 +305,19 @@ mod tests {
         assert!(
             dirty_state(true, &relaid, &saved),
             "the picked layout must flip dirty through the full fingerprint"
+        );
+        let back = compute_fingerprint(
+            &g,
+            "case",
+            &CaseDisplay {
+                layout: LayoutKind::Free,
+                ..CaseDisplay::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            !dirty_state(true, &back, &saved),
+            "returning to free settles back onto the saved fingerprint"
         );
     }
 
