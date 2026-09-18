@@ -378,8 +378,9 @@ OrgName:        Google LLC
             .render_args("example.com", "example.com", "example_com", &[])
             .unwrap();
         assert_eq!(args[0], "-c");
-        let expected = "b=$(curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring probe' -w ' RSMETAxZ %{http_code} %{url_effective}' 'example.com'); meta=$(printf '%s' \"$b\" | grep -oE 'RSMETAxZ [0-9]+ [^ ]+' | tail -n1); c=$(printf '%s' \"$meta\" | cut -d' ' -f2); u=$(printf '%s' \"$meta\" | cut -d' ' -f3); case \"$c\" in ''|000) exit 0 ;; esac; t=$(printf '%s' \"$b\" | paste -sd' ' - | grep -oiE '<title[^>]*>[^<]*' | head -n1 | sed 's/<[^>]*>//'); jq -cn --arg c \"$c\" --arg u \"$u\" --arg t \"$t\" '{status_code:$c,final_url:$u,title:$t}'";
+        let expected = "b=$(curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring probe' -w ' RSMETAxZ %{http_code} %{url_effective}' \"$1\"); meta=$(printf '%s' \"$b\" | grep -oE 'RSMETAxZ [0-9]+ [^ ]+' | tail -n1); c=$(printf '%s' \"$meta\" | cut -d' ' -f2); u=$(printf '%s' \"$meta\" | cut -d' ' -f3); case \"$c\" in ''|000) exit 0 ;; esac; t=$(printf '%s' \"$b\" | paste -sd' ' - | grep -oiE '<title[^>]*>[^<]*' | head -n1 | sed 's/<[^>]*>//'); jq -cn --arg c \"$c\" --arg u \"$u\" --arg t \"$t\" '{status_code:$c,final_url:$u,title:$t}'";
         assert_eq!(args[1], expected);
+        assert_eq!(args.last().unwrap(), "example.com");
     }
 
     #[test]
@@ -435,10 +436,11 @@ OrgName:        Google LLC
             .unwrap();
         assert_eq!(args[0], "-c");
         assert!(
-            args[1].contains("--data-urlencode 'q=Baia Mare, Romania'"),
-            "place name rides through data-urlencode: {}",
+            args[1].contains("--data-urlencode q=\"$1\""),
+            "place name rides through data-urlencode positionally: {}",
             args[1]
         );
+        assert_eq!(args.last().unwrap(), "Baia Mare, Romania");
         assert!(args[1].contains("nominatim.openstreetmap.org/search?format=json&limit=1"));
         assert!(args[1].contains("jq -c"));
     }
@@ -478,7 +480,12 @@ OrgName:        Google LLC
             .render_args("https://evil.example/path", "evil.example", "evil_example", &[])
             .unwrap();
         assert_eq!(args[0], "-c");
-        assert!(args[1].contains("v=\"https://evil.example/path\""), "value substituted: {}", args[1]);
+        assert!(args[1].contains("v=\"$1\""), "value bound positionally: {}", args[1]);
+        assert!(
+            !args[1].contains("evil.example"),
+            "the value never lands in the script text"
+        );
+        assert_eq!(args.last().unwrap(), "https://evil.example/path");
         assert!(args[1].contains("/favicon.ico"));
         assert!(args[1].contains("mmh3.hash(base64.encodebytes(d))"));
     }
@@ -763,7 +770,8 @@ OrgName:        Google LLC
         let spec = builtin("builtin:filehash");
         let args = spec.render_args("", "real.pdf", "real_pdf", &[("file".into(), "evidence/docs/real.pdf".into())]).unwrap();
         assert_eq!(args[0], "-c");
-        assert_eq!(args[1], "sha256sum \"evidence/docs/real.pdf\"");
+        assert_eq!(args[1], "sha256sum \"$1\"");
+        assert_eq!(args.last().unwrap(), "evidence/docs/real.pdf");
     }
 
     #[test]

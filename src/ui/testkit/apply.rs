@@ -28,6 +28,17 @@ pub fn apply(
     target_slug: &str,
     raw: &str,
 ) -> Result<Applied, Error> {
+    apply_archiving(app, module_ron, module_id, target_slug, raw, "")
+}
+
+pub fn apply_archiving(
+    app: &mut RedstringApp,
+    module_ron: &str,
+    module_id: &str,
+    target_slug: &str,
+    raw: &str,
+    evidence_rel: &str,
+) -> Result<Applied, Error> {
     let (shape_id, facts) = crate::modules::testkit::parse(module_ron, raw)?;
     let nodes_before = app.g.g().node_count();
     let edges_before = app.g.g().edge_count();
@@ -44,7 +55,7 @@ pub fn apply(
         stderr_tail: String::new(),
         ok: true,
         cancelled: false,
-        evidence_rel: String::new(),
+        evidence_rel: evidence_rel.to_owned(),
         last: true,
     };
     app.next_run_id += 1;

@@ -1,2 +1,15 @@
 target/
+
+# A case lives wherever the investigator puts it; a stray one at the repo root is
+# working data, never source. Keep real cases out of the history by construction.
 case.ron
+*.redstring.zip
+evidence/
+
+# Machine-local cargo overrides (e.g. forcing the LLVM backend when the global
+# config defaults to cranelift). This is per-developer: committing it breaks every
+# clone on stable, since `codegen-backend` is nightly-only.
+.cargo/
+
+# Agent worktrees.
+.claude/

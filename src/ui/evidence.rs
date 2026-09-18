@@ -137,11 +137,6 @@ fn source_provenance(ui: &mut egui::Ui, i: usize, src: &mut Source) -> Result<()
     })
     .inner?;
     edit_opt(ui, &mut src.sha256, "sha256 (content hash)", true)?;
-    edit_opt(ui, &mut src.archive_url, "third-party archive url", false)?;
-    for ots in src.ots.iter() {
-        ui.label(RichText::new(format!("{} {ots}", egui_phosphor::regular::CLOCK_COUNTDOWN)).weak().small())
-            .on_hover_text("opentimestamps proof");
-    }
     Ok(())
 }
 

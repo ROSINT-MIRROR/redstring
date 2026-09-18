@@ -75,6 +75,16 @@ pub fn set_value(app: &mut RedstringApp, idx: NodeIndex, value: &str) -> Result<
     Ok(())
 }
 
+pub fn set_sealed(app: &mut RedstringApp, idx: NodeIndex, sealed: bool) -> Result<(), Error> {
+    let Some(n) = app.g.node_mut(idx) else {
+        return Err(Error::Testkit {
+            what: format!("set_sealed: node {} not found", idx.index()),
+        });
+    };
+    n.payload_mut().sealed = sealed;
+    Ok(())
+}
+
 pub fn observe(
     app: &mut RedstringApp,
     idx: NodeIndex,

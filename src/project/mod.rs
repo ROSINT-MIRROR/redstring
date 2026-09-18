@@ -5,6 +5,7 @@ mod dossier;
 mod ignore;
 mod io;
 mod layout;
+mod leakscan;
 mod validate;
 
 pub use attach::{import_entity_image, import_source_file};

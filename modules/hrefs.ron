@@ -11,7 +11,7 @@
     applies_to: ["website", "web_page"],
     bin: "sh",
     requires: ["curl", "htmlq"],
-    args: ["-c", "curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring hrefs' '{value}' | htmlq -B --base '{value}' --attribute href a | grep -E '^https?://' | head -150"],
+    args: ["-c", "curl -sL --max-time 20 --max-redirs 5 --compressed -A 'redstring hrefs' {value} | htmlq -B --base {value} --attribute href a | grep -E '^https?://' | head -150"],
     timeout_secs: 45,
     shapes: [
         (

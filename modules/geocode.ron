@@ -10,7 +10,7 @@
     applies_to: ["location", "address"],
     bin: "sh",
     requires: ["curl", "jq"],
-    args: ["-c", "curl -s -A 'redstring' -G --data-urlencode 'q={value}' 'https://nominatim.openstreetmap.org/search?format=json&limit=1' | jq -c 'if length>0 then {coord:\"\\(.[0].lat),\\(.[0].lon)\", display:.[0].display_name} else empty end'"],
+    args: ["-c", "curl -s -A 'redstring' -G --data-urlencode q={value} 'https://nominatim.openstreetmap.org/search?format=json&limit=1' | jq -c 'if length>0 then {coord:\"\\(.[0].lat),\\(.[0].lon)\", display:.[0].display_name} else empty end'"],
     timeout_secs: 20,
     shapes: [
         (

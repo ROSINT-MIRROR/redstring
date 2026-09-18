@@ -293,6 +293,50 @@ mod tests {
     }
 
     #[test]
+    fn tighten_refuses_to_stack_nodes_while_free_ones_keep_packing() {
+        let mut app = harness::app().unwrap();
+        let a = graph::add(&mut app, EntityKind::Person, "a").unwrap();
+        let b = graph::add(&mut app, EntityKind::Person, "b").unwrap();
+        let c = graph::add(&mut app, EntityKind::Person, "c").unwrap();
+        let floor = {
+            let e = app.g.node(a).unwrap().payload();
+            crate::ui::pack::pack_radius(e).unwrap() * 2.0 + crate::ui::pack::PACK_GAP
+        };
+        app.g.node_mut(a).unwrap().set_location(egui::Pos2::new(0.0, 0.0));
+        app.g.node_mut(b).unwrap().set_location(egui::Pos2::new(floor + 2.0, 0.0));
+        app.g.node_mut(c).unwrap().set_location(egui::Pos2::new(floor * 8.0, 0.0));
+
+        let mut last_far = f32::MAX;
+        for round in 0..12 {
+            run_at_time(&mut app, 0.0, |x, ui| {
+                x.apply_spread(ui, crate::ui::layout::Spread::Tighten)
+            });
+            run_at_time(&mut app, 1000.0, |x, ui| x.layout_anim_tick(ui));
+            let pa = app.g.node(a).unwrap().location();
+            let pb = app.g.node(b).unwrap().location();
+            let pc = app.g.node(c).unwrap().location();
+            for (l, r, tag) in [(pa, pb, "a-b"), (pa, pc, "a-c"), (pb, pc, "b-c")] {
+                assert!(
+                    (r - l).length() >= floor - 0.5,
+                    "round {round}: {tag} stacked at {} (floor {floor})",
+                    (r - l).length()
+                );
+            }
+            let far = (pc - pa).length();
+            assert!(
+                far < last_far + 0.5,
+                "round {round}: the free node stopped packing ({far} vs {last_far})"
+            );
+            last_far = far;
+        }
+        assert!(
+            last_far < 3.0 * floor,
+            "after 12 tightens the free node sits against the pair, not at {last_far}"
+        );
+        invariant::check_graph(&app).unwrap();
+    }
+
+    #[test]
     fn arriving_nodes_relayout_everything_unless_the_board_is_free() {
         for kind in [
             LayoutKind::Grid,

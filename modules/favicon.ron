@@ -11,7 +11,7 @@
     applies_to: ["domain", "website"],
     bin: "sh",
     requires: ["curl", "python3", "mmh3"],
-    args: ["-c", "v=\"{value}\"; case \"$v\" in http*) h=\"${v#*://}\"; h=\"${h%%/*}\";; *) h=\"$v\";; esac; curl -sL -A 'redstring' \"https://$h/favicon.ico\" | python3 -c 'import sys,base64,mmh3; d=sys.stdin.buffer.read(); print(mmh3.hash(base64.encodebytes(d))) if d else None'"],
+    args: ["-c", "v={value}; case \"$v\" in http*) h=\"${v#*://}\"; h=\"${h%%/*}\";; *) h=\"$v\";; esac; curl -sL -A 'redstring' \"https://$h/favicon.ico\" | python3 -c 'import sys,base64,mmh3; d=sys.stdin.buffer.read(); print(mmh3.hash(base64.encodebytes(d))) if d else None'"],
     timeout_secs: 20,
     shapes: [
         (

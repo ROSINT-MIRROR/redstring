@@ -12,7 +12,7 @@
     applies_to: ["domain", "ip_address", "server"],
     bin: "sh",
     requires: ["tlsx", "jq"],
-    args: ["-c", "echo '{value}' | tlsx -json -san -silent | jq -c '{host: .host, fingerprint: (.fingerprint_hash.sha256 // .fingerprint_hash // .hash), issuer_cn: .issuer_cn, subject_cn: .subject_cn, subject_an: .subject_an}'"],
+    args: ["-c", "echo {value} | tlsx -json -san -silent | jq -c '{host: .host, fingerprint: (.fingerprint_hash.sha256 // .fingerprint_hash // .hash), issuer_cn: .issuer_cn, subject_cn: .subject_cn, subject_an: .subject_an}'"],
     timeout_secs: 30,
     shapes: [
         (

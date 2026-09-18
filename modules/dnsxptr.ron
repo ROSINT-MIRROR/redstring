@@ -10,7 +10,7 @@
     applies_to: ["ip_address"],
     bin: "sh",
     requires: ["dnsx"],
-    args: ["-c", "echo '{value}' | dnsx -ptr -json -silent"],
+    args: ["-c", "echo {value} | dnsx -ptr -json -silent"],
     timeout_secs: 30,
     shapes: [
         (

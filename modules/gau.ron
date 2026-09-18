@@ -10,7 +10,7 @@
     applies_to: ["domain"],
     bin: "sh",
     requires: ["gau"],
-    args: ["-c", "gau --subs '{value}' | head -150"],
+    args: ["-c", "gau --subs {value} | head -150"],
     timeout_secs: 120,
     shapes: [
         (

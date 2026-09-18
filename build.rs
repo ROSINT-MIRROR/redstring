@@ -232,7 +232,7 @@ fn scan_dir(manifest_dir: &Path, dir: &Path, hits: &mut Vec<Hit>) {
         let path = entry.path();
         if path.is_dir() {
             scan_dir(manifest_dir, &path, hits);
-        } else if path.extension().map_or(false, |e| e == "rs") {
+        } else if path.extension().is_some_and(|e| e == "rs") {
             scan_file(manifest_dir, &path, hits);
         }
     }
@@ -686,7 +686,7 @@ fn is_erased_err_type(err_ty: &str) -> bool {
         "u8", "u16", "u32", "u64", "u128", "usize",
         "f32", "f64", "bool", "char",
     ];
-    if BANNED_EXACT.iter().any(|b| *b == normalized) {
+    if BANNED_EXACT.contains(&normalized) {
         return true;
     }
 

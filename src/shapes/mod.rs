@@ -4,6 +4,7 @@ mod label;
 mod node;
 mod reveal;
 mod texture;
+mod yarn;
 
 pub use edge::SourcedEdgeShape;
 pub use label::{LABEL_GAP, LABEL_SIZE, LABEL_WRAP, MAX_FONT_PX, LabelAnchor, label_box};

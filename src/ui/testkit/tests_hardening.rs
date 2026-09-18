@@ -5,7 +5,7 @@ mod tests {
     use crate::model::{
         Author, CaseFile, CaseMeta, DatePrecision, DateVal, EntityKind, EntityRec, Facet,
         FacetValue, ObsValue, Observation, Occupation, OccupationIcon, Origin, RelationKind,
-        RelationRec, Source, SourceKind, Verification, days_from_civil, fnv1a,
+        RelationRec, Source, SourceKind, Verification, days_from_civil,
     };
     use crate::project::{
         Project, export, read_case, write_case, write_graph_md, write_json, write_note,
@@ -52,8 +52,22 @@ mod tests {
         blob
     }
 
-    fn alias(slug: &str) -> String {
-        format!("sealed_{:016x}", fnv1a(slug).unwrap())
+    fn alias_of(cf: &CaseFile) -> String {
+        for e in &cf.data.entities {
+            if e.slug.starts_with("sealed_") {
+                return e.slug.clone();
+            }
+        }
+        String::new()
+    }
+
+    fn alias_in_text(blob: &str) -> String {
+        for token in blob.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+            if token.starts_with("sealed_") && token.len() > "sealed_".len() {
+                return token.to_owned();
+            }
+        }
+        String::new()
     }
 
     fn named(slug: &str, kind: EntityKind, label: &str, value: &str) -> EntityRec {
@@ -252,9 +266,6 @@ mod tests {
         let md = graph_md(&p, &cf);
         let (zip_path, _n, _sealed) = export(&p).unwrap();
         let blob = bundle_blob(&zip_path);
-        let a1 = alias("v1");
-        let a2 = alias("v2");
-
         for out in [&json, &md, &blob] {
             for leak in [
                 "SECRETVICTIMONE",
@@ -270,12 +281,8 @@ mod tests {
 
         for line in md.lines() {
             assert!(
-                !(line.contains(&a1) && line.contains("soldier")),
-                "no graph.md line may re-link anon victim v1 to the named soldier: {line}"
-            );
-            assert!(
-                !(line.contains(&a2) && line.contains("soldier")),
-                "no graph.md line may re-link anon victim v2 to the named soldier: {line}"
+                !(line.contains("sealed_") && line.contains("soldier")),
+                "no graph.md line may re-link an anon victim to the named soldier: {line}"
             );
         }
 
@@ -292,7 +299,7 @@ mod tests {
                 .data
                 .relations
                 .iter()
-                .all(|r| r.from != a1 && r.to != a1 && r.from != a2 && r.to != a2),
+                .all(|r| !r.from.starts_with("sealed_") && !r.to.starts_with("sealed_")),
             "no surviving relation may touch either anonymized victim"
         );
         assert!(
@@ -333,9 +340,9 @@ mod tests {
         let (zip_path, _n, sealed) = export(&p).unwrap();
         assert_eq!(sealed, 1, "one sealed entity reported redacted");
         let blob = bundle_blob(&zip_path);
-        let a = alias("victim");
 
         let public: CaseFile = serde_json::from_str(&json).unwrap();
+        let a = alias_of(&public);
         assert_eq!(
             public.data.entities.len(),
             3,
@@ -362,11 +369,16 @@ mod tests {
                 "VICTIMDOBSENTINEL",
                 "SEALEDVICTIMJOB",
                 "SEALED_NOTE_BODY",
+                "victim",
             ] {
                 assert!(!out.contains(leak), "alias leak '{leak}'");
             }
-            assert!(out.contains(&a), "the anonymized id must be present");
         }
+        assert!(json.contains(&a), "case.json carries its own anonymized id");
+        assert!(
+            !alias_in_text(&blob).is_empty(),
+            "the bundle carries an anonymized id of its own"
+        );
         cleanup(p);
     }
 
@@ -478,19 +490,53 @@ mod tests {
     }
 
     #[test]
-    fn redact_reapplication_keeps_the_sealed_alias_stable() {
-        let p = temp_project("stable");
+    fn sealed_alias_is_unlinkable_across_independent_redactions() {
+        let p = temp_project("unlinkable");
         let cf = build_case(1);
         let j1 = case_json(&p, &cf);
-        let cf2: CaseFile = serde_json::from_str(&j1).unwrap();
-        let j2 = case_json(&p, &cf2);
-        let a = alias("victim");
+        let j2 = case_json(&p, &cf);
         let first: CaseFile = serde_json::from_str(&j1).unwrap();
         let second: CaseFile = serde_json::from_str(&j2).unwrap();
-        assert!(first.data.entities.iter().any(|e| e.slug == a));
+        let a1 = alias_of(&first);
+        let a2 = alias_of(&second);
+        assert!(!a1.is_empty() && !a2.is_empty(), "each redaction names the sealed node");
+        assert_ne!(
+            a1, a2,
+            "a fresh redaction must mint a fresh pseudonym — a stable alias is a cross-export correlation handle"
+        );
+        for a in [&a1, &a2] {
+            assert!(!a.contains("victim"), "the alias must not embed the real slug");
+            assert_eq!(
+                a.len(),
+                "sealed_".len() + 16,
+                "the alias is 8 random bytes, hex-encoded: {a}"
+            );
+        }
+        cleanup(p);
+    }
+
+    #[test]
+    fn sealed_alias_is_consistent_inside_one_export() {
+        let p = temp_project("consistent");
+        let mut cf = build_case(1);
+        cf.data
+            .entities
+            .push(named("other", EntityKind::Person, "Other Named", "OTHERPUBLIC"));
+        cf.data
+            .relations
+            .push(rel("victim", "other", RelationKind::AssociateOf));
+        let json = case_json(&p, &cf);
+        let public: CaseFile = serde_json::from_str(&json).unwrap();
+        let a = alias_of(&public);
+        assert!(!a.is_empty(), "the sealed node keeps a pseudonymous identity");
+        let occurrences = json.matches(a.as_str()).count();
         assert!(
-            second.data.entities.iter().any(|e| e.slug == a),
-            "the anonymized slug must be identical after a second redaction"
+            occurrences >= 1,
+            "every reference to the sealed node inside one export uses the same pseudonym"
+        );
+        assert!(
+            public.data.entities.iter().filter(|e| e.slug == a).count() == 1,
+            "exactly one node carries the pseudonym"
         );
         cleanup(p);
     }

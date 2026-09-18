@@ -19,7 +19,7 @@
     applies_to: ["ip_address"],
     bin: "sh",
     requires: ["shodan"],
-    args: ["-c", r#"shodan host "{value}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk '
+    args: ["-c", r#"shodan host {value} 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk '
 function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
 inports==0 && /^Ports:/ { inports=1; next }
 inports==0 {

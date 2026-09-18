@@ -214,29 +214,104 @@ impl ModuleSpec {
         slug: &str,
         attrs: &[(String, String)],
     ) -> Result<Vec<String>, Error> {
-        let mut out = Vec::new();
-        for a in &self.args {
-            out.push(render_arg(a, value, label, slug, attrs));
+        let subs = substitutions(value, label, slug, attrs);
+        match self.script_slot() {
+            ScriptSlot::DirectArgv => {
+                let mut out = Vec::new();
+                for a in &self.args {
+                    out.push(substitute(a, &subs));
+                }
+                Ok(out)
+            }
+            ScriptSlot::ShellScript(at) => {
+                let (script, bound) = parameterize(&self.args[at], &subs);
+                let mut out = Vec::new();
+                for (i, a) in self.args.iter().enumerate() {
+                    if i == at {
+                        out.push(script.clone());
+                    } else {
+                        out.push(substitute(a, &subs));
+                    }
+                }
+                if !bound.is_empty() {
+                    out.push(self.id.clone());
+                    out.extend(bound);
+                }
+                Ok(out)
+            }
         }
-        Ok(out)
+    }
+
+    fn script_slot(&self) -> ScriptSlot {
+        if !self.bin_is_shell() {
+            return ScriptSlot::DirectArgv;
+        }
+        for (i, a) in self.args.iter().enumerate() {
+            if a != "-c" {
+                continue;
+            }
+            let at = i + 1;
+            if at >= self.args.len() {
+                return ScriptSlot::DirectArgv;
+            }
+            return ScriptSlot::ShellScript(at);
+        }
+        ScriptSlot::DirectArgv
+    }
+
+    fn bin_is_shell(&self) -> bool {
+        let path = std::path::Path::new(&self.bin);
+        let Some(name) = path.file_name() else {
+            return false;
+        };
+        let Some(tail) = name.to_str() else {
+            return false;
+        };
+        matches!(tail, "sh" | "bash" | "dash" | "zsh" | "ash")
     }
 }
 
-fn render_arg(
-    template: &str,
+enum ScriptSlot {
+    DirectArgv,
+    ShellScript(usize),
+}
+
+fn substitutions(
     value: &str,
     label: &str,
     slug: &str,
     attrs: &[(String, String)],
-) -> String {
-    let mut s = template
-        .replace("{value}", value)
-        .replace("{label}", label)
-        .replace("{slug}", slug);
+) -> Vec<(String, String)> {
+    let mut out = vec![
+        ("{value}".to_owned(), value.to_owned()),
+        ("{label}".to_owned(), label.to_owned()),
+        ("{slug}".to_owned(), slug.to_owned()),
+    ];
     for (k, v) in attrs {
-        s = s.replace(&format!("{{attr:{k}}}"), v);
+        out.push((format!("{{attr:{k}}}"), v.clone()));
+    }
+    out
+}
+
+fn substitute(template: &str, subs: &[(String, String)]) -> String {
+    let mut s = template.to_owned();
+    for (token, replacement) in subs {
+        s = s.replace(token, replacement);
     }
     s
+}
+
+fn parameterize(script: &str, subs: &[(String, String)]) -> (String, Vec<String>) {
+    let mut out = script.to_owned();
+    let mut bound = Vec::new();
+    for (token, replacement) in subs {
+        if !out.contains(token.as_str()) {
+            continue;
+        }
+        bound.push(replacement.clone());
+        out = out.replace(token, &format!("\"${}\"", bound.len()));
+    }
+    (out, bound)
 }
 
 #[cfg(test)]

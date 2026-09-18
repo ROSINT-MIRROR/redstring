@@ -15,6 +15,7 @@ mod logview;
 mod mode;
 mod multi;
 mod ops;
+mod pack;
 mod palette;
 mod pathview;
 mod persist;

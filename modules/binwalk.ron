@@ -19,7 +19,7 @@
     applies_to: ["document", "dataset"],
     bin: "sh",
     requires: ["binwalk"],
-    args: ["-c", r#"binwalk "{attr:file}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk -F'  +' '
+    args: ["-c", r#"binwalk {attr:file} 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk -F'  +' '
 $1 ~ /^[0-9]+$/ {
   desc=$3; for(i=4;i<=NF;i++) desc=desc " " $i
   t=desc; sub(/,.*$/,"",t); sub(/^[ \t]+/,"",t); sub(/[ \t]+$/,"",t)

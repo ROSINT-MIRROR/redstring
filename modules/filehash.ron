@@ -10,7 +10,7 @@
     applies_to: ["document", "photo", "video", "dataset"],
     bin: "sh",
     requires: ["sha256sum"],
-    args: ["-c", "sha256sum \"{attr:file}\""],
+    args: ["-c", "sha256sum {attr:file}"],
     timeout_secs: 30,
     shapes: [
         (

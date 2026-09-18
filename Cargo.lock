@@ -2784,6 +2784,7 @@ dependencies = [
  "egui-phosphor",
  "egui-wgpu",
  "egui_graphs",
+ "getrandom 0.3.4",
  "image",
  "petgraph",
  "pollster",

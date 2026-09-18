@@ -17,7 +17,7 @@
     applies_to: ["document", "court_record", "photo", "video"],
     bin: "sh",
     requires: ["file", "pdfinfo", "pdfdetach"],
-    args: ["-c", r#"f="{attr:file}"
+    args: ["-c", r#"f={attr:file}
 mt=$(file -b "$f" 2>/dev/null)
 ext=$(printf '%s' "$f" | awk -F. 'NF>1{print tolower($NF)}')
 ec=$(pdfdetach -list "$f" 2>/dev/null | grep -oE '^[0-9]+ embedded files' | grep -oE '^[0-9]+')

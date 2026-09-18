@@ -15,7 +15,7 @@
     applies_to: ["domain", "server"],
     bin: "sh",
     requires: ["dnsx", "jq"],
-    args: ["-c", "echo '{value}' | dnsx -json -a -aaaa -mx -ns -cname -txt -silent | jq -c '. + {spf_ip4: [ (.txt // [])[] | scan(\"ip4:[0-9.]+\") | sub(\"^ip4:\";\"\") ]}'"],
+    args: ["-c", "echo {value} | dnsx -json -a -aaaa -mx -ns -cname -txt -silent | jq -c '. + {spf_ip4: [ (.txt // [])[] | scan(\"ip4:[0-9.]+\") | sub(\"^ip4:\";\"\") ]}'"],
     timeout_secs: 30,
     shapes: [
         (

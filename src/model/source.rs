@@ -89,12 +89,6 @@ pub struct Source {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_org: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archive_url: Option<String>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ots: Option<String>,
-
     #[serde(default, skip_serializing_if = "tier_is_unrated")]
     pub tier: SourceTier,
 
@@ -134,8 +128,6 @@ mod tests {
         assert!(s.sha256.is_none(), "sha256 defaults to None");
         assert!(s.fetched_at.is_none());
         assert!(s.source_org.is_none());
-        assert!(s.archive_url.is_none());
-        assert!(s.ots.is_none());
         assert_eq!(s.tier, SourceTier::Unrated, "tier defaults to Unrated");
     }
 
@@ -148,8 +140,6 @@ mod tests {
             sha256: Some("a".repeat(64)),
             fetched_at: Some(1_700_000_000),
             source_org: Some("crt.sh".to_owned()),
-            archive_url: Some("https://web.archive.org/web/x".to_owned()),
-            ots: Some("evidence/x.ots".to_owned()),
             tier: SourceTier::Primary,
             sealed: true,
         };
@@ -173,7 +163,6 @@ mod tests {
         assert!(!json.contains("sha256"), "unset sha256 must not bloat the line: {json}");
         assert!(!json.contains("tier"), "Unrated tier must not bloat the line: {json}");
         assert!(!json.contains("fetched_at"), "unset fetched_at must not appear: {json}");
-        assert!(!json.contains("archive_url"), "unset archive_url must not appear: {json}");
         assert!(!json.contains("sealed"), "unsealed source must stay byte-identical: {json}");
     }
 }

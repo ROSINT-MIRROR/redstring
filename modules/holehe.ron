@@ -10,7 +10,7 @@
     applies_to: ["email"],
     bin: "sh",
     requires: ["holehe"],
-    args: ["-c", "holehe '{value}' --only-used 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
+    args: ["-c", "holehe {value} --only-used 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
     timeout_secs: 120,
     shapes: [
         (

@@ -27,15 +27,60 @@ pub fn write_graph_md(project: &Project, cf: &CaseFile) -> Result<(), Error> {
 }
 
 pub const SEALED_LABEL: &str = "[sealed]";
+pub const SEALED_ALIAS_PREFIX: &str = "sealed_";
+const ALIAS_BYTES: usize = 8;
+
+pub struct AliasBook {
+    map: BTreeMap<String, String>,
+}
+
+impl AliasBook {
+    pub fn new() -> Result<Self, Error> {
+        Ok(Self { map: BTreeMap::new() })
+    }
+
+    pub fn alias(&mut self, slug: &str) -> Result<String, Error> {
+        let Some(existing) = self.map.get(slug) else {
+            let fresh = random_alias()?;
+            self.map.insert(slug.to_owned(), fresh.clone());
+            return Ok(fresh);
+        };
+        Ok(existing.clone())
+    }
+}
+
+fn random_alias() -> Result<String, Error> {
+    let mut raw = [0u8; ALIAS_BYTES];
+    getrandom::fill(&mut raw).map_err(|source| Error::Random { source })?;
+    let mut out = String::from(SEALED_ALIAS_PREFIX);
+    for byte in raw {
+        out.push(hex_digit(byte >> 4)?);
+        out.push(hex_digit(byte & 0x0f)?);
+    }
+    Ok(out)
+}
+
+fn hex_digit(nibble: u8) -> Result<char, Error> {
+    let digits = b"0123456789abcdef";
+    let Some(found) = digits.get(usize::from(nibble)) else {
+        return Err(Error::Render { what: "hex nibble out of range".to_owned() });
+    };
+    Ok(char::from(*found))
+}
 
 pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
+    let mut book = AliasBook::new()?;
+    redact_with(cf, &mut book)
+}
+
+pub fn redact_with(cf: &CaseFile, book: &mut AliasBook) -> Result<CaseFile, Error> {
     let mut out = cf.clone();
     let mut remap: BTreeMap<String, String> = BTreeMap::new();
     let mut sealed_slugs: BTreeSet<String> = BTreeSet::new();
     for e in &mut out.data.entities {
         if e.sealed {
             sealed_slugs.insert(e.slug.clone());
-            let alias = sealed_alias(&e.slug)?;
+            let alias = book.alias(&e.slug)?;
             remap.insert(e.slug.clone(), alias.clone());
             e.slug = alias;
             e.label = SEALED_LABEL.to_owned();
@@ -65,6 +110,16 @@ pub fn redact(cf: &CaseFile) -> Result<CaseFile, Error> {
     Ok(out)
 }
 
+pub fn sealed_slugs(cf: &CaseFile) -> Result<BTreeSet<String>, Error> {
+    Ok(cf
+        .data
+        .entities
+        .iter()
+        .filter(|e| e.sealed)
+        .map(|e| e.slug.clone())
+        .collect())
+}
+
 fn resolve(remap: &BTreeMap<String, String>, slug: &str) -> String {
     let Some(alias) = remap.get(slug) else {
         return slug.to_owned();
@@ -83,9 +138,6 @@ fn remapped_set(src: &BTreeSet<String>, remap: &BTreeMap<String, String>) -> BTr
     src.iter().map(|k| resolve(remap, k)).collect()
 }
 
-fn sealed_alias(slug: &str) -> Result<String, Error> {
-    Ok(format!("sealed_{:016x}", crate::model::fnv1a(slug)?))
-}
 
 
 
@@ -150,6 +202,15 @@ mod tests {
             facets: Default::default(),
             image: None,
         }
+    }
+
+    fn alias_in(public: &CaseFile) -> String {
+        for e in &public.data.entities {
+            if e.slug.starts_with(SEALED_ALIAS_PREFIX) {
+                return e.slug.clone();
+            }
+        }
+        String::new()
     }
 
     fn rel(from: &str, to: &str, kind: RelationKind) -> RelationRec {
@@ -260,7 +321,7 @@ mod tests {
         let public = redact(&cf).unwrap();
         let md = graph_md(&public);
         let json = serde_json::to_string_pretty(&public).unwrap();
-        let alias = sealed_alias("jane_victim").unwrap();
+        let alias = alias_in(&public);
 
         for leak in [
             "Jane Victim",
@@ -405,7 +466,7 @@ mod tests {
         let md = graph_md(&public);
         let json = serde_json::to_string_pretty(&public).unwrap();
         let rel_json = serde_json::to_string(&public.data.relations).unwrap();
-        let alias = sealed_alias("minor").unwrap();
+        let alias = alias_in(&public);
 
         assert!(
             public.data.relations.is_empty(),

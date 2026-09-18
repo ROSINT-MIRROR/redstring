@@ -13,7 +13,7 @@
     applies_to: ["alias", "social_account"],
     bin: "sh",
     requires: ["sherlock"],
-    args: ["-c", "sherlock '{value}' --print-found --output /dev/null 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
+    args: ["-c", "sherlock {value} --print-found --output /dev/null 2>/dev/null | sed -r 's/\\x1b\\[[0-9;]*m//g'"],
     timeout_secs: 120,
     shapes: [
         (

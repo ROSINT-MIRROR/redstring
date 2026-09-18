@@ -13,7 +13,7 @@
     applies_to: ["website", "web_page", "domain"],
     bin: "sh",
     requires: ["curl"],
-    args: ["-c", "curl -sL --max-time 20 -A 'redstring' '{value}' | grep -oE 'GTM-[A-Z0-9]+|G-[A-Z0-9]{6,}|UA-[0-9]+-[0-9]+' | sort -u"],
+    args: ["-c", "curl -sL --max-time 20 -A 'redstring' {value} | grep -oE 'GTM-[A-Z0-9]+|G-[A-Z0-9]{6,}|UA-[0-9]+-[0-9]+' | sort -u"],
     timeout_secs: 30,
     shapes: [
         (

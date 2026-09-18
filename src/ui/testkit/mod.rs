@@ -33,6 +33,8 @@ mod tests_flows;
 #[cfg(test)]
 mod tests_hardening;
 #[cfg(test)]
+mod tests_export_leak;
+#[cfg(test)]
 mod tests_reload_guard;
 #[cfg(test)]
 mod tests_autosave;

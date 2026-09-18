@@ -4,6 +4,7 @@
 
 
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use zip::write::SimpleFileOptions;
@@ -11,14 +12,16 @@ use zip::write::SimpleFileOptions;
 use crate::error::Error;
 use crate::model::{CaseFile, CaseMeta, FORMAT_VERSION};
 
-use super::derive::{redact, write_graph_md, write_json};
+use super::derive::{AliasBook, redact_with, sealed_slugs, write_graph_md, write_json};
 use super::dossier::write_dossiers;
 use super::ignore::RsIgnore;
-use super::io::{read_case, write_case};
+use super::io::{read_case, read_note, write_case, write_note};
 use super::layout::{CASE_FILE, Project};
+use super::leakscan::{self, sealed_tokens};
 use super::validate::cited_paths;
 
 pub const BUNDLE_SUFFIX: &str = ".redstring.zip";
+static EXPORT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 
 
@@ -38,16 +41,84 @@ pub fn export(project: &Project) -> Result<(PathBuf, usize, usize), Error> {
 
     let staging = staging_dir(project)?;
     let _stale = std::fs::remove_dir_all(&staging);
-    copy_tree(&project.root, &staging, &ignore)?;
-    let temp = Project::open(&staging)?;
-    let public = redact(&cf)?;
+    std::fs::create_dir_all(&staging)
+        .map_err(|source| Error::Io { path: staging.to_path_buf(), source })?;
+    let temp = Project::create(&staging)?;
+    let stage_root = temp.root.clone();
+
+    let mut book = AliasBook::new()?;
+    let public = redact_with(&cf, &mut book)?;
+    let hidden = sealed_slugs(&cf)?;
+
     write_case(&temp, &public)?;
-    write_json(&temp, &cf)?;
-    write_graph_md(&temp, &cf)?;
-    write_dossiers(&temp, &cf)?;
-    let n = zip_tree(&staging, &out, &ignore)?;
-    let _cleanup = std::fs::remove_dir_all(&staging);
+    write_json(&temp, &public)?;
+    write_graph_md(&temp, &public)?;
+    write_dossiers(&temp, &public)?;
+    copy_allowed(project, &temp, &cf, &public, &hidden, &ignore)?;
+
+    let tokens = sealed_tokens(&cf, &hidden)?;
+    match assert_no_sealed_tokens(&stage_root, &tokens, &ignore) {
+        Ok(()) => {}
+        Err(leak) => {
+            let _cleanup = std::fs::remove_dir_all(&stage_root);
+            return Err(leak);
+        }
+    }
+
+    let n = zip_tree(&stage_root, &out, &ignore)?;
+    let _cleanup = std::fs::remove_dir_all(&stage_root);
     Ok((out, n, sealed))
+}
+
+fn copy_allowed(
+    project: &Project,
+    temp: &Project,
+    cf: &CaseFile,
+    public: &CaseFile,
+    hidden: &BTreeSet<String>,
+    ignore: &RsIgnore,
+) -> Result<(), Error> {
+    for (_, rel) in cited_paths(cf)? {
+        copy_one(project, temp, &rel, ignore)?;
+    }
+    for e in &public.data.entities {
+        let note = read_note(project, &e.slug)?;
+        if note.trim().is_empty() {
+            continue;
+        }
+        write_note(temp, &e.slug, &note)?;
+    }
+    for e in &cf.data.entities {
+        if !hidden.contains(&e.slug) {
+            continue;
+        }
+        let dir = temp.entity_dir(&e.slug)?;
+        let _gone = std::fs::remove_dir_all(&dir);
+    }
+    Ok(())
+}
+
+fn copy_one(
+    project: &Project,
+    temp: &Project,
+    rel: &str,
+    ignore: &RsIgnore,
+) -> Result<(), Error> {
+    if ignore.matches(rel)? {
+        return Ok(());
+    }
+    let from = project.resolve(rel)?;
+    if !from.is_file() {
+        return Ok(());
+    }
+    let to = temp.resolve(rel)?;
+    let Some(parent) = to.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|source| Error::Io { path: parent.to_path_buf(), source })?;
+    std::fs::copy(&from, &to).map_err(|source| Error::Io { path: from.to_path_buf(), source })?;
+    Ok(())
 }
 
 fn needs_redaction(cf: &CaseFile) -> bool {
@@ -64,23 +135,21 @@ fn needs_redaction(cf: &CaseFile) -> bool {
 
 fn staging_dir(project: &Project) -> Result<PathBuf, Error> {
     let stem = project.dir_name()?;
-    Ok(std::env::temp_dir().join(format!("redstring_export_{stem}_{}", std::process::id())))
+    let seq = EXPORT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(std::env::temp_dir().join(format!(
+        "redstring_export_{stem}_{}_{seq}",
+        std::process::id()
+    )))
 }
 
-fn copy_tree(src_root: &Path, dst_root: &Path, ignore: &RsIgnore) -> Result<(), Error> {
-    std::fs::create_dir_all(dst_root)
-        .map_err(|source| Error::Io { path: dst_root.to_path_buf(), source })?;
+fn assert_no_sealed_tokens(
+    staging: &Path,
+    tokens: &[String],
+    ignore: &RsIgnore,
+) -> Result<(), Error> {
     let mut files: Vec<String> = Vec::new();
-    collect_files(src_root, "", ignore, &mut files)?;
-    for rel in &files {
-        let from = src_root.join(rel);
-        let to = dst_root.join(rel);
-        let Some(parent) = to.parent() else { continue };
-        std::fs::create_dir_all(parent)
-            .map_err(|source| Error::Io { path: parent.to_path_buf(), source })?;
-        std::fs::copy(&from, &to).map_err(|source| Error::Io { path: from.to_path_buf(), source })?;
-    }
-    Ok(())
+    collect_files(staging, "", ignore, &mut files)?;
+    leakscan::assert_clean(staging, tokens, &files)
 }
 
 fn zip_tree(src_root: &Path, out: &Path, ignore: &RsIgnore) -> Result<usize, Error> {
@@ -474,6 +543,15 @@ mod tests {
         p
     }
 
+    fn alias_in_blob(blob: &str) -> String {
+        for token in blob.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+            if token.starts_with("sealed_") && token.len() > "sealed_".len() {
+                return token.to_owned();
+            }
+        }
+        String::new()
+    }
+
     fn zip_blob(zip_path: &Path) -> String {
         let f = std::fs::File::open(zip_path).unwrap();
         let mut archive = zip::ZipArchive::new(f).unwrap();
@@ -496,8 +574,8 @@ mod tests {
         let (zip_path, _n, sealed) = export(&p).unwrap();
         assert_eq!(sealed, 1, "one sealed entity reported redacted");
 
-        let alias = format!("sealed_{:016x}", crate::model::fnv1a("jane_victim").unwrap());
         let blob = zip_blob(&zip_path);
+        let alias = alias_in_blob(&blob);
         for leak in [
             "jane_victim",
             "Jane Victim",

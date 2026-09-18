@@ -16,9 +16,6 @@ use crate::model::{
 
 use super::label::{claim_edge_label, theme_shift};
 
-const TIP_ANGLE: f32 = std::f32::consts::TAU / 30.0;
-const TIP_SIZE: f32 = 12.0;
-const PARALLEL_SPACING: f32 = 12.0;
 const WIDTH: f32 = 3.0;
 const HOT_MULT: f32 = 1.9;
 const GLOW_MULT: f32 = 3.2;
@@ -94,8 +91,9 @@ where
         if self.hidden {
             return Vec::new();
         }
-        let (s, e) = trim_to_boundaries(start, end);
-        let (s, e) = offset_ends(s, e, self.order);
+        let Ok((s, e)) = super::yarn::endpoints(start, end, self.order) else {
+            return Vec::new();
+        };
         let dark = ctx.ctx.global_style().visuals.dark_mode;
         let Ok(raw) = status_color(self.status) else {
             return Vec::new();
@@ -104,44 +102,60 @@ where
             return Vec::new();
         };
 
-        let a = ctx.meta.canvas_to_screen_pos(s);
-        let b = ctx.meta.canvas_to_screen_pos(e);
+        let yarn = self.sourced && self.status == Verification::Corroborated;
+        let Ok(path) = super::yarn::thread_path(s, e, yarn) else {
+            return Vec::new();
+        };
+        let spts: Vec<Pos2> = path.iter().map(|p| ctx.meta.canvas_to_screen_pos(*p)).collect();
         let hovered = ctx
             .ctx
             .input(|i| i.pointer.hover_pos())
-            .is_some_and(|p| dist_point_segment(p, a, b) <= HOVER_PX);
+            .is_some_and(|p| near_path(p, &spts, HOVER_PX));
         let hot = self.selected || hovered;
         let mult = if hot { HOT_MULT } else { 1.0 };
-        let line_color = if self.sealed { mute_edge(color) } else { color };
+        let base = if yarn {
+            let Ok(red) = super::yarn::yarn_red(dark) else {
+                return Vec::new();
+            };
+            red
+        } else {
+            color
+        };
+        let line_color = if self.sealed { mute_edge(base) } else { base };
         let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(WIDTH) * mult, line_color);
 
         let mut res = Vec::new();
         if hot {
             let halo = Stroke::new(stroke.width * GLOW_MULT, line_color.gamma_multiply(0.25));
-            res.push(Shape::line_segment([a, b], halo));
+            res.push(Shape::line(spts.clone(), halo));
         }
         if self.sourced {
-            res.push(Shape::line_segment([a, b], stroke));
+            let ycw = WIDTH * super::yarn::YARN_WIDTH_MULT * mult;
+            let ypx = ctx.meta.canvas_to_screen_size(ycw);
+            let yarn_tint = if self.sealed { mute_edge(Color32::WHITE) } else { Color32::WHITE };
+            if yarn
+                && ypx >= super::yarn::MIN_YARN_PX
+                && let Ok(ribbon) = super::yarn::yarn_shape(ctx.ctx, ctx.meta, &path, ycw, yarn_tint)
+            {
+                res.push(ribbon);
+            } else {
+                res.push(Shape::line(spts.clone(), stroke));
+            }
         } else {
             res.extend(Shape::dashed_line(
-                &[a, b],
+                &spts,
                 stroke,
                 ctx.meta.canvas_to_screen_size(9.0),
                 ctx.meta.canvas_to_screen_size(6.0),
             ));
         }
 
-        let dir = (e - s).normalized();
-        let t1 = e - rotate(dir, TIP_ANGLE) * TIP_SIZE * mult;
-        let t2 = e - rotate(dir, -TIP_ANGLE) * TIP_SIZE * mult;
-        let tip = vec![
-            ctx.meta.canvas_to_screen_pos(e),
-            ctx.meta.canvas_to_screen_pos(t1),
-            ctx.meta.canvas_to_screen_pos(t2),
-        ];
-        res.push(Shape::convex_polygon(tip, line_color, Stroke::NONE));
+        let Ok(tip) = super::yarn::tip_shape(ctx.meta, &path, mult, line_color) else {
+            return res;
+        };
+        res.push(tip);
 
-        let mid = a + (b - a) * 0.5;
+        let mid = spts[spts.len() / 2];
         let id = edge_claim_id(&start.payload().slug, &end.payload().slug, self.kind, self.order);
         res.extend(self.label_shapes(ctx, id, mid, hot, color, dark));
 
@@ -169,9 +183,14 @@ where
         if self.hidden {
             return false;
         }
-        let (s, e) = trim_to_boundaries(start, end);
-        let (s, e) = offset_ends(s, e, self.order);
-        dist_point_segment(pos, s, e) <= HIT_TOLERANCE
+        let Ok((s, e)) = super::yarn::endpoints(start, end, self.order) else {
+            return false;
+        };
+        let yarn = self.sourced && self.status == Verification::Corroborated;
+        let Ok(path) = super::yarn::thread_path(s, e, yarn) else {
+            return false;
+        };
+        near_path(pos, &path, HIT_TOLERANCE)
     }
 }
 
@@ -374,47 +393,11 @@ fn label_backdrop_fill(bg: Color32, dark: bool) -> Color32 {
     c
 }
 
-fn trim_to_boundaries<N, Ty, Ix, D>(
-    start: &Node<N, Relation, Ty, Ix, D>,
-    end: &Node<N, Relation, Ty, Ix, D>,
-) -> (Pos2, Pos2)
-where
-    N: Clone,
-    Ty: EdgeType,
-    Ix: IndexType,
-    D: DisplayNode<N, Relation, Ty, Ix>,
-{
-    let dir = (end.location() - start.location()).normalized();
-    (
-        start.display().closest_boundary_point(dir),
-        end.display().closest_boundary_point(-dir),
-    )
-}
-
-fn offset_ends(s: Pos2, e: Pos2, order: usize) -> (Pos2, Pos2) {
-    if order == 0 {
-        return (s, e);
-    }
-    let dir = (e - s).normalized();
-    let perp = Vec2::new(-dir.y, dir.x);
-    let off = perp * (order as f32) * PARALLEL_SPACING;
-    (s + off, e + off)
-}
-
-fn rotate(v: Vec2, angle: f32) -> Vec2 {
-    let (c, s) = (angle.cos(), angle.sin());
-    Vec2::new(c * v.x - s * v.y, s * v.x + c * v.y)
-}
-
-fn dist_point_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
-    let ab = b - a;
-    let len2 = ab.length_sq();
-    if len2 == 0.0 {
-        return (p - a).length();
-    }
-    let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
-    let proj = a + ab * t;
-    (p - proj).length()
+fn near_path(p: Pos2, pts: &[Pos2], tol: f32) -> bool {
+    let Ok(d) = super::yarn::dist_to_path(p, pts) else {
+        return false;
+    };
+    d <= tol
 }
 
 #[cfg(test)]
@@ -728,6 +711,26 @@ mod tests {
     fn sealed(mut r: Relation) -> Relation {
         r.sealed = true;
         r
+    }
+    fn has_mesh(shapes: &[Shape]) -> bool {
+        shapes.iter().any(|s| matches!(s, Shape::Mesh(m) if !m.vertices.is_empty()))
+    }
+    #[test]
+    fn only_a_corroborated_sourced_edge_wears_the_textile_yarn() {
+        let mut top = rel(RelationKind::Controls, vec![src_tier(SourceTier::Primary)]);
+        top.status = Verification::Corroborated;
+        assert!(
+            has_mesh(&edge_shapes(top)),
+            "corroborated + sourced is the red thread and must tessellate the ribbon"
+        );
+        let plain = rel(RelationKind::Controls, vec![src_tier(SourceTier::Primary)]);
+        assert!(!has_mesh(&edge_shapes(plain)), "a merely sourced edge stays a normal line");
+        let mut unsourced = rel(RelationKind::Controls, Vec::new());
+        unsourced.status = Verification::Corroborated;
+        assert!(
+            !has_mesh(&edge_shapes(unsourced)),
+            "an unsourced claim never wears the yarn, whatever its status"
+        );
     }
     #[test]
     fn sealed_edge_shows_lock_and_forces_label_at_rest() {

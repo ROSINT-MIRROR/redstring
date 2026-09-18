@@ -109,6 +109,7 @@ pub enum RelationKind {
     Loads,
     Leaks,
     RedirectsTo,
+    ArchivedAs,
     Sells,
     AdvertisedOn,
     AffiliateOf,
@@ -167,7 +168,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 143] = [
+pub const RELATION_META: [RelMeta; 144] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -270,6 +271,7 @@ pub const RELATION_META: [RelMeta; 143] = [
     r(RelationKind::Loads, "loads", "web/infra"),
     r(RelationKind::Leaks, "leaks", "web/infra"),
     r(RelationKind::RedirectsTo, "redirects to", "web/infra"),
+    r(RelationKind::ArchivedAs, "archived as", "web/infra"),
     r(RelationKind::Sells, "sells", "commerce"),
     r(RelationKind::AdvertisedOn, "advertised on", "commerce"),
     r(RelationKind::AffiliateOf, "affiliate of", "commerce"),
@@ -541,7 +543,7 @@ mod tests {
             "harmed",
             "Harmed is active voice — perpetrator at the arrow tail, victim at the head"
         );
-        assert_eq!(RELATION_META.len(), 143, "round-3 verb count");
+        assert_eq!(RELATION_META.len(), 144, "round-3 verb count + archived_as");
     }
 
     #[test]

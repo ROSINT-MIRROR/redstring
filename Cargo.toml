@@ -2,6 +2,12 @@
 name = "redstring"
 version = "0.1.0"
 edition = "2024"
+license = "0BSD"
+description = "Graph-based investigation tool for journalism — sourced edges, sealed subjects, git-friendly cases."
+readme = "README.md"
+# Not published to crates.io: this is a GUI binary, and the security blockers in
+# SECURITY.md have to land first. Left explicit so a stray `cargo publish` fails.
+publish = false
 
 [dependencies]
 eframe = "0.34.3"
@@ -17,6 +23,9 @@ petgraph = { version = "0.8.3", features = ["serde-1"] }
 egui-wgpu = "0.34.3"
 wgpu = "29.0.3"
 pollster = "0.4.0"
+# sealed pseudonyms come from the OS CSPRNG, never from a hash of the real slug:
+# a hash is a guess-and-compare oracle against a candidate list, random is not.
+getrandom = "0.3"
 # real regex for the content-extract adapter — tracker ids / emails / hashes out of raw HTML
 regex = "1"
 rfd = "0.17.2"

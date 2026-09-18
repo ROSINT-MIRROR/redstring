@@ -71,6 +71,15 @@ pub enum Error {
         source: std::time::SystemTimeError,
     },
 
+    Random {
+        source: getrandom::Error,
+    },
+
+    SealedLeak {
+        path: String,
+        token: String,
+    },
+
     UnknownExtractor {
         id: String,
     },
@@ -170,6 +179,13 @@ impl std::fmt::Display for Error {
             Self::Clock { source } => {
                 write!(f, "system clock is before the unix epoch: {source}")
             }
+            Self::Random { source } => {
+                write!(f, "no entropy available for a sealed alias: {source}")
+            }
+            Self::SealedLeak { path, token } => write!(
+                f,
+                "export aborted: '{path}' carries sealed material '{token}' — bundle not written"
+            ),
             Self::UnknownExtractor { id } => {
                 write!(f, "unknown extract strategy '{id}'")
             }

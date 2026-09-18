@@ -4,6 +4,7 @@ mod transforms_tests {
     use crate::model::{ObsValue, RelationKind};
     use crate::modules::emit::{Fact, emit, parse_obs_value};
     use crate::modules::extract::sniff;
+    use crate::modules::run::streaming;
     use crate::modules::ObsKind;
 
     fn builtin(origin: &str) -> ModuleSpec {
@@ -97,8 +98,37 @@ mod transforms_tests {
         let args = spec.render_args("8.8.8.8", "dns.google", "8_8_8_8", &[]).unwrap();
         assert_eq!(args[0], "-c");
         assert!(
-            args[1].contains("shodan host \"8.8.8.8\""),
-            "the validated IP value is substituted into the host lookup"
+            args[1].contains("shodan host \"$1\""),
+            "the script references the value positionally, never inlines it"
+        );
+        assert!(
+            !args[1].contains("8.8.8.8"),
+            "the value never lands in the script text"
+        );
+        assert_eq!(
+            args.last().unwrap(),
+            "8.8.8.8",
+            "the value is bound as a real argument the shell cannot reparse"
+        );
+    }
+
+    #[test]
+    fn hostile_value_is_bound_not_executed() {
+        let spec = builtin("builtin:shodan");
+        let hostile = "x\"; id; echo \"";
+        let args = spec.render_args(hostile, "evil", "evil", &[]).unwrap();
+        assert!(
+            !args[1].contains(hostile),
+            "the hostile text never reaches the script"
+        );
+        assert!(
+            !args[1].contains("; id;"),
+            "no injected command lands in the script"
+        );
+        assert_eq!(
+            args.last().unwrap(),
+            hostile,
+            "the hostile text survives intact as inert data"
         );
     }
 
@@ -175,9 +205,10 @@ mod transforms_tests {
             .unwrap();
         assert_eq!(args[0], "-c");
         assert!(
-            args[1].trim_start().starts_with("binwalk \"evidence/docs/firmware.bin\""),
-            "the file observation is substituted, project-relative, with no flag before it"
+            args[1].trim_start().starts_with("binwalk \"$1\""),
+            "the file observation is bound positionally, with no flag before it"
         );
+        assert_eq!(args.last().unwrap(), "evidence/docs/firmware.bin");
         assert!(!args[1].contains("--extract"), "signature scan only — never carves files");
     }
 
@@ -201,6 +232,94 @@ mod transforms_tests {
             outbound: true,
             attrs: Vec::new(),
         }));
+    }
+
+    #[test]
+    fn alibi_applies_to_web_targets_and_stays_read_only() {
+        let spec = builtin("builtin:alibi");
+        let kinds = spec.kinds().unwrap();
+        assert!(kinds.contains(&EntityKind::WebPage));
+        assert!(kinds.contains(&EntityKind::Domain));
+        assert_eq!(spec.bin, "alibi", "alibi stays an external executable");
+        assert!(
+            spec.args.contains(&"--check".to_owned()),
+            "the module must never submit — --check is read-only"
+        );
+        assert!(
+            spec.args.contains(&"--json".to_owned()),
+            "JSONL is the parsed channel"
+        );
+    }
+
+    #[test]
+    fn alibi_confirmed_row_emits_one_archived_page_labelled_by_host() {
+        let spec = builtin("builtin:alibi");
+        let text = "{\"witness\":\"wayback\",\"url\":\"https://example.com/\",\"status\":\"confirmed\",\"reason\":\"ok\",\"snapshot\":\"https://web.archive.org/web/20260101000000/https://example.com/\",\"ts\":\"20260101000000\",\"detail\":null}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        assert_eq!(shape.id, "alibi");
+        let facts = emit(shape, &records).unwrap();
+        assert_eq!(facts.len(), 1, "exactly one node for one confirmed witness");
+        assert!(facts.contains(&Fact::Entity {
+            kind: EntityKind::WebPage,
+            label: "web.archive.org".into(),
+            value: "https://web.archive.org/web/20260101000000/https://example.com/".into(),
+            rel: RelationKind::ArchivedAs,
+            outbound: true,
+            attrs: Vec::new(),
+        }));
+    }
+
+    #[test]
+    fn alibi_null_snapshot_rows_emit_nothing() {
+        let spec = builtin("builtin:alibi");
+        let text = "{\"witness\":\"wayback\",\"url\":\"https://example.com/\",\"status\":\"error\",\"reason\":\"network\",\"snapshot\":null,\"ts\":null,\"detail\":null}\n{\"witness\":\"archivetoday\",\"url\":\"https://example.com/\",\"status\":\"error\",\"reason\":\"network\",\"snapshot\":null,\"ts\":null,\"detail\":null}\n{\"witness\":\"ghostarchive\",\"url\":\"https://example.com/\",\"status\":\"error\",\"reason\":\"network\",\"snapshot\":null,\"ts\":null,\"detail\":null}\n";
+        let parsed = sniff(&spec.shapes, text).unwrap();
+        let facts = match parsed {
+            Some((shape, records)) => emit(shape, &records).unwrap(),
+            None => Vec::new(),
+        };
+        assert!(
+            facts.is_empty(),
+            "the offline exit-2 shape yields zero entities and does not error"
+        );
+    }
+
+    #[test]
+    fn alibi_mixed_batch_emits_only_the_confirmed_witness() {
+        let spec = builtin("builtin:alibi");
+        let text = "{\"witness\":\"wayback\",\"url\":\"https://example.com/\",\"status\":\"confirmed\",\"reason\":\"ok\",\"snapshot\":\"https://web.archive.org/web/20260101000000/https://example.com/\",\"ts\":\"20260101000000\",\"detail\":null}\n{\"witness\":\"archivetoday\",\"url\":\"https://example.com/\",\"status\":\"none\",\"reason\":\"absent\",\"snapshot\":null,\"ts\":null,\"detail\":null}\n{\"witness\":\"ghostarchive\",\"url\":\"https://example.com/\",\"status\":\"error\",\"reason\":\"server_error\",\"snapshot\":null,\"ts\":null,\"detail\":\"http 503\"}\n";
+        let (shape, records) = sniff(&spec.shapes, text).unwrap().unwrap();
+        let facts = emit(shape, &records).unwrap();
+        assert_eq!(facts.len(), 1, "the exit-1 shape still puts the one hit on the board");
+    }
+
+    #[test]
+    fn alibi_streams_so_partial_results_survive_a_nonzero_exit() {
+        let spec = builtin("builtin:alibi");
+        assert!(
+            streaming(&spec.shapes).unwrap(),
+            "ndjson makes alibi stream: facts are applied per line as they land, \
+             so exit 1 and 2 keep their confirmed rows instead of being dropped"
+        );
+        assert!(
+            !streaming(&builtin("builtin:wayback").shapes).unwrap(),
+            "the lines-based wayback module is batch, parsed only on exit 0"
+        );
+    }
+
+    #[test]
+    fn alibi_and_wayback_stay_distinct_moves() {
+        let alibi = builtin("builtin:alibi");
+        let wayback = builtin("builtin:wayback");
+        assert_ne!(alibi.bin, wayback.bin, "alibi is its own executable");
+        assert!(
+            wayback.args.iter().any(|a| a.contains("cdx")),
+            "wayback sweeps the CDX index for historical URLs — a discovery move"
+        );
+        assert!(
+            alibi.args.contains(&"--check".to_owned()),
+            "alibi verifies one URL across three archives — a verification move"
+        );
     }
 
     #[test]

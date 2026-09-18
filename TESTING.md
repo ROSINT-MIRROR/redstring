@@ -125,8 +125,8 @@ The const model tables are the source of truth, so tests iterate them instead of
 hand-listing kinds. One loop = dozens of assertions:
 
 ```rust
-for m in KIND_META.iter() { /* build + save + load + check for each of the 58 kinds */ }
-for m in RELATION_META.iter() { /* edge create + round-trip for each of the 95 verbs */ }
+for m in KIND_META.iter() { /* build + save + load + check for each of the 62 kinds */ }
+for m in RELATION_META.iter() { /* edge create + round-trip for each of the 144 verbs */ }
 ```
 
 To cover a new kind/relation/source, add it to the const table — the table tests pick it
@@ -170,8 +170,21 @@ gate it so the suite stays green and the test is ready to un-ignore at merge:
 
 ```rust
 #[test]
-#[ignore = "passes once dup-converge (convergence-by-value + slug-tracks-label) lands"]
-fn lookup_converges_despite_mismatched_label_slug() { /* asserts the post-fix behavior */ }
+#[ignore = "passes once <the fix> lands"]
+fn asserts_the_post_fix_behavior() { /* … */ }
 ```
 
 Run these explicitly with `cargo test -- --ignored`. Everything not ignored must be green.
+**There are currently no ignored tests** — the whole suite runs by default.
+
+## The export leak suite
+
+`tests_export_leak.rs` is the one suite that must never be allowed to go vacuous. It builds a
+case, runs a real lookup **that archives raw stdout to `evidence/`**, seals the entity, exports
+the bundle, and then scans every entry NAME and every entry's BYTES for the real slug, the real
+label, the real value and the secret inside the archived output.
+
+The bug it exists to catch (`--export` shipping `evidence/docs/{module}-{real_slug}-{ts}.txt`
+verbatim) hid for a long time precisely because every other seal test built a `CaseFile` in
+memory and never ran a lookup, so `evidence/` was always empty and the redaction suite passed
+while the leak was live. If you add a seal test, run a lookup first or you are testing nothing.

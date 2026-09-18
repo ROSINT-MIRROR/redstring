@@ -319,8 +319,6 @@ mod tests {
                 sha256: Some("a".repeat(64)),
                 fetched_at: Some(1_700_000_000),
                 source_org: Some("DOJ".into()),
-                archive_url: Some("https://web.archive.org/web/y".into()),
-                ots: Some("evidence/y.ots".into()),
                 tier: crate::model::SourceTier::Primary,
                 sealed: true,
             }],
