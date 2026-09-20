@@ -93,6 +93,10 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         ns_kind: SourceKind::Markdown,
         ns_ref: String::new(),
         ns_excerpt: String::new(),
+        theme_watcher: crate::theme::ThemeWatcher::new(std::path::PathBuf::from(
+            "/tmp/redstring_test_theme.ron",
+        ))?,
+        custom_theme: None,
     })
 }
 

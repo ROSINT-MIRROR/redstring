@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui::{Align, Color32, FontFamily, FontId, Pos2, Rect, Vec2};
 use egui::text::LayoutJob;
+use egui::{Align, Color32, FontFamily, FontId, Pos2, Rect, Vec2};
 use egui_graphs::{
     DisplayEdge, DisplayNode, Graph, GraphView, Layout, LayoutState, MetadataFrame,
     SettingsInteraction, SettingsNavigation, SettingsStyle,
@@ -170,15 +170,10 @@ fn parse_opts(args: &[String]) -> Result<Opts, Error> {
 }
 
 fn parse_theme(text: &str) -> Result<bool, Error> {
-    if text == "dark" {
-        return Ok(true);
-    }
-    if text == "light" {
-        return Ok(false);
-    }
-    Err(Error::ShotArgs {
-        what: format!("bad --theme '{text}': use 'light' or 'dark'"),
-    })
+    let t = crate::theme::Theme::from_id(text).map_err(|err| Error::ShotArgs {
+        what: format!("{err}"),
+    })?;
+    t.is_dark()
 }
 
 fn arg_value<'a>(args: &'a [String], i: usize) -> Result<&'a String, Error> {
@@ -733,7 +728,10 @@ mod tests {
             );
             compared += 1;
         }
-        assert!(compared >= 3, "sample case should carry >=3 nodes, compared {compared}");
+        assert!(
+            compared >= 3,
+            "sample case should carry >=3 nodes, compared {compared}"
+        );
         let _ = std::fs::remove_file(&dark_out);
         let _ = std::fs::remove_file(&light_out);
     }
@@ -745,7 +743,10 @@ mod tests {
             panic!("a bad --theme value must be rejected");
         };
         let msg = format!("{err}");
-        assert!(msg.contains("theme"), "error should mention the theme flag, got {msg}");
+        assert!(
+            msg.contains("theme"),
+            "error should mention the theme flag, got {msg}"
+        );
     }
 
     #[test]
@@ -757,7 +758,11 @@ mod tests {
                 assert_eq!(report.mode, "png");
                 assert!(!report.backend.is_empty(), "png report names the backend");
                 let bytes = std::fs::read(&out).unwrap();
-                assert!(bytes.len() > 1000, "png should be non-trivial, got {}", bytes.len());
+                assert!(
+                    bytes.len() > 1000,
+                    "png should be non-trivial, got {}",
+                    bytes.len()
+                );
                 assert_eq!(
                     &bytes[..8],
                     &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],

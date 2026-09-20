@@ -1,7 +1,6 @@
 use egui::{Color32, FontId, Pos2, RichText, Sense, StrokeKind, Vec2};
 
 use crate::error::Error;
-use crate::prefs::Theme;
 
 use super::app::RedstringApp;
 use super::layout::{LayoutKind, Spread};
@@ -195,14 +194,20 @@ impl RedstringApp {
             return Ok(());
         }
         if tb_toggle(ui, egui_phosphor::regular::FLOPPY_DISK, "Go live", true)
-            .on_hover_text("exploring — write the sandbox to disk and go back to live autosaving (Ctrl+S)")
+            .on_hover_text(
+                "exploring — write the sandbox to disk and go back to live autosaving (Ctrl+S)",
+            )
             .clicked()
         {
             self.explore_save(ui)?;
         }
-        if tb_button(ui, egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE, "Discard")
-            .on_hover_text("throw the sandbox away, re-read the case from disk and go back to live")
-            .clicked()
+        if tb_button(
+            ui,
+            egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+            "Discard",
+        )
+        .on_hover_text("throw the sandbox away, re-read the case from disk and go back to live")
+        .clicked()
         {
             self.explore_discard(ui)?;
         }
@@ -290,8 +295,12 @@ impl RedstringApp {
             self.flush_before_close(ui)?;
             return Ok(());
         }
-        crate::dlog_warn!("quit", "window close intercepted — unsaved sandbox, cancelling");
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        crate::dlog_warn!(
+            "quit",
+            "window close intercepted — unsaved sandbox, cancelling"
+        );
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::CancelClose);
         self.quit_confirm = true;
         Ok(())
     }
@@ -412,7 +421,10 @@ fn settings_tab_cap(screen_h: f32) -> f32 {
 fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label(format!("{} UI scale", egui_phosphor::regular::MAGNIFYING_GLASS));
+        ui.label(format!(
+            "{} UI scale",
+            egui_phosphor::regular::MAGNIFYING_GLASS
+        ));
         let slider = ui.add(
             egui::Slider::new(&mut prefs.ui_scale, 0.75..=3.0)
                 .step_by(0.05)
@@ -425,13 +437,65 @@ fn general_tab(ui: &mut egui::Ui, prefs: &mut crate::prefs::Prefs) -> bool {
     ui.add_space(super::style::GAP_SM);
     ui.horizontal(|ui| {
         ui.label(format!("{} theme", egui_phosphor::regular::PALETTE));
-        changed |= ui.selectable_value(&mut prefs.theme, Theme::Dark, "dark").clicked();
-        changed |= ui.selectable_value(&mut prefs.theme, Theme::Light, "light").clicked();
+        egui::ComboBox::from_id_salt("prefs_theme_select")
+            .selected_text(prefs.theme.to_string())
+            .show_ui(ui, |ui| {
+                for t in crate::theme::Theme::ALL {
+                    if ui
+                        .selectable_value(&mut prefs.theme, *t, t.to_string())
+                        .clicked()
+                    {
+                        changed = true;
+                    }
+                }
+            });
     });
+    if prefs.theme == crate::theme::Theme::Custom {
+        let Ok(path) = crate::theme::custom_theme_path() else {
+            return changed;
+        };
+        let Ok(()) = crate::theme::ensure_template_file(&path) else {
+            return changed;
+        };
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new(format!("file: {}", path.display()))
+                    .weak()
+                    .small(),
+            );
+            if ui.button("reset template").clicked() {
+                let Ok(()) = crate::theme::write_template_force(&path) else {
+                    return;
+                };
+                changed = true;
+            }
+        });
+    } else {
+        let Ok(path) = crate::theme::custom_theme_path() else {
+            return changed;
+        };
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            if ui.button("copy preset to custom theme.ron").clicked() {
+                let Ok(def) = prefs.theme.def() else {
+                    return;
+                };
+                let Ok(()) = crate::theme::save_theme_file(&path, &def) else {
+                    return;
+                };
+                prefs.theme = crate::theme::Theme::Custom;
+                changed = true;
+            }
+        });
+    }
     ui.add_space(super::style::GAP_SM);
     let mut clear = false;
     ui.horizontal(|ui| {
-        ui.label(format!("{} board background", egui_phosphor::regular::IMAGE));
+        ui.label(format!(
+            "{} board background",
+            egui_phosphor::regular::IMAGE
+        ));
         if ui.button("choose image…").clicked()
             && let Some(path) = pick_background()
         {
@@ -475,8 +539,6 @@ fn background_name(path: &str) -> String {
     name.to_string_lossy().into_owned()
 }
 
-
-
 fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
     ui.label(
         RichText::new("lookup modules — run from an entity's inspector; specs load from ~/.config/redstring/modules/")
@@ -484,33 +546,38 @@ fn modules_tab(ui: &mut egui::Ui, registry: &crate::modules::Registry) {
     );
     ui.add_space(super::style::GAP_SM);
     for entry in &registry.entries {
-        ui.horizontal(|ui| {
-            match &entry.status {
-                crate::modules::ModuleStatus::Active(path) => {
-                    ui.colored_label(super::app::OK_GREEN, egui_phosphor::regular::CHECK);
-                    ui.label(RichText::new(&entry.spec.label).strong());
-                    ui.label(RichText::new(path.display().to_string()).weak().small());
-                }
-                crate::modules::ModuleStatus::Missing(missing) => {
-                    ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
-                    ui.label(RichText::new(&entry.spec.label).strong());
-                    ui.label(
-                        RichText::new(format!("{} not on PATH — hidden", missing.join(", ")))
-                            .weak()
-                            .small(),
-                    );
-                }
-                crate::modules::ModuleStatus::Broken(reason) => {
-                    ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
-                    ui.label(RichText::new(&entry.spec.label).strong());
-                    ui.label(RichText::new(format!("broken spec: {reason}")).weak().small());
-                }
+        ui.horizontal(|ui| match &entry.status {
+            crate::modules::ModuleStatus::Active(path) => {
+                ui.colored_label(super::app::OK_GREEN, egui_phosphor::regular::CHECK);
+                ui.label(RichText::new(&entry.spec.label).strong());
+                ui.label(RichText::new(path.display().to_string()).weak().small());
+            }
+            crate::modules::ModuleStatus::Missing(missing) => {
+                ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
+                ui.label(RichText::new(&entry.spec.label).strong());
+                ui.label(
+                    RichText::new(format!("{} not on PATH — hidden", missing.join(", ")))
+                        .weak()
+                        .small(),
+                );
+            }
+            crate::modules::ModuleStatus::Broken(reason) => {
+                ui.colored_label(super::style::DANGER, egui_phosphor::regular::X);
+                ui.label(RichText::new(&entry.spec.label).strong());
+                ui.label(
+                    RichText::new(format!("broken spec: {reason}"))
+                        .weak()
+                        .small(),
+                );
             }
         });
-        ui.label(RichText::new(format!("    {}", entry.origin)).weak().small());
+        ui.label(
+            RichText::new(format!("    {}", entry.origin))
+                .weak()
+                .small(),
+        );
     }
 }
-
 
 const API_SERVICES: [(&str, &str, &str); 1] = [(
     "web_archive",
@@ -565,7 +632,6 @@ fn service_meta(id: &str) -> (&str, &'static str) {
     }
     (id, egui_phosphor::regular::KEY)
 }
-
 
 fn ensure_key<'a>(keys: &'a mut Vec<(String, String)>, id: &str) -> &'a mut String {
     let pos = keys.iter().position(|(k, _)| k == id);

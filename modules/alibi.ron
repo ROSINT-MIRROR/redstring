@@ -1,0 +1,34 @@
+// builtin module spec — alibi third-party witness archiver (sherlockit sibling).
+// Read-only by design: `--check` lists the public snapshots a URL already has on
+// web.archive.org, archive.today and ghostarchive.org. It SUBMITS NOTHING, needs
+// no key and touches no rate limiter, so it is safe to run from a board click.
+//
+// Archiving (`alibi <url>` without --check) is deliberately NOT wired here: it
+// takes minutes, is rate-limited per IP, and a module that fires on every node
+// click would burn the journalist's address into a cooldown. Archive from the
+// shell when you mean it, then re-run this module to pick the snapshots up.
+//
+// --json emits one JSONL object per witness: {witness,url,status,reason,
+// snapshot,ts,detail}. The ndjson adapter reads each line; rows whose snapshot
+// is null (status none/pending/error) carry no url and drop out of the emit.
+// Each confirmed snapshot lands as a web_page the source archived_as, labelled
+// by host so the board shows "web.archive.org" rather than a 200-char url.
+(
+    id: "alibi",
+    label: "alibi archive snapshots",
+    applies_to: ["website", "web_page", "domain"],
+    bin: "alibi",
+    requires: [],
+    args: ["--check", "--json", "{value}"],
+    timeout_secs: 120,
+    shapes: [
+        (
+            id: "alibi",
+            extract: (id: "ndjson"),
+            min_hits: 1,
+            emit: [
+                Entity(from: "snapshot", kind: "web_page", rel: "archived_as", label: Host),
+            ],
+        ),
+    ],
+)

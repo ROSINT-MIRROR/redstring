@@ -3,13 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
-pub enum Theme {
-    #[default]
-    Dark,
-    Light,
-}
+pub use crate::theme::Theme;
 
 const MAX_RECENT: usize = 8;
 
@@ -63,9 +57,17 @@ impl Prefs {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self::default());
             }
-            Err(source) => return Err(Error::Io { path: path.to_path_buf(), source }),
+            Err(source) => {
+                return Err(Error::Io {
+                    path: path.to_path_buf(),
+                    source,
+                });
+            }
         };
-        ron::from_str(&text).map_err(|source| Error::RonParse { path: path.to_path_buf(), source })
+        ron::from_str(&text).map_err(|source| Error::RonParse {
+            path: path.to_path_buf(),
+            source,
+        })
     }
 
     pub fn save(&self) -> Result<(), Error> {
@@ -73,10 +75,16 @@ impl Prefs {
         let Some(dir) = path.parent() else {
             return Err(Error::NoConfigDir);
         };
-        std::fs::create_dir_all(dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
+        std::fs::create_dir_all(dir).map_err(|source| Error::Io {
+            path: dir.to_path_buf(),
+            source,
+        })?;
         let text = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
             .map_err(|source| Error::RonSer { source })?;
-        std::fs::write(&path, text).map_err(|source| Error::Io { path: path.to_path_buf(), source })?;
+        std::fs::write(&path, text).map_err(|source| Error::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
         Ok(())
     }
 

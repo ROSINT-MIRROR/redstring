@@ -8,8 +8,11 @@ use petgraph::graph::{DefaultIx, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 
 use crate::error::Error;
-use crate::model::{Author, CATEGORY_META, Camera, Entity, EntityKind, KIND_META, Preset, Relation, SourceKind, resolve_identity};
-use crate::prefs::{Prefs, Theme};
+use crate::model::{
+    Author, CATEGORY_META, Camera, Entity, EntityKind, KIND_META, Preset, Relation, SourceKind,
+    resolve_identity,
+};
+use crate::prefs::Prefs;
 use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
@@ -121,6 +124,9 @@ pub struct RedstringApp {
     pub ns_kind: SourceKind,
     pub ns_ref: String,
     pub ns_excerpt: String,
+
+    pub theme_watcher: crate::theme::ThemeWatcher,
+    pub custom_theme: Option<crate::theme::ThemeDef>,
 }
 
 impl RedstringApp {
@@ -132,10 +138,22 @@ impl RedstringApp {
         let (registry, registry_err) = match crate::modules::Registry::load() {
             Ok(r) => (r, String::new()),
             Err(err) => (
-                crate::modules::Registry { entries: Vec::new() },
+                crate::modules::Registry {
+                    entries: Vec::new(),
+                },
                 format!("modules unavailable: {err}"),
             ),
         };
+        let theme_path = crate::theme::custom_theme_path()?;
+        let custom_theme = match crate::theme::load_theme_file(&theme_path) {
+            Ok(def) => Some(def),
+            Err(err) => {
+                crate::dlog_info!("theme", "custom theme not loaded at startup: {err}");
+                None
+            }
+        };
+        let theme_watcher = crate::theme::ThemeWatcher::new(theme_path)?;
+
         let mut app = Self {
             g: Graph::from(&StableGraph::default()),
             project: None,
@@ -196,6 +214,8 @@ impl RedstringApp {
             ns_kind: SourceKind::Markdown,
             ns_ref: String::new(),
             ns_excerpt: String::new(),
+            theme_watcher,
+            custom_theme,
         };
 
         if !registry_err.is_empty() {
@@ -221,7 +241,12 @@ impl RedstringApp {
             }
         }
         app.apply_prefs(&cc.egui_ctx)?;
-        crate::dlog_info!("app", "startup case={:?} has_project={}", app.case_name, app.project.is_some());
+        crate::dlog_info!(
+            "app",
+            "startup case={:?} has_project={}",
+            app.case_name,
+            app.project.is_some()
+        );
         Ok(app)
     }
 
@@ -231,12 +256,21 @@ impl RedstringApp {
         self.pending_camera = Some(Camera::default());
     }
 
+    pub fn active_theme_def(&self) -> Result<crate::theme::ThemeDef, Error> {
+        if self.prefs.theme == crate::theme::Theme::Custom {
+            let Some(def) = &self.custom_theme else {
+                return crate::theme::Theme::Dark.def();
+            };
+            return Ok(def.clone());
+        }
+        self.prefs.theme.def()
+    }
+
     pub fn apply_prefs(&self, ctx: &egui::Context) -> Result<(), Error> {
         ctx.set_zoom_factor(self.prefs.ui_scale);
-        ctx.set_theme(match self.prefs.theme {
-        Theme::Dark => egui::Theme::Dark,
-            Theme::Light => egui::Theme::Light,
-        });
+        let def = self.active_theme_def()?;
+        let v = def.to_visuals()?;
+        ctx.set_visuals(v);
 
         ctx.all_styles_mut(|s| {
             s.text_styles
@@ -329,6 +363,33 @@ impl RedstringApp {
         self.status = format!("⚠ {err}");
     }
 
+    pub fn poll_theme_reload(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        let outcome = self.theme_watcher.poll();
+        let loaded = match outcome {
+            Ok(Some(def)) => def,
+            Ok(None) => return Ok(()),
+            Err(err) => {
+                self.status = format!("⚠ theme file error: {err}");
+                return Ok(());
+            }
+        };
+        self.custom_theme = Some(loaded.clone());
+        if self.prefs.theme == crate::theme::Theme::Custom {
+            let v = loaded.to_visuals()?;
+            ui.ctx().set_visuals(v);
+            ui.ctx().request_repaint();
+            self.status = format!("theme reloaded from {}", self.theme_watcher.path.display());
+            crate::dlog_info!(
+                "theme",
+                "hot-reload: reloaded theme from {:?}",
+                self.theme_watcher.path
+            );
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(1000));
+        Ok(())
+    }
+
     fn frame(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         if self.pending_load {
             self.pending_load = false;
@@ -337,6 +398,7 @@ impl RedstringApp {
         self.guard_close(ui)?;
         self.sync_visuals()?;
         self.poll_external_edit(ui)?;
+        self.poll_theme_reload(ui)?;
         self.handle_drop(ui)?;
 
         if ui.input_mut(|i| {
@@ -370,10 +432,7 @@ impl RedstringApp {
 
         egui::Panel::top("toolbar")
             .resizable(false)
-            .frame(
-                egui::Frame::side_top_panel(ui.style())
-                    .inner_margin(Margin::symmetric(8, 6)),
-            )
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(Margin::symmetric(8, 6)))
             .show_inside(ui, |ui| self.toolbar(ui))
             .inner?;
         self.settings_window(ui)?;
@@ -551,9 +610,15 @@ impl RedstringApp {
             });
         if yes {
             let changed = self.apply_seal(&list, target)?;
-            crate::dlog_info!("ops", "bulk seal target={target} changed={changed} requested={n}");
+            crate::dlog_info!(
+                "ops",
+                "bulk seal target={target} changed={changed} requested={n}"
+            );
             self.seal_confirm = None;
-            self.status = format!("{} {n} entities", if target { "sealed" } else { "unsealed" });
+            self.status = format!(
+                "{} {n} entities",
+                if target { "sealed" } else { "unsealed" }
+            );
         }
         if cancel {
             self.seal_confirm = None;

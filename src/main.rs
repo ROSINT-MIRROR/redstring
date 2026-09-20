@@ -6,6 +6,7 @@ mod prefs;
 mod project;
 mod shapes;
 mod shot;
+mod theme;
 mod ui;
 
 use std::path::Path;
@@ -198,6 +199,10 @@ mod tests {
         assert_eq!(check_exit(0, 0), 0, "clean case classifies exit 0");
         assert_eq!(check_exit(0, 3), 1, "advisory-only classifies exit 1");
         assert_eq!(check_exit(2, 0), 2, "structural findings classify exit 2");
-        assert_eq!(check_exit(1, 5), 2, "any structural finding dominates advisory ones");
+        assert_eq!(
+            check_exit(1, 5),
+            2,
+            "any structural finding dominates advisory ones"
+        );
     }
 }
