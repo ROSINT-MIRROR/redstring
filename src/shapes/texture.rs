@@ -1,4 +1,6 @@
-use egui::{ColorImage, Pos2, Rect, TextureHandle, TextureOptions};
+use std::time::{Duration, SystemTime};
+
+use egui::{ColorImage, Rect, TextureHandle, TextureOptions, Vec2};
 
 use crate::error::Error;
 
@@ -8,13 +10,19 @@ const MAX_TEX_SIDE_FULL: u32 = 2048;
 const CLASS_TILE: &str = "tile";
 const CLASS_FULL: &str = "full";
 
-pub fn cover_uv(tex_size: [usize; 2]) -> Result<Rect, Error> {
+const RECHECK_SECS: f64 = 1.0;
+
+#[derive(Clone)]
+struct Cached {
+    tex: Option<TextureHandle>,
+    stamp: Option<(SystemTime, u64)>,
+    checked: f64,
+}
+
+pub fn contain_rect(slot: Rect, tex_size: [usize; 2]) -> Result<Rect, Error> {
     let (w, h) = (tex_size[0].max(1) as f32, tex_size[1].max(1) as f32);
-    let (u, v) = if w > h { (h / w, 1.0) } else { (1.0, w / h) };
-    Ok(Rect::from_min_max(
-        Pos2::new((1.0 - u) / 2.0, (1.0 - v) / 2.0),
-        Pos2::new((1.0 + u) / 2.0, (1.0 + v) / 2.0),
-    ))
+    let scale = (slot.width() / w).min(slot.height() / h);
+    Ok(Rect::from_center_size(slot.center(), Vec2::new(w * scale, h * scale)))
 }
 
 fn cache_id(class: &str, path: &str) -> egui::Id {
@@ -31,10 +39,22 @@ pub fn texture_full_for(ctx: &egui::Context, path: &str) -> Result<Option<Textur
 
 fn class_texture(ctx: &egui::Context, class: &str, cap: u32, path: &str) -> Option<TextureHandle> {
     let id = cache_id(class, path);
-    let Some(hit) = ctx.data(|d| d.get_temp::<Option<TextureHandle>>(id)) else {
-        return load_and_cache(ctx, class, cap, path, id);
+    let now = ctx.input(|i| i.time);
+    let Some(hit) = ctx.data(|d| d.get_temp::<Cached>(id)) else {
+        return load_and_cache(ctx, class, cap, path, id, now);
     };
-    hit
+    if now - hit.checked < RECHECK_SECS {
+        if hit.tex.is_none() {
+            ctx.request_repaint_after(Duration::from_secs_f64(RECHECK_SECS));
+        }
+        return hit.tex;
+    }
+    if file_stamp(path) != hit.stamp {
+        return load_and_cache(ctx, class, cap, path, id, now);
+    }
+    let tex = hit.tex.clone();
+    ctx.data_mut(|d| d.insert_temp(id, Cached { checked: now, ..hit }));
+    tex
 }
 
 fn load_and_cache(
@@ -43,21 +63,38 @@ fn load_and_cache(
     cap: u32,
     path: &str,
     id: egui::Id,
+    now: f64,
 ) -> Option<TextureHandle> {
+    let stamp = file_stamp(path);
+    let tex = decoded_texture(ctx, class, cap, path);
+    if tex.is_none() {
+        ctx.request_repaint_after(Duration::from_secs_f64(RECHECK_SECS));
+    }
+    ctx.data_mut(|d| d.insert_temp(id, Cached { tex: tex.clone(), stamp, checked: now }));
+    tex
+}
+
+fn decoded_texture(ctx: &egui::Context, class: &str, cap: u32, path: &str) -> Option<TextureHandle> {
     let Ok(ci) = decode(path, cap) else {
-        ctx.data_mut(|d| d.insert_temp::<Option<TextureHandle>>(id, None));
         return None;
     };
-    let tex = ctx.load_texture(format!("{class}:{path}"), ci, TextureOptions::LINEAR);
-    let stored = Some(tex.clone());
-    ctx.data_mut(|d| d.insert_temp(id, stored));
-    Some(tex)
+    Some(ctx.load_texture(format!("{class}:{path}"), ci, TextureOptions::LINEAR))
+}
+
+fn file_stamp(path: &str) -> Option<(SystemTime, u64)> {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return None;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return None;
+    };
+    Some((mtime, meta.len()))
 }
 
 pub fn invalidate_texture(ctx: &egui::Context, path: &str) -> Result<(), Error> {
     ctx.data_mut(|d| {
-        d.remove::<Option<TextureHandle>>(cache_id(CLASS_TILE, path));
-        d.remove::<Option<TextureHandle>>(cache_id(CLASS_FULL, path));
+        d.remove::<Cached>(cache_id(CLASS_TILE, path));
+        d.remove::<Cached>(cache_id(CLASS_FULL, path));
     });
     Ok(())
 }
@@ -138,11 +175,39 @@ mod tests {
     }
 
     #[test]
-    fn cover_uv_crops_long_axis() {
-        let uv = cover_uv([200, 100]).unwrap();
-        assert!((uv.min.x - 0.25).abs() < 1e-4 && (uv.max.x - 0.75).abs() < 1e-4);
-        assert!((uv.min.y - 0.0).abs() < 1e-4 && (uv.max.y - 1.0).abs() < 1e-4);
-        let uv = cover_uv([64, 64]).unwrap();
-        assert_eq!(uv, Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)));
+    fn contain_rect_keeps_the_whole_image_and_its_aspect() {
+        let slot = Rect::from_min_max(egui::Pos2::new(0.0, 0.0), egui::Pos2::new(100.0, 100.0));
+        let wide = contain_rect(slot, [200, 100]).unwrap();
+        assert_eq!((wide.width(), wide.height()), (100.0, 50.0), "a wide image is letterboxed, never cropped");
+        assert_eq!(wide.center(), slot.center());
+        assert_eq!(contain_rect(slot, [512, 512]).unwrap(), slot, "a square image fills the tile");
+    }
+
+    fn texture_at(ctx: &egui::Context, path: &str, t: f64) -> Option<[usize; 2]> {
+        let input = egui::RawInput { time: Some(t), ..Default::default() };
+        let mut size = None;
+        let _full = ctx.run_ui(input, |ui| {
+            size = texture_for(ui.ctx(), path).unwrap().map(|tex| tex.size());
+        });
+        size
+    }
+
+    #[test]
+    fn a_missing_image_loads_once_the_file_appears() {
+        let p = std::env::temp_dir().join(format!("redstring_late_{}.png", std::process::id()));
+        let path = p.to_str().unwrap().to_owned();
+        std::fs::remove_file(&p).ok();
+        let ctx = egui::Context::default();
+        assert_eq!(texture_at(&ctx, &path, 0.0), None, "nothing on disk yet");
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([0, 0, 0, 0])).save(&p).unwrap();
+        assert_eq!(texture_at(&ctx, &path, 0.4), None, "inside the recheck window the miss is cached");
+        assert_eq!(
+            texture_at(&ctx, &path, 1.5),
+            Some([4, 4]),
+            "an image written after its entity must load without restart or rename"
+        );
+        image::RgbaImage::from_pixel(9, 5, image::Rgba([255, 0, 0, 255])).save(&p).unwrap();
+        assert_eq!(texture_at(&ctx, &path, 3.0), Some([9, 5]), "a replaced image reloads");
+        std::fs::remove_file(&p).ok();
     }
 }
