@@ -56,6 +56,7 @@ pub enum RelationKind {
     Owes,
     Sued,
     Charged,
+    ChargedIn,
     Prosecuted,
     Investigated,
     Surveilled,
@@ -76,6 +77,7 @@ pub enum RelationKind {
     Operates,
     Accessed,
     LocatedAt,
+    OccurredAt,
     ResidesAt,
     TraveledTo,
     Transported,
@@ -129,6 +131,7 @@ pub enum RelationKind {
     Killed,
     Kidnapped,
     Harmed,
+    VictimOf,
     Accused,
     AllegedToCommit,
     Denounced,
@@ -168,7 +171,7 @@ const fn r(kind: RelationKind, label: &'static str, category: &'static str) -> R
 }
 
 #[rustfmt::skip]
-pub const RELATION_META: [RelMeta; 144] = [
+pub const RELATION_META: [RelMeta; 147] = [
     r(RelationKind::Owns, "owns", "ownership/control"),
     r(RelationKind::PartOwns, "part-owns", "ownership/control"),
     r(RelationKind::ShareholderOf, "shareholder of", "ownership/control"),
@@ -218,6 +221,7 @@ pub const RELATION_META: [RelMeta; 144] = [
     r(RelationKind::Owes, "owes", "money"),
     r(RelationKind::Sued, "sued", "legal/state"),
     r(RelationKind::Charged, "charged", "legal/state"),
+    r(RelationKind::ChargedIn, "charged in", "legal/state"),
     r(RelationKind::Prosecuted, "prosecuted", "legal/state"),
     r(RelationKind::Investigated, "investigated", "legal/state"),
     r(RelationKind::Surveilled, "surveilled", "legal/state"),
@@ -238,6 +242,7 @@ pub const RELATION_META: [RelMeta; 144] = [
     r(RelationKind::Operates, "operates", "digital/infra"),
     r(RelationKind::Accessed, "accessed", "digital/infra"),
     r(RelationKind::LocatedAt, "located at", "movement/physical"),
+    r(RelationKind::OccurredAt, "occurred at", "movement/physical"),
     r(RelationKind::ResidesAt, "resides at", "movement/physical"),
     r(RelationKind::TraveledTo, "traveled to", "movement/physical"),
     r(RelationKind::Transported, "transported", "movement/physical"),
@@ -291,6 +296,7 @@ pub const RELATION_META: [RelMeta; 144] = [
     r(RelationKind::Killed, "killed", "abuse/violence"),
     r(RelationKind::Kidnapped, "kidnapped", "abuse/violence"),
     r(RelationKind::Harmed, "harmed", "abuse/violence"),
+    r(RelationKind::VictimOf, "victim of", "abuse/violence"),
     r(RelationKind::Accused, "accused", "accusation"),
     r(RelationKind::AllegedToCommit, "alleged to commit", "accusation"),
     r(RelationKind::Denounced, "denounced", "accusation"),
@@ -543,7 +549,7 @@ mod tests {
             "harmed",
             "Harmed is active voice — perpetrator at the arrow tail, victim at the head"
         );
-        assert_eq!(RELATION_META.len(), 144, "round-3 verb count + archived_as");
+        assert_eq!(RELATION_META.len(), 147, "round-3 verb count + archived_as + event verbs");
     }
 
     #[test]
@@ -562,5 +568,29 @@ mod tests {
         ] {
             assert_eq!(RELATION_META[k as usize].category, fam, "{k:?} joins the {fam} family");
         }
+    }
+
+    #[test]
+    fn event_verbs_resolve_by_slug_and_keep_their_wire_names() {
+        use crate::model::slugify;
+        let by_slug =
+            |want: &str| RELATION_META.iter().find(|m| slugify(m.label).unwrap() == want).map(|m| m.kind);
+        for (k, slug, label, fam, wire) in [
+            (RelationKind::VictimOf, "victim_of", "victim of", "abuse/violence", "\"VictimOf\""),
+            (RelationKind::OccurredAt, "occurred_at", "occurred at", "movement/physical", "\"OccurredAt\""),
+            (RelationKind::ChargedIn, "charged_in", "charged in", "legal/state", "\"ChargedIn\""),
+        ] {
+            assert_eq!(by_slug(slug), Some(k));
+            let m = &RELATION_META[k as usize];
+            assert_eq!((m.kind, m.label, m.category), (k, label, fam), "{k:?} metadata");
+            assert_eq!(serde_json::to_string(&k).unwrap(), wire, "relations.ndjson spells {k:?} as {wire}");
+            assert_eq!(serde_json::from_str::<RelationKind>(wire).unwrap(), k);
+        }
+        assert_ne!(
+            RelationKind::ChargedIn,
+            RelationKind::Charged,
+            "ChargedIn (person -> charging event) is not Charged (authority -> person)"
+        );
+        assert_eq!(by_slug("charged"), Some(RelationKind::Charged), "Charged keeps its slug");
     }
 }

@@ -126,7 +126,7 @@ hand-listing kinds. One loop = dozens of assertions:
 
 ```rust
 for m in KIND_META.iter() { /* build + save + load + check for each of the 62 kinds */ }
-for m in RELATION_META.iter() { /* edge create + round-trip for each of the 144 verbs */ }
+for m in RELATION_META.iter() { /* edge create + round-trip for each of the 147 verbs */ }
 ```
 
 To cover a new kind/relation/source, add it to the const table — the table tests pick it
