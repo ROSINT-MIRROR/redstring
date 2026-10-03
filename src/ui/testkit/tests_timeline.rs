@@ -2,7 +2,10 @@
 mod tests {
     use petgraph::graph::NodeIndex;
 
-    use crate::model::{DatePrecision, DateVal, EntityKind, Origin, RelationKind, Verification};
+    use crate::model::{
+        DatePrecision, DateVal, EntityKind, Origin, RelationKind, Source, SourceKind, SourceTier,
+        Verification,
+    };
     use crate::ui::RedstringApp;
     use crate::ui::testkit::{fixtures, graph, harness, invariant};
     use crate::ui::timeline::derive::Digest;
@@ -139,23 +142,47 @@ mod tests {
 
     #[test]
     fn footing_never_promotes_a_hypothesis_or_an_unsourced_claim() {
-        let inferred = Footing::of(Verification::Corroborated, &Origin::Inference, 3).unwrap();
+        let src = |reference: &str, tier: SourceTier| Source {
+            kind: SourceKind::Url,
+            reference: reference.to_owned(),
+            tier,
+            ..Default::default()
+        };
+        let one = [src("https://a.example", SourceTier::Primary)];
+        let two = [
+            one[0].clone(),
+            src("https://b.example", SourceTier::Secondary),
+        ];
+        let three = [
+            two[0].clone(),
+            two[1].clone(),
+            src("https://c.example", SourceTier::Reported),
+        ];
+        let inferred = Footing::of(Verification::Corroborated, &Origin::Inference, &three).unwrap();
         assert_eq!(
             inferred,
             Footing::Unproven,
             "an inference stays a hypothesis whatever its tag"
         );
-        let bare = Footing::of(Verification::Corroborated, &Origin::Manual, 0).unwrap();
+        let bare = Footing::of(Verification::Corroborated, &Origin::Manual, &[]).unwrap();
         assert_eq!(bare, Footing::Unproven, "no source, no fact");
-        let one = Footing::of(Verification::AnalystAsserted, &Origin::Manual, 1).unwrap();
-        assert_eq!(one, Footing::Sourced);
-        let solid = Footing::of(Verification::Corroborated, &Origin::Manual, 2).unwrap();
+        let asserted = Footing::of(Verification::AnalystAsserted, &Origin::Manual, &one).unwrap();
+        assert_eq!(
+            asserted,
+            Footing::Sourced,
+            "a primary tier alone confirms nothing"
+        );
+        let confirmed = Footing::of(Verification::Confirmed, &Origin::Manual, &one).unwrap();
+        assert_eq!(confirmed, Footing::Confirmed);
+        let lone = Footing::of(Verification::Corroborated, &Origin::Manual, &one).unwrap();
+        assert_eq!(lone, Footing::Sourced, "one origin is not corroboration");
+        let solid = Footing::of(Verification::Corroborated, &Origin::Manual, &two).unwrap();
         assert_eq!(solid, Footing::Corroborated);
-        let denied = Footing::of(Verification::DeniedByTarget, &Origin::Manual, 1).unwrap();
+        let denied = Footing::of(Verification::DeniedByTarget, &Origin::Manual, &one).unwrap();
         assert_eq!(denied, Footing::Disputed);
-        let gone = Footing::of(Verification::NoPublicRecord, &Origin::Manual, 1).unwrap();
+        let gone = Footing::of(Verification::NoPublicRecord, &Origin::Manual, &one).unwrap();
         assert_eq!(gone, Footing::Disputed);
-        let rejected = Footing::of(Verification::Rejected, &Origin::Manual, 4).unwrap();
+        let rejected = Footing::of(Verification::Rejected, &Origin::Manual, &three).unwrap();
         assert_eq!(rejected, Footing::Rejected);
     }
 
@@ -262,7 +289,17 @@ mod tests {
         );
         assert_eq!(
             event(&d, Lane::Event, "Vale — director of").footing,
-            Footing::Corroborated
+            Footing::Confirmed,
+            "one primary registry record confirms the directorship; it does not corroborate it"
+        );
+        assert_eq!(
+            event(&d, Lane::Event, "Appointed Deputy Mayor").footing,
+            Footing::Confirmed
+        );
+        assert_eq!(
+            event(&d, Lane::Event, "Tender").footing,
+            Footing::Corroborated,
+            "the procurement portal and the FOI release are two independent origins"
         );
     }
 

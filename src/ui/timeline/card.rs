@@ -370,12 +370,18 @@ fn links(
 struct Legend;
 
 impl Legend {
-    const ROWS: [(Sample, Footing, Verification, &'static str); 8] = [
+    const ROWS: [(Sample, Footing, Verification, &'static str); 9] = [
         (
             Sample::Dot,
             Footing::Corroborated,
             Verification::Corroborated,
-            "corroborated and sourced",
+            "corroborated — 2+ independent origins",
+        ),
+        (
+            Sample::Dot,
+            Footing::Confirmed,
+            Verification::Confirmed,
+            "confirmed from one primary source — not corroboration",
         ),
         (
             Sample::Dot,

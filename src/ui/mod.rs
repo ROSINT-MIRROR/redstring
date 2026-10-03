@@ -2,6 +2,7 @@ mod app;
 mod board;
 mod center;
 mod chrome;
+mod edge_inspector;
 mod evidence;
 mod facet_ui;
 mod fingerprint;

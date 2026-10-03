@@ -141,7 +141,7 @@ impl Digest {
         let base = Base {
             record,
             title: format!("{} · {fact}", e.label),
-            footing: Footing::of(o.status, &o.origin, o.sources.len())?,
+            footing: Footing::of(o.status, &o.origin, &o.sources)?,
             status: o.status,
             confidence: o.confidence,
             sealed: e.sealed || o.sealed,
@@ -158,7 +158,7 @@ impl Digest {
         let base = Base {
             record,
             title: title.clone(),
-            footing: Footing::of(r.status, &r.origin, r.sources.len())?,
+            footing: Footing::of(r.status, &r.origin, &r.sources)?,
             status: r.status,
             confidence: r.confidence,
             sealed: r.sealed,

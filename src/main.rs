@@ -114,11 +114,12 @@ fn check_case(target: &str) -> ! {
         println!("warn: {f}");
     }
     println!(
-        "summary: {} structural error(s), {} advisory warning(s) — {} unproven (0-src) + {} single-source edge(s), {} uncited obs",
+        "summary: {} structural error(s), {} advisory warning(s) — {} unproven (0-src) + {} single-source edge(s), {} overclaimed status, {} uncited obs",
         structural.len(),
         advisory.len(),
         summary.unproven_edges,
         summary.single_source_edges,
+        summary.overclaimed,
         summary.uncited_obs,
     );
     std::process::exit(check_exit(structural.len(), advisory.len()));

@@ -13,7 +13,9 @@ use petgraph::stable_graph::IndexType;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-use crate::model::{Camera, Entity, KIND_META, RELATION_META, VERIFICATION_META, Verification};
+use crate::model::{
+    Camera, Entity, Footing, KIND_META, RELATION_META, VERIFICATION_META, Verification,
+};
 use crate::project::{Project, read_case};
 use crate::shapes::{
     IMG_RADIUS, LABEL_GAP, LABEL_SIZE, LABEL_WRAP, LabelAnchor, MAX_FONT_PX, NODE_RADIUS,
@@ -470,6 +472,7 @@ struct EdgeGeom {
     to: String,
     verb: String,
     sourced: bool,
+    strong: bool,
     status: String,
     sources: usize,
     from_pt: [f32; 2],
@@ -581,6 +584,7 @@ fn edge_geoms(g: &RsGraph, cam: Camera) -> Vec<EdgeGeom> {
             to: eb.slug.clone(),
             verb: RELATION_META[r.kind as usize].label.to_owned(),
             sourced: !r.sources.is_empty(),
+            strong: Footing::STRONG.contains(&Footing::from(r)),
             status: status_name(r.status).to_owned(),
             sources: r.sources.len(),
             from_pt: [from_pt.x, from_pt.y],
@@ -609,6 +613,7 @@ fn status_name(v: Verification) -> &'static str {
         Verification::Unreviewed => "unreviewed",
         Verification::MachineSuggested => "machine_suggested",
         Verification::AnalystAsserted => "analyst_asserted",
+        Verification::Confirmed => "confirmed_primary",
         Verification::Corroborated => "corroborated",
         Verification::Rejected => "rejected",
         Verification::DeniedByTarget => "denied_by_target",

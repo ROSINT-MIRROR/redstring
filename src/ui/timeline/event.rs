@@ -1,7 +1,7 @@
 use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::error::Error;
-use crate::model::{Origin, SourceTier, Verification};
+use crate::model::{SourceTier, Verification};
 
 use super::when::{Bounds, When};
 
@@ -64,65 +64,17 @@ impl Lane {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Footing {
-    Corroborated,
-    Sourced,
-    Unproven,
-    Disputed,
-    Rejected,
-}
+pub use crate::model::Footing;
 
 impl Footing {
-    pub fn of(status: Verification, origin: &Origin, sources: usize) -> Result<Footing, Error> {
-        Ok(match status {
-            Verification::Rejected => Footing::Rejected,
-            Verification::DeniedByTarget | Verification::NoPublicRecord => Footing::Disputed,
-            Verification::Unreviewed
-            | Verification::MachineSuggested
-            | Verification::AnalystAsserted
-            | Verification::Corroborated => grade(status, origin, sources),
-        })
-    }
-
-    pub fn label(self) -> Result<&'static str, Error> {
-        Ok(match self {
-            Footing::Corroborated => "corroborated",
-            Footing::Sourced => "sourced claim",
-            Footing::Unproven => "unproven",
-            Footing::Disputed => "disputed",
-            Footing::Rejected => "rejected",
-        })
-    }
-
-    pub fn hint(self) -> Result<&'static str, Error> {
-        Ok(match self {
-            Footing::Corroborated => "an analyst marked it corroborated and it cites its sources",
-            Footing::Sourced => "cites a source but nobody has corroborated it yet",
-            Footing::Unproven => "no source, or inferred — a hypothesis, not a fact",
-            Footing::Disputed => "denied by the target, or absent from the public record",
-            Footing::Rejected => "an analyst rejected it — kept on the record, not as fact",
-        })
-    }
-
     pub fn tag(self) -> Result<&'static str, Error> {
         Ok(match self {
-            Footing::Corroborated | Footing::Sourced => "",
+            Footing::Corroborated | Footing::Confirmed | Footing::Sourced => "",
             Footing::Unproven => "? ",
             Footing::Disputed => "! ",
             Footing::Rejected => "× ",
         })
     }
-}
-
-fn grade(status: Verification, origin: &Origin, sources: usize) -> Footing {
-    if sources == 0 || *origin == Origin::Inference {
-        return Footing::Unproven;
-    }
-    if status == Verification::Corroborated {
-        return Footing::Corroborated;
-    }
-    Footing::Sourced
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
