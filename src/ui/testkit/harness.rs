@@ -101,6 +101,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         custom_theme: None,
         timeline: TimelineState::closed()?,
         alibi: AlibiState::new()?,
+        fit_on_open: false,
     })
 }
 

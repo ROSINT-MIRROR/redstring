@@ -133,6 +133,8 @@ pub struct RedstringApp {
     pub timeline: TimelineState,
 
     pub alibi: AlibiState,
+
+    pub fit_on_open: bool,
 }
 
 impl RedstringApp {
@@ -224,6 +226,7 @@ impl RedstringApp {
             custom_theme,
             timeline: TimelineState::closed()?,
             alibi: AlibiState::new()?,
+            fit_on_open: false,
         };
 
         if !registry_err.is_empty() {

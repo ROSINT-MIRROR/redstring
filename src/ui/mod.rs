@@ -22,6 +22,7 @@ mod pack;
 mod palette;
 mod pathview;
 mod persist;
+mod pinned;
 mod search;
 mod style;
 #[cfg(test)]
