@@ -83,22 +83,38 @@ mod tests {
         fn slug(&self, idx: NodeIndex) -> String {
             self.app.g.node(idx).unwrap().payload().slug.clone()
         }
+
+        fn assert_framed(&self, cam: Camera) {
+            let mut span = Rect::NOTHING;
+            for idx in self.app.g.g().node_indices() {
+                let s = self.loc(idx).to_vec2() * cam.zoom + Vec2::new(cam.x, cam.y);
+                span.extend_with(s.to_pos2());
+            }
+            let off = span.center() - BOARD / 2.0;
+            let slack = 25.0 * cam.zoom + 2.0;
+            assert!(
+                off.x.abs() <= slack && off.y.abs() <= slack,
+                "the settled graph sits centred on the board, off by {off:?}"
+            );
+        }
     }
 
     #[test]
-    fn a_small_arrival_that_fits_leaves_the_camera_exactly_still() {
+    fn a_small_arrival_that_fits_recentres_without_zooming_in() {
         let mut rig = Rig::new(LayoutKind::Free);
         let a = rig.node_at("Anchor A", Pos2::new(0.0, 0.0));
         let b = rig.node_at("Anchor B", Pos2::new(150.0, 0.0));
-        let before = rig.look(0.0, Pos2::new(75.0, 0.0), 1.0);
+        let before = rig.look(0.0, Pos2::new(-150.0, 120.0), 1.0);
         let c = graph::add(&mut rig.app, EntityKind::Person, "Newcomer").unwrap();
         graph::link(&mut rig.app, c, a, RelationKind::AssociateOf).unwrap();
         let added = vec![rig.slug(c)];
         rig.frame(0.1, |app, ui| app.settle_arrivals(ui, &added, &[]));
         assert!(rig.app.layout_anim.is_some(), "the newcomer animates in");
-        assert!(!rig.easing(), "everything fits: no camera ease is even scheduled");
+        assert!(rig.easing(), "an off-centre graph gets a smooth recentre");
         let t = rig.run_out(0.1);
-        assert_eq!(rig.camera(t), before, "the camera must not move when the graph still fits");
+        let cam = rig.camera(t);
+        assert_eq!(cam.zoom, before.zoom, "everything fits: the zoom is kept, never zoomed in");
+        rig.assert_framed(cam);
         let (pa, pb, pc) = (rig.loc(a), rig.loc(b), rig.loc(c));
         assert_eq!((pa, pb), (Pos2::new(0.0, 0.0), Pos2::new(150.0, 0.0)), "existing nodes stay put");
         assert!(pc.distance(pa) <= 220.0, "the newcomer lands beside its neighbour, got {pc:?}");
@@ -209,7 +225,34 @@ mod tests {
         assert!(rig.app.pending_camera.is_none(), "load()'s disk camera must not be re-applied");
         assert!(!rig.app.fit_on_open, "a hot reload never runs the open-time fit");
         let t = rig.run_out(0.2);
-        assert_eq!(rig.camera(t), live, "everything fits, so the live camera survives the reload untouched");
+        let cam = rig.camera(t);
+        assert_eq!(cam.zoom, live.zoom, "everything fits, so the live zoom survives the reload");
+        rig.assert_framed(cam);
         assert!(rig.app.status.contains("1 added"), "status names the arrival, got {:?}", rig.app.status);
+    }
+
+    #[test]
+    fn force_relayout_recentres_on_the_settled_graph() {
+        let mut rig = Rig::new(LayoutKind::Force);
+        let mut chain = Vec::new();
+        for i in 0..4 {
+            chain.push(rig.node_at(&format!("Ring {i}"), Pos2::new(150.0 * i as f32, 0.0)));
+        }
+        for pair in chain.windows(2) {
+            graph::link(&mut rig.app, pair[0], pair[1], RelationKind::AssociateOf).unwrap();
+        }
+        let before = rig.look(0.0, Pos2::new(480.0, -200.0), 0.5);
+        let test = graph::add(&mut rig.app, EntityKind::Person, "Test").unwrap();
+        graph::link(&mut rig.app, test, chain[0], RelationKind::AssociateOf).unwrap();
+        let added = vec![rig.slug(test)];
+        rig.frame(0.1, |app, ui| app.settle_arrivals(ui, &added, &[]));
+        assert_eq!(rig.app.current_layout, LayoutKind::Force, "the selected layout is kept");
+        assert!(rig.app.layout_anim.is_some(), "force re-flows the whole graph");
+        assert!(rig.easing(), "the camera eases toward the settled graph");
+        let t = rig.run_out(0.1);
+        let cam = rig.camera(t);
+        assert!(!rig.easing() && rig.app.layout_anim.is_none(), "both animations finish");
+        assert!(cam.zoom <= before.zoom, "never zooms in, got {} from {}", cam.zoom, before.zoom);
+        rig.assert_framed(cam);
     }
 }
