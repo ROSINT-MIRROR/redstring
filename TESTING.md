@@ -146,6 +146,7 @@ Real (or clearly-synthetic) tool outputs live in `src/ui/testkit/fixtures/` and 
 | `crtsh-404.html` | a flaky HTML error body — proves graceful degrade to zero facts |
 | `katana.jsonl` / `dnsx.jsonl` / `candel.jsonl` | crawl / DNS / username-sweep records |
 | `sample_case/` | a full on-disk case dir (case.redstring + entities + relations + display) |
+| `timeline_case/` | synthetic case for the timeline: every precision, zones, conflicts, unplaced records — `fixtures::open_timeline_case` |
 
 Modules whose `bin` is `sh` (tlsx, crtsh, katana, dnsx, candel) pipe through `jq`, so their
 ndjson fixtures are the **post-jq** lines the extractor actually sees.

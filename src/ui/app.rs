@@ -18,6 +18,7 @@ use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
 use super::board;
 use super::layout::LayoutKind;
+use super::timeline::TimelineState;
 use super::watch::Watcher;
 
 pub type RsGraph = Graph<Entity, Relation, Directed, DefaultIx, EntityNodeShape, SourcedEdgeShape>;
@@ -127,6 +128,8 @@ pub struct RedstringApp {
 
     pub theme_watcher: crate::theme::ThemeWatcher,
     pub custom_theme: Option<crate::theme::ThemeDef>,
+
+    pub timeline: TimelineState,
 }
 
 impl RedstringApp {
@@ -216,6 +219,7 @@ impl RedstringApp {
             ns_excerpt: String::new(),
             theme_watcher,
             custom_theme,
+            timeline: TimelineState::closed()?,
         };
 
         if !registry_err.is_empty() {
@@ -420,6 +424,9 @@ impl RedstringApp {
             self.find_focus = true;
             self.find_selected = 0;
         }
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T)) {
+            self.timeline.open = !self.timeline.open;
+        }
         if !ui.ctx().egui_wants_keyboard_input()
             && ui.input(|i| i.key_pressed(egui::Key::Delete))
             && self.delete_confirm.is_none()
@@ -535,6 +542,14 @@ impl RedstringApp {
                 .inner
             })
             .inner?;
+        if self.timeline.open {
+            egui::Panel::bottom("timeline")
+                .resizable(true)
+                .default_size(430.0)
+                .size_range(200.0..=820.0)
+                .show_inside(ui, |ui| self.timeline_panel(ui))
+                .inner?;
+        }
         egui::CentralPanel::default()
             .show_inside(ui, |ui| self.board(ui))
             .inner?;

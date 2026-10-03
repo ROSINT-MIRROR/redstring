@@ -134,6 +134,13 @@ impl RedstringApp {
                         crate::log::set_open(!open)?;
                     }
                     ui.separator();
+                    if tb_toggle(ui, egui_phosphor::regular::CLOCK_COUNTER_CLOCKWISE, "Timeline", self.timeline.open)
+                        .on_hover_text("Timeline — the same case ordered by time: when it happened, was published, captured, entered (Ctrl+T)")
+                        .clicked()
+                    {
+                        self.timeline.open = !self.timeline.open;
+                    }
+                    ui.separator();
                     if tb_button(ui, egui_phosphor::regular::FRAME_CORNERS, "Center")
                         .on_hover_text("frame the biggest cluster of visible nodes in view")
                         .clicked()

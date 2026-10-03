@@ -1,0 +1,6 @@
+(
+    slug: "dinner_at_hotel_central",
+    kind: Meeting,
+    label: "Dinner at Hotel Central",
+    value: "",
+)

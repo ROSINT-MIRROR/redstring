@@ -5,10 +5,10 @@ use sha2::{Digest, Sha256};
 
 use crate::error::Error;
 use crate::model::{
-    DatePrecision, SOURCE_META, SOURCE_TIER_META, Source, SourceKind, SourceTier, fmt_civil_date,
-    now_unix,
+    DatePrecision, ObsValue, SOURCE_META, SOURCE_TIER_META, Source, SourceKind, SourceTier,
+    fmt_civil_date, now_unix,
 };
-use crate::modules::ModuleRun;
+use crate::modules::{ModuleRun, ObsKind, parse_obs_value};
 
 use super::style;
 
@@ -136,7 +136,54 @@ fn source_provenance(ui: &mut egui::Ui, i: usize, src: &mut Source) -> Result<()
         Ok(())
     })
     .inner?;
+    published_field(ui, i, src)?;
     edit_opt(ui, &mut src.sha256, "sha256 (content hash)", true)?;
+    Ok(())
+}
+
+fn published_field(ui: &mut egui::Ui, i: usize, src: &mut Source) -> Result<(), Error> {
+    let id = egui::Id::new(("src_published", i));
+    let mut buf = published_text(src)?;
+    let draft: Option<String> = ui.data(|d| d.get_temp::<String>(id));
+    for typed in draft.iter() {
+        buf = typed.clone();
+    }
+    let resp = ui
+        .horizontal(|ui| {
+            ui.label(RichText::new("published").weak().small())
+                .on_hover_text("when the cited material was made public — not when you fetched it");
+            ui.add(
+                egui::TextEdit::singleline(&mut buf)
+                    .desired_width(120.0)
+                    .hint_text("e.g. 2019-09-30"),
+            )
+        })
+        .inner;
+    if resp.changed() {
+        ui.data_mut(|d| d.insert_temp(id, buf.clone()));
+    }
+    if resp.lost_focus() {
+        ui.data_mut(|d| d.remove::<String>(id));
+        commit_published(src, &buf)?;
+    }
+    Ok(())
+}
+
+fn published_text(src: &Source) -> Result<String, Error> {
+    let Some(dv) = src.published else {
+        return Ok(String::new());
+    };
+    ObsValue::Date(dv).text()
+}
+
+fn commit_published(src: &mut Source, typed: &str) -> Result<(), Error> {
+    if typed.trim().is_empty() {
+        src.published = None;
+        return Ok(());
+    }
+    if let ObsValue::Date(dv) = parse_obs_value(ObsKind::Date, typed)? {
+        src.published = Some(dv);
+    }
     Ok(())
 }
 

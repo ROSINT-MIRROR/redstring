@@ -16,6 +16,7 @@ use crate::project::{Project, read_case, write_case};
 use crate::ui::RedstringApp;
 use crate::ui::chrome::SettingsTab;
 use crate::ui::layout::LayoutKind;
+use crate::ui::timeline::TimelineState;
 use crate::ui::watch::Watcher;
 
 pub fn test_author() -> Result<Author, Error> {
@@ -97,6 +98,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
             "/tmp/redstring_test_theme.ron",
         ))?,
         custom_theme: None,
+        timeline: TimelineState::closed()?,
     })
 }
 

@@ -1,0 +1,6 @@
+(
+    slug: "email_contract_ready",
+    kind: EmailMessage,
+    label: "Email: contract ready",
+    value: "",
+)

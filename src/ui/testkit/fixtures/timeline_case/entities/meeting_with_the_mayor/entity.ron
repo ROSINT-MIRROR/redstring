@@ -1,0 +1,6 @@
+(
+    slug: "meeting_with_the_mayor",
+    kind: Meeting,
+    label: "Meeting with the mayor",
+    value: "",
+)

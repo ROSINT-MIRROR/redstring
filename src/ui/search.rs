@@ -5,6 +5,8 @@ use crate::error::Error;
 use crate::model::{EntityKind, KIND_META};
 
 use super::app::{RedstringApp, RsGraph};
+use super::board::camera_read;
+use super::center::center_on_node;
 use super::style;
 
 const RESULT_CAP: usize = 12;
@@ -98,16 +100,24 @@ impl RedstringApp {
     }
 
     fn jump_to_node(&mut self, ui: &egui::Ui, idx: NodeIndex) -> Result<(), Error> {
+        self.focus_node(ui, idx)?;
+        self.find_open = false;
+        self.status = format!("found {}", self.node_label(idx)?);
+        Ok(())
+    }
+
+    pub fn focus_node(&mut self, ui: &egui::Ui, idx: NodeIndex) -> Result<(), Error> {
         let Some(node) = self.g.node(idx) else {
             return Ok(());
         };
         let loc = node.location();
-        let zoom = super::board::camera_read(ui)?.zoom.max(NODE_FOCUS_MIN_ZOOM);
-        let cam = super::center::center_on_node(loc, self.board_size, zoom)?;
+        let zoom = camera_read(ui)?.zoom.max(NODE_FOCUS_MIN_ZOOM);
+        let cam = center_on_node(loc, self.board_size, zoom)?;
         select_single(&mut self.g, idx)?;
+        self.g.set_selected_nodes(vec![idx]);
+        self.g.set_selected_edges(Vec::new());
         self.pending_camera = Some(cam);
-        self.find_open = false;
-        self.status = format!("found {}", self.node_label(idx)?);
+        self.status = format!("selected {}", self.node_label(idx)?);
         Ok(())
     }
 }

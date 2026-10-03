@@ -1,0 +1,3 @@
+SYNTHETIC DEMO DOCUMENT — fictional FOI email release.
+p.7  From: procurement@eastbrook.example  Sent: 2019-04-11T22:47:00+03:00
+     "The contract is ready for signature tomorrow."

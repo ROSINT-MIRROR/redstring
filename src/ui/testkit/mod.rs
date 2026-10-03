@@ -40,3 +40,5 @@ mod tests_scenarios;
 mod tests_tables;
 #[cfg(test)]
 mod tests_theme;
+#[cfg(test)]
+mod tests_timeline;

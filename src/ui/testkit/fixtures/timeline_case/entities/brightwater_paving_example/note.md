@@ -1,0 +1,1 @@
+Reserved .example domain — synthetic.
