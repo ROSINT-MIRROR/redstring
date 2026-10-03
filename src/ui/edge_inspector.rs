@@ -9,6 +9,7 @@ use crate::model::{
 use crate::project::import_source_file;
 
 use super::app::{ALARM_RED, OK_GREEN, RedstringApp};
+use super::archive_view::AlibiCtx;
 use super::evidence;
 use super::inspector::opt_date_field;
 use super::style;
@@ -86,6 +87,7 @@ impl RedstringApp {
         from_l: &str,
         to_l: &str,
     ) -> Result<(), Error> {
+        let base = self.alibi_base(eidx)?;
         let Some(edge) = self.g.edge_mut(eidx) else {
             return Ok(());
         };
@@ -154,13 +156,17 @@ impl RedstringApp {
 
         style::section(ui, egui_phosphor::regular::LINK, "sources")?;
         let mut remove: Option<usize> = None;
+        let mut asks = Vec::new();
+        let alibi = AlibiCtx { state: &self.alibi, base, kind: r.kind, sealed: r.sealed };
         for (i, src) in r.sources.iter_mut().enumerate() {
-            evidence::source_group(ui, i, src, &mut remove)?;
+            evidence::source_group(ui, i, src, &mut remove, &alibi, &mut asks)?;
         }
-        let Some(i) = remove else {
-            return Ok(());
-        };
-        r.sources.remove(i);
+        for i in remove.iter() {
+            r.sources.remove(*i);
+        }
+        for ask in asks {
+            self.alibi_ask(ui.ctx(), eidx, ask)?;
+        }
         Ok(())
     }
 

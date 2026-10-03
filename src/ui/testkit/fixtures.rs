@@ -33,6 +33,8 @@ pub fn fixture(name: &str) -> Result<String, Error> {
         "katana.jsonl" => include_str!("fixtures/katana.jsonl"),
         "dnsx.jsonl" => include_str!("fixtures/dnsx.jsonl"),
         "candel.jsonl" => include_str!("fixtures/candel.jsonl"),
+        "alibi-check.jsonl" => include_str!("fixtures/alibi-check.jsonl"),
+        "alibi-archive.jsonl" => include_str!("fixtures/alibi-archive.jsonl"),
         other => {
             return Err(Error::Testkit {
                 what: format!("unknown fixture '{other}'"),

@@ -1,6 +1,7 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+use super::archive::ArchiveRecord;
 use super::observation::DateVal;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -88,6 +89,9 @@ pub struct Source {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published: Option<DateVal>,
 
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archives: Vec<ArchiveRecord>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fetched_at: Option<i64>,
 
@@ -148,6 +152,7 @@ mod tests {
                 secs: 1_569_801_600,
                 precision: crate::model::DatePrecision::Day,
             }),
+            archives: Vec::new(),
             fetched_at: Some(1_700_000_000),
             source_org: Some("crt.sh".to_owned()),
             tier: SourceTier::Primary,

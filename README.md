@@ -192,12 +192,8 @@ historical URLs it once served — a *discovery* move, widening the graph.
 across three independent archives — a *verification* move, hardening a citation
 you already have. Keep both.
 
-`alibi` is the [sherlockit](../) sibling binary and runs `--check` only:
-read-only, submits nothing, safe to fire from a board click. Archiving takes
-minutes and is rate-limited per IP, so you run `alibi <url>` from the shell when
-you mean it, then re-run the module to pick the snapshots up. Its ndjson shape
-streams, so confirmed rows land on the board even when the process exits non-zero
-because a different archive 503'd.
+The `alibi` module (on `website` / `web_page` / `domain` nodes) runs `--check`
+only: read-only, submits nothing, and graphs snapshots as `archived_as` nodes.
 
 Placeholders in a module spec are bound as positional shell parameters, never
 interpolated into shell syntax, so a hostile value from a lookup response cannot
@@ -206,6 +202,50 @@ become a command.
 API keys live in `$XDG_CONFIG_HOME/redstring/prefs.ron`, never in this repo, and
 are passed to modules as environment variables — or over stdin for the ones that
 need an HTTP header, so a key never lands in `/proc/*/cmdline`.
+
+## Alibi on sources
+
+Every **URL source** in the relation inspector has a right-click menu (on the
+source box or its URL field) with two actions on that one citation, without a
+WebPage node and without retyping the URL:
+
+- **Check existing archives**: runs `alibi --check --json <url>`. Read-only;
+  it submits nothing.
+- **Archive now with Alibi**: runs `alibi --json --timeout 300 <url>`. This
+  submits to web.archive.org, archive.today and ghostarchive.org, then polls for
+  public confirmation. The archives see your IP, and submissions are rate-limited
+  per IP. Wayback only takes part with the **Web Archive** key from settings,
+  which is passed as `ARCHIVE_ORG_KEY` in the environment and never in argv.
+
+Nothing runs on selection, redraw or reload: only a menu click starts a job.
+Jobs run off the UI thread and stream results as they arrive. A spinner row
+under the source can cancel a job, which kills alibi's whole process group;
+submissions already sent stay sent. A watchdog kills a hung run (120 s for a
+check, 360 s for an archive). The same URL can't run twice at once, only one
+archive submission runs at a time, and sealed material is never submitted.
+
+Results stay on that source as `Source.archives` (persisted in
+`relations.ndjson`), one record per witness reading. Each record keeps the
+URL that was asked about, the witness, alibi's `status` and `reason` codes, the
+snapshot URL, `archived_at` (the witness's own capture time; omitted when the
+witness publishes none, e.g. ghostarchive), the verbatim `detail`,
+`via` (check or archive) and `checked_at` (when redstring received the line).
+These stay distinct from the source's `published` (when the material went
+public) and `fetched_at` (when you captured it).
+
+Confirmed snapshots accumulate and are never erased by a later "none", so a
+takedown shows up as the newest verdict next to the old snapshot. A `submitted`
+line with no verdict before alibi ends is kept as **submitted**, never promoted
+to confirmed. The source's own URL is never rewritten.
+
+A result lands only on a source whose case root, relation endpoints, verb and
+URL still match. If you edit the URL, delete the relation or switch cases mid-job,
+the result is dropped and counted in the job note.
+
+Redstring looks for the binary in this order: `alibi_bin` in `prefs.ron` (an
+explicit pin, with no fallback), then `PATH`, then `$CARGO_HOME/bin`,
+`~/.cargo/bin`, `~/.local/share/cargo/bin` and `~/.local/bin`. It searches at
+click time, so installing alibi needs no restart. A miss lists every path tried.
 
 ## Tests
 

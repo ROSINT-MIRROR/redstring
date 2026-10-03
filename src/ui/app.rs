@@ -16,6 +16,7 @@ use crate::prefs::Prefs;
 use crate::project::Project;
 use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
 
+use super::archive::AlibiState;
 use super::board;
 use super::layout::LayoutKind;
 use super::timeline::TimelineState;
@@ -130,6 +131,8 @@ pub struct RedstringApp {
     pub custom_theme: Option<crate::theme::ThemeDef>,
 
     pub timeline: TimelineState,
+
+    pub alibi: AlibiState,
 }
 
 impl RedstringApp {
@@ -220,6 +223,7 @@ impl RedstringApp {
             theme_watcher,
             custom_theme,
             timeline: TimelineState::closed()?,
+            alibi: AlibiState::new()?,
         };
 
         if !registry_err.is_empty() {
@@ -556,6 +560,7 @@ impl RedstringApp {
 
         self.apply_pending_camera(ui)?;
         self.mode_border(ui)?;
+        self.poll_alibi()?;
         self.autosave_tick(ui)
     }
 

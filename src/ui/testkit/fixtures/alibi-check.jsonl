@@ -1,0 +1,3 @@
+{"witness":"wayback","url":"https://evil.example/post","status":"confirmed","reason":"ok","snapshot":"https://web.archive.org/web/20260101000000/https://evil.example/post","ts":"20260101000000","detail":null}
+{"witness":"archivetoday","url":"https://evil.example/post","status":"none","reason":"absent","snapshot":null,"ts":null,"detail":null}
+{"witness":"ghostarchive","url":"https://evil.example/post","status":"confirmed","reason":"ok","snapshot":"https://ghostarchive.org/archive/AbC12","ts":null,"detail":null}

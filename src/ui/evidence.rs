@@ -10,6 +10,8 @@ use crate::model::{
 };
 use crate::modules::{ModuleRun, ObsKind, parse_obs_value};
 
+use super::archive::AlibiAsk;
+use super::archive_view::{AlibiCtx, archive_rows, source_menu};
 use super::style;
 
 pub fn evidence_source(run: &ModuleRun) -> Result<Source, Error> {
@@ -88,37 +90,45 @@ pub fn source_group(
     i: usize,
     src: &mut Source,
     remove: &mut Option<usize>,
+    alibi: &AlibiCtx,
+    asks: &mut Vec<AlibiAsk>,
 ) -> Result<(), Error> {
-    ui.group(|ui| -> Result<(), Error> {
-        egui::ComboBox::from_id_salt(("src_kind", i))
-            .selected_text(SOURCE_META[src.kind as usize].label)
-            .show_ui(ui, |ui| {
-                for m in &SOURCE_META {
-                    ui.selectable_value(&mut src.kind, m.kind, m.label);
-                }
-            });
-        ui.add(
-            egui::TextEdit::singleline(&mut src.reference)
-                .desired_width(f32::INFINITY)
-                .hint_text(SOURCE_META[src.kind as usize].hint),
-        );
-        ui.add(
-            egui::TextEdit::multiline(&mut src.excerpt)
-                .hint_text("excerpt / quote (optional)")
-                .desired_rows(2),
-        );
-        source_provenance(ui, i, src)?;
-        if style::danger_btn(
-            ui,
-            egui_phosphor::regular::TRASH,
-            "remove source",
-            "detach this source",
-        )? {
-            *remove = Some(i);
-        }
-        Ok(())
-    })
-    .inner
+    let framed = ui.scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
+        ui.group(|ui| -> Result<egui::Response, Error> {
+            egui::ComboBox::from_id_salt(("src_kind", i))
+                .selected_text(SOURCE_META[src.kind as usize].label)
+                .show_ui(ui, |ui| {
+                    for m in &SOURCE_META {
+                        ui.selectable_value(&mut src.kind, m.kind, m.label);
+                    }
+                });
+            let reference = ui.add(
+                egui::TextEdit::singleline(&mut src.reference)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(SOURCE_META[src.kind as usize].hint),
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut src.excerpt)
+                    .hint_text("excerpt / quote (optional)")
+                    .desired_rows(2),
+            );
+            source_provenance(ui, i, src)?;
+            archive_rows(ui, src, alibi, asks)?;
+            if style::danger_btn(
+                ui,
+                egui_phosphor::regular::TRASH,
+                "remove source",
+                "detach this source",
+            )? {
+                *remove = Some(i);
+            }
+            Ok(reference)
+        })
+        .inner
+    });
+    let reference = framed.inner?;
+    source_menu(&framed.response, i, src, alibi, asks)?;
+    source_menu(&reference, i, src, alibi, asks)
 }
 
 fn source_provenance(ui: &mut egui::Ui, i: usize, src: &mut Source) -> Result<(), Error> {

@@ -28,6 +28,9 @@ pub struct Prefs {
 
     #[serde(default = "default_bg_opacity")]
     pub background_opacity: f32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alibi_bin: Option<String>,
 }
 
 impl Default for Prefs {
@@ -43,6 +46,7 @@ impl Default for Prefs {
             api_keys: Vec::new(),
             background: None,
             background_opacity: default_bg_opacity(),
+            alibi_bin: None,
         }
     }
 }
@@ -156,6 +160,7 @@ mod tests {
             api_keys: vec![("opensanctions".into(), "key123".into())],
             background: Some("/tmp/bg.png".into()),
             background_opacity: 0.3,
+            alibi_bin: Some("/opt/sherlockit/bin/alibi".into()),
         };
         let s = ron::ser::to_string_pretty(&p, ron::ser::PrettyConfig::default()).unwrap();
         let back: Prefs = ron::from_str(&s).unwrap();

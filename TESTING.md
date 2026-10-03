@@ -145,6 +145,7 @@ Real (or clearly-synthetic) tool outputs live in `src/ui/testkit/fixtures/` and 
 | `crtsh-response.json` | the raw crt.sh JSON array (pre-`jq`) |
 | `crtsh-404.html` | a flaky HTML error body — proves graceful degrade to zero facts |
 | `katana.jsonl` / `dnsx.jsonl` / `candel.jsonl` | crawl / DNS / username-sweep records |
+| `alibi-check.jsonl` / `alibi-archive.jsonl` | synthetic `alibi --json` streams in the documented wire shape (check verdicts; archive skip → submitted → confirmed) — `tests_alibi.rs` replays them through fake `alibi` shell scripts, so nothing reaches the network |
 | `sample_case/` | a full on-disk case dir (case.redstring + entities + relations + display) |
 | `timeline_case/` | synthetic case for the timeline: every precision, zones, conflicts, unplaced records — `fixtures::open_timeline_case` |
 

@@ -318,6 +318,7 @@ mod tests {
                 excerpt: "quote".into(),
                 sha256: Some("a".repeat(64)),
                 published: None,
+                archives: Vec::new(),
                 fetched_at: Some(1_700_000_000),
                 source_org: Some("DOJ".into()),
                 tier: crate::model::SourceTier::Primary,
