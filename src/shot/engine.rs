@@ -185,7 +185,7 @@ fn mode_for(out: &Path) -> Result<OutMode, Error> {
 }
 
 fn node_base(e: &Entity) -> f32 {
-    if e.image.is_some() {
+    if e.image.is_some() || e.flag.is_some() {
         IMG_RADIUS
     } else {
         NODE_RADIUS
@@ -489,12 +489,13 @@ fn node_geoms(
         let wrap = LABEL_WRAP * vsize * cam.zoom;
         let gap = LABEL_GAP * vsize * cam.zoom;
         let gsz = measure_label(ctx, &e.label, fpx, wrap);
-        let anchor = if e.image.is_some() {
+        let art = e.image.is_some() || e.flag.is_some();
+        let anchor = if art {
             LabelAnchor::Tile
         } else {
             LabelAnchor::Disc
         };
-        let half = if e.image.is_some() {
+        let half = if art {
             IMG_RADIUS * vsize * cam.zoom
         } else {
             radius
@@ -507,7 +508,7 @@ fn node_geoms(
             label: e.label.clone(),
             center: [center.x, center.y],
             radius,
-            image: e.image.is_some(),
+            image: art,
             color: [color.r(), color.g(), color.b(), color.a()],
             label_box: [lbox.min.x, lbox.min.y, lbox.max.x, lbox.max.y],
         });

@@ -25,6 +25,8 @@ mod tests_export_leak;
 #[cfg(test)]
 mod tests_flows;
 #[cfg(test)]
+mod tests_flags;
+#[cfg(test)]
 mod tests_fold;
 #[cfg(test)]
 mod tests_hardening;

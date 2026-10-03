@@ -252,7 +252,7 @@ impl RedstringApp {
                 continue;
             };
             let e = n.payload();
-            let base = if e.image.is_some() {
+            let base = if e.image.is_some() || e.flag.is_some() {
                 IMG_RADIUS
             } else {
                 NODE_RADIUS

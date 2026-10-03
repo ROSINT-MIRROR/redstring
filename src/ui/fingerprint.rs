@@ -54,6 +54,7 @@ fn node_fp_line(e: &Entity) -> Result<String, Error> {
         observations: e.observations.clone(),
         facets: e.facets.clone(),
         image: e.image.clone(),
+        flag: e.flag.clone(),
     };
     let body = serde_json::to_string(&rec).map_err(|source| Error::JsonSer { source })?;
     Ok(format!("n|{body}|{:?}", e.note))

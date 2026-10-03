@@ -398,7 +398,7 @@ impl RedstringApp {
             return Ok(None);
         };
         let e = node.payload();
-        let (base, anchor) = if e.image.is_some() {
+        let (base, anchor) = if e.image.is_some() || e.flag.is_some() {
             (IMG_RADIUS, LabelAnchor::Tile)
         } else {
             (NODE_RADIUS, LabelAnchor::Disc)

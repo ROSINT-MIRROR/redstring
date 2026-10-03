@@ -18,6 +18,7 @@ pub fn entity_rec(kind: EntityKind, label: &str, value: &str) -> Result<EntityRe
         observations: Vec::new(),
         facets: Default::default(),
         image: None,
+        flag: None,
     })
 }
 

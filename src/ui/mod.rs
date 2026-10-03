@@ -9,6 +9,7 @@ mod conflict;
 mod edge_inspector;
 mod evidence;
 mod facet_ui;
+mod flag_ui;
 mod fingerprint;
 mod fold;
 mod graphalg;

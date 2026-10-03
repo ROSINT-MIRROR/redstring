@@ -35,6 +35,7 @@ impl RedstringApp {
                 observations: e.observations.clone(),
                 facets: e.facets.clone(),
                 image: self.image_rec(&e.image)?,
+                flag: e.flag.clone(),
             });
             let loc = n.location();
             cf.display.positions.insert(e.slug.clone(), (loc.x, loc.y));
@@ -392,6 +393,7 @@ pub fn entity_of(project: &Project, er: &EntityRec, note: String, display: &Case
         facets: er.facets.clone(),
         note,
         image: image_abs(project, &er.image)?,
+        flag: er.flag.clone(),
         size: size_of(display, &er.slug),
         collapsed: display.collapsed.contains(&er.slug),
         ..Default::default()

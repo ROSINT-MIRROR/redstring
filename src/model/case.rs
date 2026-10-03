@@ -118,6 +118,9 @@ pub struct EntityRec {
 
     #[serde(default)]
     pub image: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flag: Option<String>,
 }
 
 fn facets_empty(facets: &BTreeMap<Facet, FacetValue>) -> bool {
@@ -302,6 +305,7 @@ mod tests {
                 m
             },
             image: Some("entities/doe/portrait.png".into()),
+            flag: None,
         });
         cf.data.relations.push(RelationRec {
             from: "doe".into(),
@@ -423,6 +427,7 @@ mod tests {
             observations: vec![],
             facets: BTreeMap::new(),
             image: None,
+            flag: None,
         };
         let ron_s = ron::ser::to_string(&rec).unwrap();
         assert!(!ron_s.contains("sealed"), "an unsealed entity head must not gain a sealed key: {ron_s}");
