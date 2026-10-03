@@ -1,35 +1,62 @@
-use std::path::Path;
-use std::time::{Instant, SystemTime};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
+use crate::dlog_warn;
 use crate::error::Error;
-use crate::project::Project;
+use crate::project::{CaseState, DiskSig, Resolve, disk_sig};
 
 use super::app::RedstringApp;
-use super::board::{camera_read, camera_write};
+use super::reconcile::Push;
 
 pub struct Watcher {
-    pub baseline: Option<(String, SystemTime)>,
+    pub base: Option<CaseState>,
+    pub synced: Option<(PathBuf, DiskSig)>,
+    pub pending: Option<DiskSig>,
     pub last_poll: Instant,
 }
 
 impl Default for Watcher {
     fn default() -> Self {
         Self {
-            baseline: None,
+            base: None,
+            synced: None,
+            pending: None,
             last_poll: Instant::now(),
         }
     }
 }
 
 impl Watcher {
-    fn rebase(&mut self, project: Option<&Project>) -> Result<(), Error> {
-        let Some(project) = project else {
-            self.baseline = None;
-            return Ok(());
+    pub fn base_or_empty(&self) -> Result<CaseState, Error> {
+        let Some(base) = &self.base else {
+            return Ok(CaseState::default());
         };
-        let path = project.case_path()?.display().to_string();
-        self.baseline = newest_mtime(&project.root)?.map(|t| (path, t));
+        Ok(base.clone())
+    }
+
+    pub fn in_sync(&self, root: &Path, sig: &DiskSig) -> Result<bool, Error> {
+        let Some((at, seen)) = &self.synced else {
+            return Ok(false);
+        };
+        Ok(at == root && seen == sig)
+    }
+
+    pub fn settle(&mut self, root: &Path, base: CaseState, sig: DiskSig) -> Result<(), Error> {
+        self.base = Some(base);
+        self.synced = Some((root.to_path_buf(), sig));
+        self.pending = None;
         Ok(())
+    }
+
+    pub fn forget(&mut self) -> Result<(), Error> {
+        self.synced = None;
+        self.pending = None;
+        Ok(())
+    }
+
+    pub fn reset(&mut self) -> Result<(), Error> {
+        self.base = None;
+        self.forget()
     }
 }
 
@@ -39,21 +66,26 @@ impl RedstringApp {
         root: &Path,
         f: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let out = f(self);
-        let project = self.project.clone();
-        let rebased = if project.as_ref().is_some_and(|p| p.root.as_path() == root) {
-            self.watcher.rebase(project.as_ref())
-        } else {
-            Ok(())
+        let Some(project) = self.project.clone() else {
+            return f(self);
         };
-        let value = out?;
-        rebased?;
-        Ok(value)
+        if project.root.as_path() != root {
+            return f(self);
+        }
+        let was_synced = self.watcher.in_sync(root, &disk_sig(&project)?)?;
+        let out = f(self);
+        if was_synced {
+            let sig = disk_sig(&project)?;
+            self.watcher.synced = Some((root.to_path_buf(), sig));
+        }
+        out
     }
 
-    pub fn watch_project(&mut self) -> Result<(), Error> {
-        let project = self.project.clone();
-        self.watcher.rebase(project.as_ref())
+    pub fn disk_in_sync(&self) -> Result<bool, Error> {
+        let Some(project) = &self.project else {
+            return Ok(true);
+        };
+        self.watcher.in_sync(&project.root, &disk_sig(project)?)
     }
 
     pub fn poll_external_edit(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
@@ -61,86 +93,33 @@ impl RedstringApp {
             return Ok(());
         }
         self.watcher.last_poll = Instant::now();
-        let Some((path, seen)) = self.watcher.baseline.clone() else {
-            return Ok(());
-        };
-        if Some(path.as_str()) != self.current_case_path().as_deref() {
-            return Ok(());
-        }
         let Some(project) = self.project.clone() else {
             return Ok(());
         };
-        let Some(t) = newest_mtime(&project.root)? else {
+        ui.ctx().request_repaint_after(Duration::from_millis(1100));
+        let sig = disk_sig(&project)?;
+        if self.watcher.in_sync(&project.root, &sig)? {
+            self.watcher.pending = None;
+            return Ok(());
+        }
+        let Some(seen) = &self.watcher.pending else {
+            self.watcher.pending = Some(sig);
             return Ok(());
         };
-        if t > seen {
-            self.absorb_external_edit(ui, &path)?;
+        if *seen != sig {
+            self.watcher.pending = Some(sig);
+            return Ok(());
         }
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(1100));
-        Ok(())
-    }
-
-    fn absorb_external_edit(&mut self, ui: &mut egui::Ui, path: &str) -> Result<(), Error> {
         if !self.live()? {
             if !self.autosave.disk_moved {
-                crate::dlog_warn!("watch", "external edit while exploring — holding {path}");
+                dlog_warn!("watch", "external edit while exploring — holding {}", project.root.display());
                 self.status =
-                    "the case changed on disk — explore is holding your sandbox; saving will ask"
-                        .to_owned();
+                    "the case changed on disk — explore is holding your sandbox; saving merges".to_owned();
             }
             self.autosave.disk_moved = true;
             return Ok(());
         }
-        crate::dlog_info!("watch", "hot-reload: external edit on {path}");
-        let (camera, layout, before) = (camera_read(ui)?, self.current_layout, self.live_slugs()?);
-        self.load(ui)?;
-        camera_write(ui, camera)?;
-        (self.pending_camera, self.current_layout, self.fit_on_open) = (None, layout, false);
-        self.status = format!("external edit detected — reloaded {path}");
-        let (added, removed) = self.slug_diff(&before)?;
-        self.settle_arrivals(ui, &added, &removed)
+        self.sync_disk(ui, Push::Absorb, Resolve::Ask)?;
+        Ok(())
     }
-
-    fn current_case_path(&self) -> Option<String> {
-        let project = self.project.as_ref()?;
-        let Ok(path) = project.case_path() else {
-            return None;
-        };
-        Some(path.display().to_string())
-    }
-}
-
-fn newest_mtime(root: &Path) -> Result<Option<SystemTime>, Error> {
-    let mut times: Vec<SystemTime> = Vec::new();
-    walk_mtime(root, &mut times)?;
-    Ok(times.into_iter().max())
-}
-
-fn walk_mtime(dir: &Path, times: &mut Vec<SystemTime>) -> Result<(), Error> {
-    let rd = std::fs::read_dir(dir).map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
-    for entry in rd {
-        let entry = entry.map_err(|source| Error::Io { path: dir.to_path_buf(), source })?;
-        let ft = entry
-            .file_type()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        if ft.is_dir() {
-            if entry.file_name().to_str() == Some(".git") {
-                continue;
-            }
-            walk_mtime(&entry.path(), times)?;
-            continue;
-        }
-        if entry.file_name().to_str().is_some_and(|n| n.ends_with(".zip")) {
-            continue;
-        }
-        let meta = entry
-            .metadata()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        let t = meta
-            .modified()
-            .map_err(|source| Error::Io { path: entry.path(), source })?;
-        times.push(t);
-    }
-    Ok(())
 }

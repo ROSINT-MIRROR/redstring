@@ -294,7 +294,10 @@ impl RedstringApp {
             self.quit_confirm = true;
             return Ok(());
         }
-        self.flush_before_close(ui)?;
+        if !self.flush_before_close(ui)? {
+            crate::dlog_warn!("quit", "quit held — the case on disk needs a decision first");
+            return Ok(());
+        }
         crate::dlog_info!("quit", "quit requested — settled, closing");
         self.allow_close = true;
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -306,7 +309,9 @@ impl RedstringApp {
             return Ok(());
         }
         if !self.hold_for_sandbox()? {
-            self.flush_before_close(ui)?;
+            if !self.flush_before_close(ui)? {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
             return Ok(());
         }
         crate::dlog_warn!(
@@ -326,11 +331,12 @@ impl RedstringApp {
         self.dirty()
     }
 
-    fn flush_before_close(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+    fn flush_before_close(&mut self, ui: &egui::Ui) -> Result<bool, Error> {
         if !self.live()? {
-            return Ok(());
+            return Ok(true);
         }
-        self.save_full(ui)
+        self.save_full(ui)?;
+        Ok(self.autosave.conflict.is_none() && !self.dirty()?)
     }
 
     pub fn delete_confirm_window(&mut self, ui: &egui::Ui) -> Result<(), Error> {
@@ -404,7 +410,7 @@ impl RedstringApp {
         if save_quit {
             crate::dlog_info!("quit", "save & quit chosen");
             self.explore_save(ui)?;
-            if self.autosave.conflict {
+            if self.autosave.conflict.is_some() {
                 self.quit_confirm = false;
                 return Ok(());
             }

@@ -168,6 +168,16 @@ pub fn layout(app: &mut RedstringApp, kind: LayoutKind) -> Result<(), Error> {
     frame(app, |a, ui| a.apply_layout(ui, kind))
 }
 
+pub fn poll(app: &mut RedstringApp) -> Result<(), Error> {
+    app.watcher.last_poll = std::time::Instant::now() - std::time::Duration::from_millis(1100);
+    frame(app, |a, ui| a.poll_external_edit(ui))
+}
+
+pub fn watch(app: &mut RedstringApp) -> Result<(), Error> {
+    poll(app)?;
+    poll(app)
+}
+
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 pub struct TempDir {

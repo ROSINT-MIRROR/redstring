@@ -2,7 +2,7 @@
 mod tests {
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, Instant, SystemTime};
+    use std::time::{Duration, Instant};
 
     use egui::Pos2;
     use petgraph::graph::NodeIndex;
@@ -55,8 +55,7 @@ mod tests {
     }
 
     fn stale_watcher(app: &mut RedstringApp) {
-        let (path, _) = app.watcher.baseline.clone().unwrap();
-        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
+        harness::poll(app).unwrap();
         app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
     }
 
@@ -409,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn explore_suspends_the_watcher_and_flags_that_disk_moved() {
+    fn explore_holds_the_watcher_then_saving_merges_independent_changes() {
         let (td, project, mut app) = live_app();
         graph::add(&mut app, EntityKind::Person, "on the record").unwrap();
         harness::tick(&mut app, 0.0).unwrap();
@@ -433,43 +432,57 @@ mod tests {
 
         harness::frame(&mut app, |app, ui| app.explore_save(ui)).unwrap();
         assert!(
-            app.autosave.conflict,
-            "saving over someone else's edit must ask first, never silently overwrite"
+            app.autosave.conflict.is_none(),
+            "independent changes on both sides never need a decision"
         );
-        assert_eq!(app.mode, Mode::Explore, "and it stays in explore until answered");
+        assert_eq!(app.mode, Mode::Live, "the sandbox landed and live resumed");
         assert!(
-            !project.entity_dir("wild_theory").unwrap().exists(),
-            "nothing is written while the conflict is open"
+            project.entity_dir("wild_theory").unwrap().join("entity.ron").exists(),
+            "the sandbox reached disk"
         );
+        assert!(
+            project.entity_dir("planted_example").unwrap().join("entity.ron").exists(),
+            "and the external addition survived the save"
+        );
+        assert!(
+            graph::node_by_slug(&app, "planted_example").unwrap().is_some(),
+            "the board now shows both sides"
+        );
+        assert_eq!(loc(&app, theory), (314.0, 271.0), "the sandbox placement survived the merge");
         invariant::check_graph(&app).unwrap();
         drop(td);
     }
 
     #[test]
-    fn a_conflicted_explore_can_still_take_the_other_side() {
+    fn a_conflicted_explore_asks_and_can_still_take_the_other_side() {
         let (td, project, mut app) = live_app();
-        graph::add(&mut app, EntityKind::Person, "on the record").unwrap();
+        let rec = graph::add(&mut app, EntityKind::Person, "on the record").unwrap();
         harness::tick(&mut app, 0.0).unwrap();
         harness::tick(&mut app, SETTLED).unwrap();
 
         app.enter_explore().unwrap();
-        graph::add(&mut app, EntityKind::Organization, "wild theory").unwrap();
-        external_add(&project, "planted.example");
+        graph::set_value(&mut app, rec, "sandbox says A").unwrap();
+        let mut cf = read_case(&project).unwrap();
+        cf.data.entities[0].value = "disk says B".to_owned();
+        write_case(&project, &cf).unwrap();
         stale_watcher(&mut app);
         harness::frame(&mut app, |app, ui| app.poll_external_edit(ui)).unwrap();
         harness::frame(&mut app, |app, ui| app.explore_save(ui)).unwrap();
-        assert!(app.autosave.conflict);
+        assert!(app.autosave.conflict.is_some(), "the same entity edited on both sides asks");
+        assert_eq!(app.mode, Mode::Explore, "and it stays in explore until answered");
+        assert_eq!(
+            read_case(&project).unwrap().data.entities[0].value,
+            "disk says B",
+            "nothing is written while the conflict is open"
+        );
 
         harness::frame(&mut app, |app, ui| app.explore_discard(ui)).unwrap();
-        assert!(!app.autosave.conflict, "the conflict is resolved");
+        assert!(app.autosave.conflict.is_none(), "the conflict is resolved");
         assert_eq!(app.mode, Mode::Live);
-        assert!(
-            graph::node_by_slug(&app, "planted_example").unwrap().is_some(),
-            "taking their side loads the external edit"
-        );
-        assert!(
-            graph::node_by_slug(&app, "wild_theory").unwrap().is_none(),
-            "and drops the sandbox"
+        assert_eq!(
+            graph::value_of(&app, graph::node_by_slug(&app, "on_the_record").unwrap().unwrap()).unwrap(),
+            "disk says B",
+            "taking their side loads the external edit and drops the sandbox"
         );
         drop(td);
     }
@@ -519,15 +532,15 @@ mod tests {
     fn autosave_rebaselines_the_watcher_so_it_never_reloads_its_own_write() {
         let (td, _project, mut app) = live_app();
         graph::add(&mut app, EntityKind::Person, "self written").unwrap();
-        let (_, before) = app.watcher.baseline.clone().unwrap();
 
         harness::tick(&mut app, 0.0).unwrap();
         harness::tick(&mut app, SETTLED).unwrap();
-        let (_, after) = app.watcher.baseline.clone().unwrap();
-        assert!(after >= before, "the autosave re-baselined the watcher over its own write");
+        assert!(
+            app.disk_in_sync().unwrap(),
+            "the autosave re-baselined the watcher over its own write"
+        );
 
-        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
-        harness::frame(&mut app, |app, ui| app.poll_external_edit(ui)).unwrap();
+        harness::watch(&mut app).unwrap();
         assert_eq!(
             graph::node_count(&app).unwrap(),
             1,

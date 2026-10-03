@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant, SystemTime};
 
     use egui::Pos2;
     use petgraph::graph::NodeIndex;
@@ -496,9 +495,6 @@ mod tests {
         harness::save(&mut app).unwrap();
         assert_eq!(graph::node_count(&app).unwrap(), 1);
 
-        let (watched_path, _) = app.watcher.baseline.clone().unwrap();
-        app.watcher.baseline = Some((watched_path, SystemTime::now() - Duration::from_secs(5)));
-
         let raw = fixtures::fixture("dnsx.jsonl").unwrap();
         let ron = fixtures::module_ron("dnsx").unwrap();
         let (shape_id, facts) = apply::parse(&ron, &raw).unwrap();
@@ -529,8 +525,7 @@ mod tests {
             "raw stdout is archived into the case tree — this is the write that trips the watcher"
         );
 
-        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
-        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+        harness::watch(&mut app).unwrap();
 
         assert_eq!(
             graph::node_count(&app).unwrap(),
@@ -710,10 +705,7 @@ mod tests {
             .push(graph::entity_rec(EntityKind::Domain, "c.example", "c.example").unwrap());
         crate::project::write_case(&project, &cf).unwrap();
 
-        let (path, _) = app.watcher.baseline.clone().unwrap();
-        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
-        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
-        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+        harness::watch(&mut app).unwrap();
 
         assert_eq!(
             graph::node_count(&app).unwrap(),
@@ -745,10 +737,7 @@ mod tests {
         cf.meta.name = "renamed by an external editor".to_owned();
         crate::project::write_case(&project, &cf).unwrap();
 
-        let (path, _) = app.watcher.baseline.clone().unwrap();
-        app.watcher.baseline = Some((path, SystemTime::now() - Duration::from_secs(5)));
-        app.watcher.last_poll = Instant::now() - Duration::from_millis(1100);
-        harness::frame(&mut app, |a, ui| a.poll_external_edit(ui)).unwrap();
+        harness::watch(&mut app).unwrap();
 
         assert_eq!(
             app.case_name, "renamed by an external editor",

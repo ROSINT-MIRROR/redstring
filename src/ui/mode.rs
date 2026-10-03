@@ -1,13 +1,16 @@
 use std::time::Duration;
 
-use egui::{Color32, RichText, StrokeKind};
+use egui::{Color32, StrokeKind};
 
 use crate::error::Error;
-use crate::model::Camera;
+use crate::model::{Camera, now_unix};
+use crate::project::Resolve;
 
 use super::app::RedstringApp;
 use super::board::camera_read;
+use super::conflict::ConflictView;
 use super::fingerprint::is_dirty;
+use super::reconcile::{Push, Synced};
 
 pub const DEBOUNCE_SECS: f64 = 1.5;
 pub const IDLE_SECS: f64 = 10.0;
@@ -29,7 +32,7 @@ pub struct Autosave {
     pub camera_since: Option<f64>,
     pub last_camera: Camera,
     pub disk_moved: bool,
-    pub conflict: bool,
+    pub conflict: Option<ConflictView>,
 }
 
 impl RedstringApp {
@@ -42,7 +45,7 @@ impl RedstringApp {
         let fp = self.fingerprint()?;
         let moved = fp != self.autosave.last_fp;
         let dirty = is_dirty(self.project.is_some(), &fp, &self.saved_fp)?;
-        self.autosave.last_fp = fp.clone();
+        self.autosave.last_fp = fp;
         if !dirty {
             self.autosave.pending_since = None;
         } else if moved || self.autosave.pending_since.is_none() {
@@ -51,11 +54,11 @@ impl RedstringApp {
         if !self.live()? {
             return Ok(());
         }
-        self.debounced_flush(ui, now, &fp)?;
+        self.debounced_flush(ui, now)?;
         self.idle_beat(ui, now)
     }
 
-    fn debounced_flush(&mut self, ui: &egui::Ui, now: f64, fp: &str) -> Result<(), Error> {
+    fn debounced_flush(&mut self, ui: &egui::Ui, now: f64) -> Result<(), Error> {
         let Some(since) = self.autosave.pending_since else {
             return Ok(());
         };
@@ -65,33 +68,26 @@ impl RedstringApp {
                 .request_repaint_after(Duration::from_secs_f64((DEBOUNCE_SECS - waited).max(0.0)));
             return Ok(());
         }
-        self.flush_source(ui, now, fp)
-    }
-
-    fn flush_source(&mut self, ui: &egui::Ui, now: f64, fp: &str) -> Result<(), Error> {
-        let Some(project) = self.project.clone() else {
-            self.autosave.pending_since = None;
+        if !self.autosave_push(ui)? {
             return Ok(());
-        };
-        let cf = self.to_case_file(ui)?;
-        self.self_write(&project.root, |app| app.write_source(&project, &cf))?;
-        crate::dlog_info!(
-            "autosave",
-            "flushed {} entities / {} links -> {}",
-            cf.data.entities.len(),
-            cf.data.relations.len(),
-            project.root.display()
-        );
-        self.saved_fp = fp.to_owned();
-        self.autosave.last_fp = fp.to_owned();
+        }
         self.autosave.pending_since = None;
         self.autosave.derive_since = Some(now);
         self.autosave.camera_since = None;
-        self.autosave.last_camera = cf.display.camera;
-        self.last_saved_at = Some(crate::model::now_unix()?);
         ui.ctx()
             .request_repaint_after(Duration::from_secs_f64(IDLE_SECS));
         Ok(())
+    }
+
+    fn autosave_push(&mut self, ui: &egui::Ui) -> Result<bool, Error> {
+        if self.autosave.conflict.is_some() {
+            return Ok(false);
+        }
+        if !self.disk_in_sync()? {
+            ui.ctx().request_repaint_after(Duration::from_millis(500));
+            return Ok(false);
+        }
+        Ok(self.sync_disk(ui, Push::Autosave, Resolve::Ask)? == Synced::Settled)
     }
 
     fn idle_beat(&mut self, ui: &egui::Ui, now: f64) -> Result<(), Error> {
@@ -111,13 +107,11 @@ impl RedstringApp {
             self.beat_repaint(ui, now);
             return Ok(());
         }
-        let cf = self.to_case_file(ui)?;
-        if cam_due {
-            self.self_write(&project.root, |app| app.write_source(&project, &cf))?;
-            self.autosave.last_camera = cf.display.camera;
+        if cam_due && self.autosave_push(ui)? {
             self.autosave.camera_since = None;
         }
-        if derive_due {
+        if derive_due && self.autosave.conflict.is_none() && self.disk_in_sync()? {
+            let cf = self.to_case_file(ui)?;
             self.self_write(&project.root, |app| app.write_derived(&project, &cf))?;
             crate::dlog_info!("autosave", "idle beat regenerated the derived artifacts");
             self.autosave.derive_since = None;
@@ -143,7 +137,6 @@ impl RedstringApp {
     pub fn enter_explore(&mut self) -> Result<(), Error> {
         self.mode = Mode::Explore;
         self.autosave.disk_moved = false;
-        self.autosave.conflict = false;
         crate::dlog_info!("mode", "entered explore — writes suspended");
         self.status = "explore — sandbox: nothing reaches disk until you save or discard".into();
         Ok(())
@@ -153,19 +146,23 @@ impl RedstringApp {
         if self.project.is_none() {
             return self.save_as_dialog(ui);
         }
-        if self.autosave.disk_moved {
-            self.autosave.conflict = true;
+        if self.reopen_conflict()? {
+            return Ok(());
+        }
+        if self.sync_disk(ui, Push::Explicit, Resolve::Ask)? != Synced::Settled {
             return Ok(());
         }
         self.settle_sandbox(ui)
     }
 
-    fn settle_sandbox(&mut self, ui: &egui::Ui) -> Result<(), Error> {
+    pub fn settle_sandbox(&mut self, ui: &egui::Ui) -> Result<(), Error> {
         self.mode = Mode::Live;
         self.autosave.disk_moved = false;
-        self.autosave.conflict = false;
+        self.autosave.conflict = None;
         crate::dlog_info!("mode", "explore saved — back to live");
-        self.save_full(ui)
+        self.save_full(ui)?;
+        self.last_saved_at = Some(now_unix()?);
+        Ok(())
     }
 
     pub fn explore_discard(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
@@ -175,59 +172,10 @@ impl RedstringApp {
         };
         self.mode = Mode::Live;
         self.autosave.disk_moved = false;
-        self.autosave.conflict = false;
+        self.autosave.conflict = None;
         self.load(ui)?;
         crate::dlog_warn!("mode", "explore discarded — re-read {}", project.root.display());
         self.status = format!("explore discarded — re-read {}", project.root.display());
-        Ok(())
-    }
-
-    pub fn explore_conflict_window(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
-        if !self.autosave.conflict {
-            return Ok(());
-        }
-        let mut overwrite = false;
-        let mut drop_sandbox = false;
-        let mut cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        egui::Window::new("the case changed on disk")
-            .collapsible(false)
-            .resizable(false)
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ui.ctx().content_rect().center())
-            .show(ui.ctx(), |ui| {
-                ui.label(
-                    "someone or something edited this case while you were exploring. saving now replaces their work with your sandbox.",
-                );
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    overwrite = ui
-                        .button(
-                            RichText::new(format!(
-                                "{} overwrite with my sandbox",
-                                egui_phosphor::regular::FLOPPY_DISK
-                            ))
-                            .color(super::style::DANGER)
-                            .strong(),
-                        )
-                        .clicked();
-                    drop_sandbox = ui
-                        .button(format!(
-                            "{} discard my sandbox, take theirs",
-                            egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE
-                        ))
-                        .clicked();
-                    cancel |= ui.button("keep exploring").clicked();
-                });
-            });
-        if overwrite {
-            return self.settle_sandbox(ui);
-        }
-        if drop_sandbox {
-            return self.explore_discard(ui);
-        }
-        if cancel {
-            self.autosave.conflict = false;
-        }
         Ok(())
     }
 
