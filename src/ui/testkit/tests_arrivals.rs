@@ -241,7 +241,7 @@ mod tests {
         for pair in chain.windows(2) {
             graph::link(&mut rig.app, pair[0], pair[1], RelationKind::AssociateOf).unwrap();
         }
-        let before = rig.look(0.0, Pos2::new(-120.0, 160.0), 1.0);
+        let before = rig.look(0.0, Pos2::new(480.0, -200.0), 0.5);
         let test = graph::add(&mut rig.app, EntityKind::Person, "Test").unwrap();
         graph::link(&mut rig.app, test, chain[0], RelationKind::AssociateOf).unwrap();
         let added = vec![rig.slug(test)];
