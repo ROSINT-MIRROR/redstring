@@ -303,6 +303,18 @@ pub fn spiral(n: usize) -> Result<Pos2, Error> {
     Ok(Pos2::new(r * a.cos(), r * a.sin()))
 }
 
+pub fn free_spot(taken: &[Pos2], anchor: Pos2) -> Result<Pos2, Error> {
+    const GAP: f32 = 64.0;
+    const TRIES: usize = 4096;
+    for n in 0..TRIES {
+        let spot = anchor + spiral(n)?.to_vec2();
+        if taken.iter().all(|t| t.distance(spot) >= GAP) {
+            return Ok(spot);
+        }
+    }
+    Ok(anchor + spiral(TRIES)?.to_vec2())
+}
+
 pub fn apply_visuals(g: &mut RsGraph, size_by_degree: bool) -> Result<(), Error> {
     let nodes: Vec<NodeIndex> = g.g().node_indices().collect();
     for idx in nodes {

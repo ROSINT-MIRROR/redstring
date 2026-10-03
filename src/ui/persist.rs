@@ -11,12 +11,13 @@ use crate::model::{
     Camera, CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, KIND_META,
     RELATION_META, Relation, RelationRec, now_unix,
 };
-use crate::project::{self, Project};
+use crate::project::{self, Claim, Project, Resolve, disk_sig, read_state, sweep_stale, try_lock};
 
 use super::app::{RedstringApp, RsGraph};
 use super::board::{camera_read, camera_write};
 use super::fingerprint::{compute_fingerprint, is_dirty};
-use super::ops::spiral;
+use super::ops::free_spot;
+use super::reconcile::{Push, Synced};
 
 impl RedstringApp {
     pub fn to_case_file(&self, ui: &egui::Ui) -> Result<CaseFile, Error> {
@@ -49,21 +50,9 @@ impl RedstringApp {
             let Some(r) = g.edge_weight(idx) else { continue };
             let Some(from) = g.node_weight(a) else { continue };
             let Some(to) = g.node_weight(b) else { continue };
-            let rel = r.payload();
-            cf.data.relations.push(RelationRec {
-                from: from.payload().slug.clone(),
-                to: to.payload().slug.clone(),
-                kind: rel.kind,
-                origin: rel.origin.clone(),
-                status: rel.status,
-                confidence: rel.confidence,
-                author: rel.author.clone(),
-                created_at: rel.created_at,
-                sources: rel.sources.clone(),
-                valid_from: rel.valid_from,
-                valid_to: rel.valid_to,
-                sealed: rel.sealed,
-            });
+            cf.data
+                .relations
+                .push(rel_rec(&from.payload().slug, &to.payload().slug, r.payload())?);
         }
         cf.display.camera = camera_read(ui)?;
         cf.display.size_by_degree = self.size_by_degree;
@@ -112,17 +101,17 @@ impl RedstringApp {
         let Some(project) = self.project.clone() else {
             return Ok(());
         };
+        if self.reopen_conflict()? {
+            return Ok(());
+        }
+        if self.sync_disk(ui, Push::Explicit, Resolve::Ask)? != Synced::Settled {
+            return Ok(());
+        }
         let cf = self.to_case_file(ui)?;
-        self.self_write(&project.root, |app| {
-            app.write_source(&project, &cf)?;
-            app.write_derived(&project, &cf)
-        })?;
-        self.saved_fp = self.fingerprint()?;
-        self.autosave.last_fp = self.saved_fp.clone();
+        self.self_write(&project.root, |app| app.write_derived(&project, &cf))?;
         self.autosave.pending_since = None;
         self.autosave.derive_since = None;
         self.autosave.camera_since = None;
-        self.autosave.last_camera = cf.display.camera;
         self.last_saved_at = Some(now_unix()?);
         crate::dlog_info!(
             "persist",
@@ -141,15 +130,6 @@ impl RedstringApp {
         Ok(())
     }
 
-    pub fn write_source(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
-        project::write_case(project, cf)?;
-        for n in self.g.g().node_weights() {
-            let e = n.payload();
-            project::write_note(project, &e.slug, &e.note)?;
-        }
-        Ok(())
-    }
-
     pub fn write_derived(&self, project: &Project, cf: &CaseFile) -> Result<(), Error> {
         project::write_json(project, cf)?;
         project::write_graph_md(project, cf)?;
@@ -163,6 +143,9 @@ impl RedstringApp {
             return Ok(());
         }
         self.save_full(ui)?;
+        if self.autosave.conflict.is_some() {
+            return Ok(());
+        }
         let Some(project) = &self.project else {
             return Ok(());
         };
@@ -233,7 +216,8 @@ impl RedstringApp {
         self.project = Some(project);
         self.mode = super::mode::Mode::Live;
         self.autosave.disk_moved = false;
-        self.autosave.conflict = false;
+        self.autosave.conflict = None;
+        self.watcher.reset()?;
         self.save_full(ui)?;
         self.show_welcome = false;
         self.remember_project()?;
@@ -248,25 +232,7 @@ impl RedstringApp {
         self.prefs.remember_recent(path)
     }
 
-    pub fn load(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
-        let Some(project) = self.project.clone() else {
-            self.status = "no case open".into();
-            return Ok(());
-        };
-        crate::dlog_info!("persist", "load begin {}", project.root.display());
-        let cf = project::read_case(&project)?;
-
-        let LoadedGraph {
-            g,
-            healed,
-            note_errs,
-            skipped,
-        } = build_graph(&project, &cf)?;
-
-        self.g = g;
-        self.case_name = cf.meta.name.clone();
-        self.size_by_degree = cf.display.size_by_degree;
-        self.current_layout = cf.display.layout;
+    pub fn forget_node_refs(&mut self) -> Result<(), Error> {
         self.edge_drag = None;
         self.pending_edge = None;
         self.node_drag = None;
@@ -281,10 +247,42 @@ impl RedstringApp {
         self.merge_confirm = None;
         self.active_path = None;
         self.band = None;
+        Ok(())
+    }
+
+    pub fn load(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
+        let Some(project) = self.project.clone() else {
+            self.status = "no case open".into();
+            return Ok(());
+        };
+        crate::dlog_info!("persist", "load begin {}", project.root.display());
+        if let Claim::Held(lock) = try_lock(&project)? {
+            let swept = sweep_stale(&project.root)?;
+            drop(lock);
+            if swept > 0 {
+                crate::dlog_warn!("persist", "cleared {swept} leftover(s) of an interrupted write");
+            }
+        }
+        let sig = disk_sig(&project)?;
+        let state = read_state(&project)?;
+        let cf = &state.file;
+
+        let LoadedGraph {
+            g,
+            healed,
+            note_errs,
+            skipped,
+        } = build_graph(&project, cf)?;
+
+        self.g = g;
+        self.case_name = cf.meta.name.clone();
+        self.size_by_degree = cf.display.size_by_degree;
+        self.current_layout = cf.display.layout;
+        self.forget_node_refs()?;
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
         self.fit_on_open = cf.display.camera == Camera::default() && !cf.data.entities.is_empty();
-        self.watch_project()?;
+        self.autosave.conflict = None;
         self.saved_fp = self.fingerprint()?;
         self.autosave.last_fp = self.saved_fp.clone();
         self.autosave.pending_since = None;
@@ -314,6 +312,7 @@ impl RedstringApp {
         if !skipped.is_empty() {
             self.status += &format!(" · SKIPPED unknown slugs: {}", skipped.join(", "));
         }
+        self.watcher.settle(&project.root, state, sig)?;
         Ok(())
     }
 
@@ -337,13 +336,19 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
     let mut by_slug: HashMap<String, NodeIndex> = HashMap::new();
     let mut healed = 0usize;
     let mut note_errs: Vec<String> = Vec::new();
-    for (i, er) in cf.data.entities.iter().enumerate() {
+    let mut taken: Vec<Pos2> = Vec::new();
+    for er in &cf.data.entities {
+        for (x, y) in cf.display.positions.get(&er.slug).into_iter() {
+            taken.push(Pos2::new(*x, *y));
+        }
+    }
+    for er in &cf.data.entities {
         if by_slug.contains_key(&er.slug) {
             return Err(Error::DuplicateSlug {
                 slug: er.slug.clone(),
             });
         }
-        let pos = healed_pos(&cf.display, &er.slug, i, &mut healed)?;
+        let pos = healed_pos(&cf.display, &er.slug, &mut taken, &mut healed)?;
         let note = match project::read_note(project, &er.slug) {
             Ok(n) => n,
             Err(err) => {
@@ -351,22 +356,8 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
                 String::new()
             }
         };
-        let ent = Entity {
-            slug: er.slug.clone(),
-            kind: er.kind,
-            label: er.label.clone(),
-            value: er.value.clone(),
-            sealed: er.sealed,
-            observations: er.observations.clone(),
-            facets: er.facets.clone(),
-            note,
-            image: image_abs(project, &er.image)?,
-            size: size_of(&cf.display, &er.slug),
-            collapsed: cf.display.collapsed.contains(&er.slug),
-            ..Default::default()
-        };
         let idx = g.add_node_with_label_and_location(
-            ent,
+            entity_of(project, er, note, &cf.display)?,
             format!("{} {}", KIND_META[er.kind as usize].icon, er.label),
             pos,
         );
@@ -379,24 +370,7 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
             skipped.push(format!("{} -> {}", rr.from, rr.to));
             continue;
         };
-        g.add_edge_with_label(
-            a,
-            b,
-            Relation {
-                kind: rr.kind,
-                origin: rr.origin.clone(),
-                status: rr.status,
-                confidence: rr.confidence,
-                author: rr.author.clone(),
-                created_at: rr.created_at,
-                sources: rr.sources.clone(),
-                valid_from: rr.valid_from,
-                valid_to: rr.valid_to,
-                sealed: rr.sealed,
-                hidden: false,
-            },
-            RELATION_META[rr.kind as usize].label.into(),
-        );
+        g.add_edge_with_label(a, b, relation_of(rr)?, RELATION_META[rr.kind as usize].label.into());
     }
 
     Ok(LoadedGraph {
@@ -404,6 +378,56 @@ pub fn build_graph(project: &Project, cf: &CaseFile) -> Result<LoadedGraph, Erro
         healed,
         note_errs,
         skipped,
+    })
+}
+
+pub fn entity_of(project: &Project, er: &EntityRec, note: String, display: &CaseDisplay) -> Result<Entity, Error> {
+    Ok(Entity {
+        slug: er.slug.clone(),
+        kind: er.kind,
+        label: er.label.clone(),
+        value: er.value.clone(),
+        sealed: er.sealed,
+        observations: er.observations.clone(),
+        facets: er.facets.clone(),
+        note,
+        image: image_abs(project, &er.image)?,
+        size: size_of(display, &er.slug),
+        collapsed: display.collapsed.contains(&er.slug),
+        ..Default::default()
+    })
+}
+
+pub fn relation_of(rr: &RelationRec) -> Result<Relation, Error> {
+    Ok(Relation {
+        kind: rr.kind,
+        origin: rr.origin.clone(),
+        status: rr.status,
+        confidence: rr.confidence,
+        author: rr.author.clone(),
+        created_at: rr.created_at,
+        sources: rr.sources.clone(),
+        valid_from: rr.valid_from,
+        valid_to: rr.valid_to,
+        sealed: rr.sealed,
+        hidden: false,
+    })
+}
+
+pub fn rel_rec(from: &str, to: &str, rel: &Relation) -> Result<RelationRec, Error> {
+    Ok(RelationRec {
+        from: from.to_owned(),
+        to: to.to_owned(),
+        kind: rel.kind,
+        origin: rel.origin.clone(),
+        status: rel.status,
+        confidence: rel.confidence,
+        author: rel.author.clone(),
+        created_at: rel.created_at,
+        sources: rel.sources.clone(),
+        valid_from: rel.valid_from,
+        valid_to: rel.valid_to,
+        sealed: rel.sealed,
     })
 }
 
@@ -433,10 +457,17 @@ fn warn_suffix(project: &Project) -> String {
     }
 }
 
-fn healed_pos(display: &CaseDisplay, slug: &str, i: usize, healed: &mut usize) -> Result<Pos2, Error> {
+fn healed_pos(
+    display: &CaseDisplay,
+    slug: &str,
+    taken: &mut Vec<Pos2>,
+    healed: &mut usize,
+) -> Result<Pos2, Error> {
     let Some(&(x, y)) = display.positions.get(slug) else {
         *healed += 1;
-        return spiral(i);
+        let spot = free_spot(taken, Pos2::ZERO)?;
+        taken.push(spot);
+        return Ok(spot);
     };
     Ok(Pos2::new(x, y))
 }
@@ -484,4 +515,3 @@ fn seed_dir(d: rfd::FileDialog, current: Option<&Project>) -> rfd::FileDialog {
     };
     d.set_directory(parent)
 }
-

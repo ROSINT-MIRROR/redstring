@@ -4,13 +4,10 @@ use std::path::{Path, PathBuf};
 use egui::text::LayoutJob;
 use egui::{Align, Color32, FontFamily, FontId, Pos2, Rect, Vec2};
 use egui_graphs::{
-    DisplayEdge, DisplayNode, Graph, GraphView, Layout, LayoutState, MetadataFrame,
-    SettingsInteraction, SettingsNavigation, SettingsStyle,
+    GraphView, MetadataFrame, SettingsInteraction, SettingsNavigation, SettingsStyle,
 };
-use petgraph::EdgeType;
 use petgraph::graph::NodeIndex;
-use petgraph::stable_graph::IndexType;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::error::Error;
 use crate::model::{
@@ -22,7 +19,8 @@ use crate::shapes::{
     SourcedEdgeShape, label_box,
 };
 use crate::ui::{
-    RsGraph, apply_visuals, board_color, build_graph, clamp_zoom, cluster_bounds, fit_box_to_board,
+    PinnedLayout, PinnedState, RsGraph, apply_visuals, board_color, build_graph, clamp_zoom,
+    cluster_bounds, fit_box_to_board,
 };
 
 use super::png::render_png;
@@ -37,37 +35,6 @@ const MAX_FIT_ZOOM: f32 = 2.2;
 const FORCE_ITERS: u32 = 240;
 const FORCE_STEP: f32 = 150.0;
 const FORCE_GRAVITY: f32 = 0.04;
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct FixedState;
-
-impl LayoutState for FixedState {}
-
-#[derive(Default)]
-struct FixedLayout {
-    state: FixedState,
-}
-
-impl Layout<FixedState> for FixedLayout {
-    fn from_state(state: FixedState) -> impl Layout<FixedState> {
-        Self { state }
-    }
-
-    fn next<N, E, Ty, Ix, Dn, De>(&mut self, _g: &mut Graph<N, E, Ty, Ix, Dn, De>, _ui: &egui::Ui)
-    where
-        N: Clone,
-        E: Clone,
-        Ty: EdgeType,
-        Ix: IndexType,
-        Dn: DisplayNode<N, E, Ty, Ix>,
-        De: DisplayEdge<N, E, Ty, Ix, Dn>,
-    {
-    }
-
-    fn state(&self) -> FixedState {
-        self.state.clone()
-    }
-}
 
 pub struct ShotReport {
     pub out: PathBuf,
@@ -390,7 +357,7 @@ pub(super) fn run_frames(
     for _ in 0..RENDER_FRAMES {
         let full = ctx.run_ui(raw.clone(), |ui| {
             ui.add(
-                &mut GraphView::<_, _, _, _, _, SourcedEdgeShape, FixedState, FixedLayout>::new(g)
+                &mut GraphView::<_, _, _, _, _, SourcedEdgeShape, PinnedState, PinnedLayout>::new(g)
                     .with_id(Some(META_ID.to_owned()))
                     .with_interactions(
                         &SettingsInteraction::default()

@@ -19,6 +19,8 @@ mod tests_convergence;
 #[cfg(test)]
 mod tests_delete;
 #[cfg(test)]
+mod tests_disk_sync;
+#[cfg(test)]
 mod tests_export_leak;
 #[cfg(test)]
 mod tests_flows;
@@ -36,6 +38,8 @@ mod tests_merge;
 mod tests_persistence;
 #[cfg(test)]
 mod tests_properties;
+#[cfg(test)]
+mod tests_reconcile;
 #[cfg(test)]
 mod tests_reload_guard;
 #[cfg(test)]

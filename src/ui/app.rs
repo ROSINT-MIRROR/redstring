@@ -451,7 +451,7 @@ impl RedstringApp {
             .inner?;
         self.settings_window(ui)?;
         self.quit_window(ui)?;
-        self.explore_conflict_window(ui)?;
+        self.conflict_window(ui)?;
         self.poll_module_runs(ui)?;
         self.delete_confirm_window(ui)?;
         self.seal_confirm_window(ui)?;

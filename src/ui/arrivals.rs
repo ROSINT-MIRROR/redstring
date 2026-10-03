@@ -29,19 +29,6 @@ impl CameraEase {
 }
 
 impl RedstringApp {
-    pub fn live_slugs(&self) -> Result<HashSet<String>, Error> {
-        Ok(self.g.g().node_weights().map(|n| n.payload().slug.clone()).collect())
-    }
-
-    pub fn slug_diff(&self, before: &HashSet<String>) -> Result<(Vec<String>, Vec<String>), Error> {
-        let now = self.live_slugs()?;
-        let mut added: Vec<String> = now.difference(before).cloned().collect();
-        let mut removed: Vec<String> = before.difference(&now).cloned().collect();
-        added.sort();
-        removed.sort();
-        Ok((added, removed))
-    }
-
     pub fn settle_arrivals(
         &mut self,
         ui: &egui::Ui,

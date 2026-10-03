@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant, UNIX_EPOCH};
+    use std::time::{Duration, Instant};
 
     use egui::{Pos2, Rect, Vec2};
     use petgraph::graph::NodeIndex;
@@ -198,10 +198,11 @@ mod tests {
             graph::relation_rec("arrived_org", "root_person", RelationKind::Controls, &author).unwrap(),
         );
         write_case(&project, &cf).unwrap();
-        let (path, _seen) = rig.app.watcher.baseline.clone().expect("load set a watch baseline");
-        rig.app.watcher.baseline = Some((path, UNIX_EPOCH));
-        rig.app.watcher.last_poll = Instant::now() - Duration::from_secs(5);
-        rig.frame(0.2, |app, ui| app.poll_external_edit(ui));
+        rig.app.pending_camera = None;
+        for t in [0.2, 0.25] {
+            rig.app.watcher.last_poll = Instant::now() - Duration::from_secs(5);
+            rig.frame(t, |app, ui| app.poll_external_edit(ui));
+        }
 
         assert_eq!(rig.app.g.g().node_count(), 3, "the external entity was absorbed");
         assert_eq!(rig.app.current_layout, LayoutKind::Free);
