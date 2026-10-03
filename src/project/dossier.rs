@@ -296,6 +296,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         }
     }
 

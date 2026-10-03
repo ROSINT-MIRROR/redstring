@@ -1,5 +1,6 @@
 mod badge;
 mod edge;
+mod flag;
 mod label;
 mod node;
 mod reveal;

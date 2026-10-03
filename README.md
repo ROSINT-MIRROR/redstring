@@ -70,6 +70,16 @@ record whose status outruns its sources as `OVERCLAIMED`. Exports recompute the
 standing from the sources they actually publish, so a claim confirmed only by a
 sealed source reads as a sourced claim in the public bundle.
 
+### Flags
+
+An entity can show a country flag instead of its kind icon. You choose it in the
+inspector under **image → flag**, from 249 ISO 3166-1 alpha-2 codes, and the flags are
+bundled in the binary (public-domain region-flags, original proportions; see
+`assets/flags/README.md`). Nothing is guessed from the label. The flag never replaces
+or edits the entity's `image`: clearing the flag shows the image again. The choice is
+stored as `flag: Some("RO")` in `entity.ron`, an unset flag writes nothing, and a sealed
+entity's flag is redacted like its image. `--check` flags codes outside the bundled set.
+
 ### Sealed subjects
 
 Any entity, observation, source or relation can be flagged `sealed`. The working

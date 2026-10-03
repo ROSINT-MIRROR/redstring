@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::error::Error;
 use crate::model::{
-    CaseFile, Facet, FacetValue, Footing, KIND_META, Origin, RELATION_META, ROLE_META, SOURCE_META,
+    CaseFile, Facet, FacetValue, FlagMeta, Footing, KIND_META, Origin, RELATION_META, ROLE_META, SOURCE_META,
     Source, Verification, status_label, subtype_value,
 };
 
@@ -41,8 +41,23 @@ pub fn validate(project: &Project) -> Result<Vec<String>, Error> {
     }
 
     facet_lints(&cf, &mut findings)?;
+    flag_lints(&cf, &mut findings)?;
 
     Ok(findings)
+}
+
+fn flag_lints(cf: &CaseFile, findings: &mut Vec<String>) -> Result<(), Error> {
+    for e in &cf.data.entities {
+        for code in e.flag.iter() {
+            if FlagMeta::of(code)?.is_none() {
+                findings.push(format!(
+                    "entity {}: flag '{code}' is not an ISO 3166-1 alpha-2 code in the bundled set",
+                    e.slug
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn facet_lints(cf: &CaseFile, findings: &mut Vec<String>) -> Result<(), Error> {
@@ -281,6 +296,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         }
     }
 

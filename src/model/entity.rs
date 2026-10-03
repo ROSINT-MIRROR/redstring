@@ -245,6 +245,8 @@ pub struct Entity {
     pub facets: BTreeMap<Facet, FacetValue>,
     pub note: String,
     pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flag: Option<String>,
     #[serde(default = "default_node_size")]
     pub size: f32,
 
@@ -285,6 +287,7 @@ impl Default for Entity {
             facets: BTreeMap::new(),
             note: String::new(),
             image: None,
+            flag: None,
             size: DEFAULT_NODE_SIZE,
             boost: 1.0,
             collapsed: false,

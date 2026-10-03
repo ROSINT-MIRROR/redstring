@@ -352,6 +352,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: Some("entities/doe/portrait.png".into()),
+            flag: None,
         });
         io::write_case(&p, &cf).unwrap();
         io::write_note(&p, "doe", "the guy\n").unwrap();
@@ -446,6 +447,7 @@ mod tests {
             observations: vec![obs("dob", "2009-05-01", false)],
             facets: Default::default(),
             image: Some("entities/jane_victim/face.png".into()),
+            flag: None,
         };
         let acme = EntityRec {
             slug: "acme".into(),
@@ -459,6 +461,7 @@ mod tests {
             ],
             facets: Default::default(),
             image: None,
+            flag: None,
         };
         let soldier = EntityRec {
             slug: "soldier".into(),
@@ -469,6 +472,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         };
         let assault = RelationRec {
             from: "jane_victim".into(),
@@ -677,6 +681,7 @@ mod tests {
                 observations: vec![],
                 facets: Default::default(),
                 image: None,
+            flag: None,
             });
         }
         cf.data.relations.push(RelationRec {

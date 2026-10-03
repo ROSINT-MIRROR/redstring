@@ -164,6 +164,7 @@ impl RedstringApp {
         })
         .inner?;
         image_path_label(ui, &e.image, self.project.as_ref())?;
+        super::flag_ui::flag_row(ui, nidx.index(), &mut e.flag, e.image.is_some())?;
 
         style::section(ui, egui_phosphor::regular::TAG, "attributes")?;
         let mut remove: Option<usize> = None;

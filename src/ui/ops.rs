@@ -187,6 +187,9 @@ fn merge_payload(g: &mut RsGraph, survivor: NodeIndex, abs: &Entity) -> Result<(
     if s.image.is_none() {
         s.image = abs.image.clone();
     }
+    if s.flag.is_none() {
+        s.flag = abs.flag.clone();
+    }
     Ok(())
 }
 

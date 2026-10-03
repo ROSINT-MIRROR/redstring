@@ -18,6 +18,7 @@ use super::label::{
     label_pad_px,
 };
 use super::reveal::{display_label, reveal_label};
+use super::flag::flag_texture;
 use super::texture::{contain_rect, texture_for};
 
 pub const IMG_RADIUS: f32 = 14.0;
@@ -30,7 +31,7 @@ const BORDER_ACTIVE: f32 = 2.0;
 pub const NODE_RADIUS: f32 = 11.0;
 
 pub fn base_radius(e: &Entity) -> Result<f32, Error> {
-    if e.image.is_some() {
+    if e.image.is_some() || e.flag.is_some() {
         return Ok(IMG_RADIUS);
     }
     Ok(NODE_RADIUS)
@@ -49,6 +50,7 @@ pub struct EntityNodeShape {
     circle: DefaultNodeShape,
 
     image: Option<String>,
+    flag: Option<String>,
 
     tex_ok: bool,
 
@@ -70,6 +72,7 @@ impl From<NodeProps<Entity>> for EntityNodeShape {
         circle.radius = NODE_RADIUS * props.payload.size * props.payload.boost;
         Self {
             image: props.payload.image.clone(),
+            flag: props.payload.flag.clone(),
             icon: KIND_META[props.payload.kind as usize].icon.to_owned(),
             full: props.payload.label.trim().to_owned(),
             facets: props.payload.facets.clone(),
@@ -109,8 +112,9 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
     }
 
     fn update(&mut self, state: &NodeProps<Entity>) {
-        if self.image != state.payload.image {
+        if self.image != state.payload.image || self.flag != state.payload.flag {
             self.image = state.payload.image.clone();
+            self.flag = state.payload.flag.clone();
             self.tex_ok = false;
         }
         self.icon = KIND_META[state.payload.kind as usize].icon.to_owned();
@@ -139,7 +143,7 @@ impl<E: Clone, Ty: EdgeType, Ix: IndexType> DisplayNode<Entity, E, Ty, Ix> for E
 
 impl EntityNodeShape {
     fn image_active(&self) -> bool {
-        self.image.is_some() && self.tex_ok
+        (self.image.is_some() || self.flag.is_some()) && self.tex_ok
     }
 
     fn rect(&self) -> Rect {
@@ -151,6 +155,12 @@ impl EntityNodeShape {
     }
 
     fn resolve_texture(&self, ctx: &DrawContext) -> Option<TextureHandle> {
+        for code in self.flag.iter() {
+            let Ok(Some(tex)) = flag_texture(ctx.ctx, code) else {
+                break;
+            };
+            return Some(tex);
+        }
         let path = self.image.as_deref()?;
         let Ok(tex) = texture_for(ctx.ctx, path) else {
             return None;

@@ -86,6 +86,7 @@ pub fn redact_with(cf: &CaseFile, book: &mut AliasBook) -> Result<CaseFile, Erro
             e.label = SEALED_LABEL.to_owned();
             e.value = String::new();
             e.image = None;
+            e.flag = None;
             e.facets.clear();
             e.observations.clear();
             e.sealed = false;
@@ -207,6 +208,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         }
     }
 
@@ -249,6 +251,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         });
         cf.data.entities.push(EntityRec {
             slug: "strada_sigur".into(),
@@ -259,6 +262,7 @@ mod tests {
             observations: vec![],
             facets: Default::default(),
             image: None,
+            flag: None,
         });
         cf.data.relations.push(RelationRec {
             from: "radu".into(),
