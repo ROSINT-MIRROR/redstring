@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use crate::error::Error;
 use crate::model::{
-    CaseFile, EntityRec, FACET_META, Facet, KIND_META, ObsValue, Origin, RELATION_META, ROLE_META,
-    RelationRec, Role, SOURCE_META, SOURCE_TIER_META, Source, occupation_of, pretty_key, role_of,
-    status_label, subtype_of, subtype_value,
+    CaseFile, EntityRec, FACET_META, Facet, Footing, KIND_META, ObsValue, Origin, RELATION_META,
+    ROLE_META, RelationRec, Role, SOURCE_META, SOURCE_TIER_META, Source, occupation_of, pretty_key,
+    role_of, status_label, subtype_of, subtype_value,
 };
 
 use super::derive::{SEALED_LABEL, redact};
@@ -186,7 +186,12 @@ fn push_connections(out: &mut String, public: &CaseFile, slug: &str) -> Result<(
         } else {
             format!("←**{verb}**— {endpoint}")
         };
-        out.push_str(&format!("- {head} · {}{}\n", source_badge(r), window_label(r)?));
+        out.push_str(&format!(
+            "- {head} · {}{} · {}\n",
+            source_badge(r),
+            window_label(r)?,
+            Footing::from(*r).label()?
+        ));
         push_sources(out, &r.sources, "  ")?;
     }
     out.push('\n');

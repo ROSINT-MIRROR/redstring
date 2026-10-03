@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Error;
-use crate::model::{CaseFile, KIND_META, RELATION_META};
+use crate::model::{CaseFile, Footing, KIND_META, RELATION_META};
 
 use super::layout::Project;
 
@@ -154,7 +154,13 @@ fn graph_md(cf: &CaseFile) -> String {
         ));
     }
     for r in &cf.data.relations {
-        let arrow = if r.sources.is_empty() { "-.->" } else { "-->" };
+        let arrow = if r.sources.is_empty() {
+            "-.->"
+        } else if Footing::STRONG.contains(&Footing::from(r)) {
+            "==>"
+        } else {
+            "-->"
+        };
         let warn = if r.sources.is_empty() { " ⚠" } else { "" };
         out.push_str(&format!(
             "    {} {arrow}|{}{warn}| {}\n",

@@ -43,6 +43,7 @@ pub enum Verification {
     Unreviewed,
     MachineSuggested,
     AnalystAsserted,
+    Confirmed,
     Corroborated,
     Rejected,
     DeniedByTarget,
@@ -60,10 +61,11 @@ const fn vm(status: Verification, label: &'static str, color: Color32) -> Verifi
 }
 
 #[rustfmt::skip]
-pub const VERIFICATION_META: [VerificationMeta; 7] = [
+pub const VERIFICATION_META: [VerificationMeta; 8] = [
     vm(Verification::Unreviewed,       "unreviewed",   Color32::from_rgb(235, 150, 70)),
     vm(Verification::MachineSuggested, "machine",      Color32::from_rgb(230, 200, 90)),
     vm(Verification::AnalystAsserted,  "asserted",     Color32::from_rgb(110, 190, 200)),
+    vm(Verification::Confirmed,        "confirmed · primary", Color32::from_rgb(90, 145, 240)),
     vm(Verification::Corroborated,     "corroborated", Color32::from_rgb(120, 200, 140)),
     vm(Verification::Rejected,         "rejected",     Color32::from_rgb(235, 80, 80)),
     vm(Verification::DeniedByTarget,   "denied",       Color32::from_rgb(200, 120, 210)),
@@ -474,18 +476,18 @@ mod tests {
         for (i, m) in VERIFICATION_META.iter().enumerate() {
             assert_eq!(m.status as usize, i, "VERIFICATION_META[{i}] is {:?}", m.status);
         }
-        assert_eq!(VERIFICATION_META.len(), 7, "seven verification states");
+        assert_eq!(VERIFICATION_META.len(), 8, "eight verification states");
         let mut labels: Vec<&str> = VERIFICATION_META.iter().map(|m| m.label).collect();
         labels.sort();
         labels.dedup();
-        assert_eq!(labels.len(), 7, "every verification label is distinct");
+        assert_eq!(labels.len(), 8, "every verification label is distinct");
         let mut colors: Vec<(u8, u8, u8)> = VERIFICATION_META
             .iter()
             .map(|m| (m.color.r(), m.color.g(), m.color.b()))
             .collect();
         colors.sort();
         colors.dedup();
-        assert_eq!(colors.len(), 7, "every verification color is distinct");
+        assert_eq!(colors.len(), 8, "every verification color is distinct");
     }
 
     #[test]

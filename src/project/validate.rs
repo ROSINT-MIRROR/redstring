@@ -8,8 +8,8 @@ use std::path::Path;
 
 use crate::error::Error;
 use crate::model::{
-    CaseFile, Facet, FacetValue, KIND_META, Origin, RELATION_META, ROLE_META, SOURCE_META,
-    Verification, subtype_value,
+    CaseFile, Facet, FacetValue, Footing, KIND_META, Origin, RELATION_META, ROLE_META, SOURCE_META,
+    Source, Verification, status_label, subtype_value,
 };
 
 use super::ignore::RsIgnore;
@@ -84,6 +84,7 @@ fn facet_index_ok(facet: Facet, index: u16) -> Result<bool, Error> {
 pub struct SourcingSummary {
     pub unproven_edges: usize,
     pub single_source_edges: usize,
+    pub overclaimed: usize,
     pub uncited_obs: usize,
 }
 
@@ -94,14 +95,15 @@ pub fn source_findings(project: &Project) -> Result<Vec<String>, Error> {
 pub fn source_report(project: &Project) -> Result<(Vec<String>, SourcingSummary), Error> {
     let cf = io::read_case(project)?;
     let mut findings: Vec<String> = Vec::new();
-    let summary = source_lints(&cf, &mut findings);
+    let summary = source_lints(&cf, &mut findings)?;
     Ok((findings, summary))
 }
 
-fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> SourcingSummary {
+fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> Result<SourcingSummary, Error> {
     let mut summary = SourcingSummary {
         unproven_edges: 0,
         single_source_edges: 0,
+        overclaimed: 0,
         uncited_obs: 0,
     };
     for r in &cf.data.relations {
@@ -116,7 +118,12 @@ fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> SourcingSummary {
         ));
     }
     for r in &cf.data.relations {
-        if r.sources.len() != 1 {
+        if r.sources.len() != 1
+            || matches!(
+                r.status,
+                Verification::Confirmed | Verification::Corroborated
+            )
+        {
             continue;
         }
         let verb = RELATION_META[r.kind as usize].label;
@@ -126,6 +133,7 @@ fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> SourcingSummary {
             r.from, r.to
         ));
     }
+    summary.overclaimed = overclaim_lints(cf, findings)?;
     for e in &cf.data.entities {
         for o in &e.observations {
             if !o.sources.is_empty() {
@@ -146,7 +154,48 @@ fn source_lints(cf: &CaseFile, findings: &mut Vec<String>) -> SourcingSummary {
             ));
         }
     }
-    summary
+    Ok(summary)
+}
+
+fn overclaim_lints(cf: &CaseFile, findings: &mut Vec<String>) -> Result<usize, Error> {
+    let before = findings.len();
+    for r in &cf.data.relations {
+        let gap = overclaim(r.status, &r.origin, &r.sources)?;
+        if gap.is_empty() {
+            continue;
+        }
+        let verb = RELATION_META[r.kind as usize].label;
+        findings.push(format!(
+            "OVERCLAIMED edge {} --{verb}--> {}: {gap}",
+            r.from, r.to
+        ));
+    }
+    for e in &cf.data.entities {
+        for o in &e.observations {
+            let gap = overclaim(o.status, &o.origin, &o.sources)?;
+            if gap.is_empty() {
+                continue;
+            }
+            findings.push(format!(
+                "OVERCLAIMED observation '{}' on {}: {gap}",
+                o.name, e.slug
+            ));
+        }
+    }
+    Ok(findings.len() - before)
+}
+
+fn overclaim(status: Verification, origin: &Origin, sources: &[Source]) -> Result<String, Error> {
+    if sources.is_empty() || Footing::would_hold(status, origin, sources)? {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "marked {}, but its {} source(s) read as {} — needs {}",
+        status_label(status)?,
+        sources.len(),
+        Footing::of(status, origin, sources)?.label()?,
+        Footing::needs(status)?
+    ))
 }
 
 

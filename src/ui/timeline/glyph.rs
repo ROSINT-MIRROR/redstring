@@ -128,7 +128,7 @@ pub fn sample(
 
 fn dot(painter: &Painter, c: Pos2, color: Color32, footing: Footing) {
     match footing {
-        Footing::Corroborated => {
+        Footing::Corroborated | Footing::Confirmed => {
             painter.circle_filled(c, Glyph::DOT, color);
         }
         Footing::Sourced => {
@@ -149,7 +149,7 @@ fn dot(painter: &Painter, c: Pos2, color: Color32, footing: Footing) {
 
 fn band(painter: &Painter, r: Rect, color: Color32, footing: Footing) {
     match footing {
-        Footing::Corroborated => {
+        Footing::Corroborated | Footing::Confirmed => {
             painter.rect_filled(r, 3.0, color.gamma_multiply(0.55));
         }
         Footing::Sourced => {
@@ -170,7 +170,7 @@ fn band(painter: &Painter, r: Rect, color: Color32, footing: Footing) {
 fn bar(painter: &Painter, (x0, x1): (f32, f32), y: f32, color: Color32, footing: Footing) {
     let path = [Pos2::new(x0, y), Pos2::new(x1, y)];
     match footing {
-        Footing::Corroborated => {
+        Footing::Corroborated | Footing::Confirmed => {
             painter.line_segment(path, Stroke::new(Glyph::BAR_W, color));
         }
         Footing::Sourced => {

@@ -10,7 +10,7 @@ use egui_phosphor::regular::{LOCK, PAPERCLIP, WARNING};
 
 use crate::error::Error;
 use crate::model::{
-    Entity, RELATION_META, Relation, RelationKind, SOURCE_TIER_META, Source, SourceTier,
+    Entity, Footing, RELATION_META, Relation, RelationKind, SOURCE_TIER_META, Source, SourceTier,
     Verification, status_color,
 };
 
@@ -51,6 +51,7 @@ fn shot_labels_flag() -> bool {
 pub struct SourcedEdgeShape {
     kind: RelationKind,
     sourced: bool,
+    strong: bool,
     source_count: usize,
     tier: SourceTier,
     status: Verification,
@@ -65,6 +66,7 @@ impl From<EdgeProps<Relation>> for SourcedEdgeShape {
         Self {
             kind: props.payload.kind,
             sourced: !props.payload.sources.is_empty(),
+            strong: Footing::STRONG.contains(&Footing::from(&props.payload)),
             source_count: props.payload.sources.len(),
             tier: strongest_tier(&props.payload.sources),
             status: props.payload.status,
@@ -102,7 +104,7 @@ where
             return Vec::new();
         };
 
-        let yarn = self.sourced && self.status == Verification::Corroborated;
+        let yarn = self.strong;
         let Ok(path) = super::yarn::thread_path(s, e, yarn) else {
             return Vec::new();
         };
@@ -165,6 +167,7 @@ where
     fn update(&mut self, state: &EdgeProps<Relation>) {
         self.kind = state.payload.kind;
         self.sourced = !state.payload.sources.is_empty();
+        self.strong = Footing::STRONG.contains(&Footing::from(&state.payload));
         self.source_count = state.payload.sources.len();
         self.tier = strongest_tier(&state.payload.sources);
         self.status = state.payload.status;
@@ -186,7 +189,7 @@ where
         let Ok((s, e)) = super::yarn::endpoints(start, end, self.order) else {
             return false;
         };
-        let yarn = self.sourced && self.status == Verification::Corroborated;
+        let yarn = self.strong;
         let Ok(path) = super::yarn::thread_path(s, e, yarn) else {
             return false;
         };
@@ -716,21 +719,18 @@ mod tests {
         shapes.iter().any(|s| matches!(s, Shape::Mesh(m) if !m.vertices.is_empty()))
     }
     #[test]
-    fn only_a_corroborated_sourced_edge_wears_the_textile_yarn() {
-        let mut top = rel(RelationKind::Controls, vec![src_tier(SourceTier::Primary)]);
-        top.status = Verification::Corroborated;
-        assert!(
-            has_mesh(&edge_shapes(top)),
-            "corroborated + sourced is the red thread and must tessellate the ribbon"
-        );
-        let plain = rel(RelationKind::Controls, vec![src_tier(SourceTier::Primary)]);
-        assert!(!has_mesh(&edge_shapes(plain)), "a merely sourced edge stays a normal line");
-        let mut unsourced = rel(RelationKind::Controls, Vec::new());
-        unsourced.status = Verification::Corroborated;
-        assert!(
-            !has_mesh(&edge_shapes(unsourced)),
-            "an unsourced claim never wears the yarn, whatever its status"
-        );
+    fn only_a_strong_footing_wears_the_textile_yarn() {
+        let mut r = rel(RelationKind::Controls, vec![src_tier(SourceTier::Primary)]);
+        assert!(!has_mesh(&edge_shapes(r.clone())), "a primary tier alone stays a normal line");
+        r.status = Verification::Corroborated;
+        assert!(!has_mesh(&edge_shapes(r.clone())), "one origin is not corroboration");
+        r.status = Verification::Confirmed;
+        assert!(has_mesh(&edge_shapes(r.clone())), "primary-confirmed is the red thread");
+        r.status = Verification::Corroborated;
+        r.sources.push(Source { reference: "s".into(), ..src_tier(SourceTier::Reported) });
+        assert!(has_mesh(&edge_shapes(r.clone())), "2+ independent origins are the red thread");
+        r.sources.clear();
+        assert!(!has_mesh(&edge_shapes(r)), "an unsourced claim never wears the yarn");
     }
     #[test]
     fn sealed_edge_shows_lock_and_forces_label_at_rest() {

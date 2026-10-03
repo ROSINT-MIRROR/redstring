@@ -42,3 +42,5 @@ mod tests_tables;
 mod tests_theme;
 #[cfg(test)]
 mod tests_timeline;
+#[cfg(test)]
+mod tests_verification;

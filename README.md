@@ -47,6 +47,29 @@ rigor is.
 Sources attach to **edges and observations**, not just to nodes. That is the part
 that makes output defensible.
 
+### Standing — when a string turns red
+
+Every relation carries an analyst-set status, picked in the relation inspector
+under **standing**: `unreviewed`, `machine`, `asserted`, `confirmed · primary`,
+`corroborated`, `rejected`, `denied`, `no record`. A status is a claim about the
+evidence, so it is checked against the sources actually attached:
+
+- **confirmed · primary** holds only with at least one source rated `primary`.
+  One authoritative record can settle a narrow claim (an officer listed on the
+  organisation's own page), and it is never presented as corroboration.
+- **corroborated** holds only with 2+ independent origins — distinct
+  `source_org`, else distinct reference. Two pages of one organisation are one origin.
+- Rating a source `primary` never verifies anything by itself; an unsourced or
+  inferred record never holds either status.
+
+Only a status that holds draws the strong red yarn on the board, the `==>` arrow
+in `graph.md`, a filled mark on the timeline and "confirmed" / "corroborated" in
+the dossiers — all from one rule (`model::Footing`). The inspector greys out a
+status the evidence cannot carry and says what it needs; `--check` flags any
+record whose status outruns its sources as `OVERCLAIMED`. Exports recompute the
+standing from the sources they actually publish, so a claim confirmed only by a
+sealed source reads as a sourced claim in the public bundle.
+
 ### Sealed subjects
 
 Any entity, observation, source or relation can be flagged `sealed`. The working
@@ -107,12 +130,13 @@ redstring --shot [case] --out board.png    # headless render, no window
 ```
 
 `--check` is the one to wire into CI. It reports structural errors, then flags
-every unproven (0-source) and single-source edge plus uncited observations:
+every unproven (0-source) and unreviewed single-source edge, every status that
+outruns its sources, plus uncited observations:
 
 ```
 warn: UNPROVEN edge shell_co_ltd --owns domain--> evil-corp.example: 0 sources
 warn: single-source edge j_doe --controls--> shell_co_ltd: 1 source — needs corroboration
-summary: 0 structural error(s), 5 advisory warning(s) — 1 unproven (0-src) + 1 single-source edge(s), 3 uncited obs
+summary: 0 structural error(s), 5 advisory warning(s) — 1 unproven (0-src) + 1 single-source edge(s), 0 overclaimed status, 3 uncited obs
 ```
 
 Exit codes: `2` structural errors, `1` advisory warnings only, `0` clean.
@@ -136,7 +160,8 @@ Times of day are shown only when a record states one, read verbatim from an
 ISO-8601 text value: `Z` and `±hh:mm` offsets are kept as written; a time without
 a zone is placed by its day and labelled as such. Nothing else is parsed or guessed.
 
-Marks are drawn by footing: corroborated (filled), sourced claim (tinted),
+Marks are drawn by footing: corroborated or confirmed from a primary source
+(filled, in the status colour), sourced claim (tinted),
 unproven — no source or `Inference` — (dashed, `?`), disputed (`!`), rejected
 (struck, `×`). Two accounts of the same fact whose dates cannot both hold are both
 kept and linked with `≠`. Records with no date anywhere are listed as unplaced.
