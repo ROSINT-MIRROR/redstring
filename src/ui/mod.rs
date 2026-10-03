@@ -1,4 +1,5 @@
 mod app;
+mod arrivals;
 mod board;
 mod center;
 mod chrome;
