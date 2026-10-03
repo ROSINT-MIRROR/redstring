@@ -36,7 +36,7 @@ rigor is.
 
 - **Entity** — a person, org, domain, address, wallet. 62 kinds.
 - **Edge** — typed, directed, and carrying one or more **Sources**, stamped with
-  origin, status, confidence, author and time. 144 verbs. An edge with zero
+  origin, status, confidence, author and time. 147 verbs. An edge with zero
   sources is an unproven assertion and is drawn as one.
 - **Observation** — a typed, individually sourceable fact on an entity, with its
   own origin, verification status, confidence and author. Not a flat key-value
