@@ -220,7 +220,7 @@ impl RedstringApp {
             return Ok(());
         };
         let cam = camera_read(ui)?;
-        let to = minimal_fit(cam, bbox, board)?;
+        let to = frame_fit(cam, bbox, board)?;
         if to == cam {
             return Ok(());
         }
@@ -338,35 +338,13 @@ fn free_spot(seed: Pos2, away: Vec2, placed: &[(NodeIndex, Pos2)], gap: f32) -> 
     seed + Vec2::angled(base) * radius
 }
 
-fn minimal_fit(cam: Camera, bbox: Rect, board: Vec2) -> Result<Camera, Error> {
+fn frame_fit(cam: Camera, bbox: Rect, board: Vec2) -> Result<Camera, Error> {
     let m = CameraEase::MARGIN;
     let zoom = clamp_zoom(cam.zoom)?;
-    let w = bbox.width().max(1.0);
-    let h = bbox.height().max(1.0);
-    if w * zoom <= board.x * m && h * zoom <= board.y * m {
-        let inner_min = board * (1.0 - m) / 2.0;
-        let inner_max = board * (1.0 + m) / 2.0;
-        let pan = Vec2::new(cam.x, cam.y);
-        let lo = bbox.min.to_vec2() * zoom + pan;
-        let hi = bbox.max.to_vec2() * zoom + pan;
-        let dx = nudge(lo.x, hi.x, inner_min.x, inner_max.x);
-        let dy = nudge(lo.y, hi.y, inner_min.y, inner_max.y);
-        return Ok(Camera { x: cam.x + dx, y: cam.y + dy, zoom: cam.zoom });
-    }
-    let fit = (board.x * m / w).min(board.y * m / h);
+    let fit = (board.x * m / bbox.width().max(1.0)).min(board.y * m / bbox.height().max(1.0));
     let z = clamp_zoom(fit.min(zoom))?;
     let pan = board / 2.0 - bbox.center().to_vec2() * z;
     Ok(Camera { x: pan.x, y: pan.y, zoom: z })
-}
-
-fn nudge(lo: f32, hi: f32, min: f32, max: f32) -> f32 {
-    if lo < min {
-        return min - lo;
-    }
-    if hi > max {
-        return max - hi;
-    }
-    0.0
 }
 
 fn blend(from: Camera, to: Camera, k: f32, board: Vec2) -> Result<Camera, Error> {
