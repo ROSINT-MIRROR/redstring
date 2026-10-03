@@ -1,6 +1,7 @@
 mod app;
 mod archive;
 mod archive_view;
+mod arrivals;
 mod board;
 mod center;
 mod chrome;

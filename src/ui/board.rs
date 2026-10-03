@@ -216,6 +216,7 @@ impl RedstringApp {
         self.node_drag_input(ui, rect)?;
         self.fold_input(ui, rect)?;
         self.layout_anim_tick(ui)?;
+        self.camera_ease_tick(ui)?;
         scroll_zoom(ui)?;
 
         ui.add(

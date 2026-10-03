@@ -9,6 +9,8 @@ pub mod nodes;
 #[cfg(test)]
 mod tests_alibi;
 #[cfg(test)]
+mod tests_arrivals;
+#[cfg(test)]
 mod tests_autosave;
 #[cfg(test)]
 mod tests_camera;

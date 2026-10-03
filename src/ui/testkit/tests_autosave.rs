@@ -111,10 +111,13 @@ mod tests {
         assert_eq!(loc(&app, b2), (613.0, -88.0), "and so did the second node's");
         assert_eq!(app.current_layout, LayoutKind::Free, "the layout choice survived");
         assert!(app.size_by_degree, "the board's display policy survived");
-        assert!(
-            app.layout_anim.is_none(),
-            "a free board never re-arranges itself when nodes arrive"
-        );
+        let planted = graph::node_by_slug(&app, "planted_example").unwrap().unwrap();
+        for (idx, _, _) in app.layout_anim.iter().flat_map(|anim| anim.steps.iter()) {
+            assert_eq!(
+                *idx, planted,
+                "a free board never re-arranges itself when nodes arrive: only the newcomer animates in"
+            );
+        }
         let dob = graph::observation(&app, a2, "dob").unwrap().unwrap();
         assert_eq!(dob.value.text().unwrap(), "1971-03-04", "in-memory facts survived");
         assert!(

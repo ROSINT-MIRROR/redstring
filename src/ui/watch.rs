@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::project::Project;
 
 use super::app::RedstringApp;
+use super::board::{camera_read, camera_write};
 
 pub struct Watcher {
     pub baseline: Option<(String, SystemTime)>,
@@ -92,12 +93,13 @@ impl RedstringApp {
             return Ok(());
         }
         crate::dlog_info!("watch", "hot-reload: external edit on {path}");
-        let before = self.g.g().node_count();
+        let (camera, layout, before) = (camera_read(ui)?, self.current_layout, self.live_slugs()?);
         self.load(ui)?;
-        let after = self.g.g().node_count();
-        self.nodes_arrived(ui, after.saturating_sub(before), Vec::new())?;
+        camera_write(ui, camera)?;
+        (self.pending_camera, self.current_layout, self.fit_on_open) = (None, layout, false);
         self.status = format!("external edit detected — reloaded {path}");
-        Ok(())
+        let (added, removed) = self.slug_diff(&before)?;
+        self.settle_arrivals(ui, &added, &removed)
     }
 
     fn current_case_path(&self) -> Option<String> {
