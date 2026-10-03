@@ -317,6 +317,7 @@ mod tests {
                 reference: "notes/dossier.md#x".into(),
                 excerpt: "quote".into(),
                 sha256: Some("a".repeat(64)),
+                published: None,
                 fetched_at: Some(1_700_000_000),
                 source_org: Some("DOJ".into()),
                 tier: crate::model::SourceTier::Primary,

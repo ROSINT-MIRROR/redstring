@@ -1,0 +1,24 @@
+(
+    camera: (
+        x: 0.0,
+        y: 0.0,
+        zoom: 1.0,
+    ),
+    positions: {
+        "dorin_vale": (-240.0, -20.0),
+        "mara_ionescu": (-430.0, -150.0),
+        "brightwater_paving_srl": (80.0, -20.0),
+        "eastbrook_town_hall": (80.0, -250.0),
+        "brightwater_paving_example": (360.0, -20.0),
+        "gazeta_eastbrook_paving_contract_questioned": (360.0, 180.0),
+        "tender_14_2019": (-110.0, -250.0),
+        "email_contract_ready": (-330.0, -300.0),
+        "dinner_at_hotel_central": (-430.0, 110.0),
+        "site_visit_quay_street": (-110.0, 200.0),
+        "meeting_with_the_mayor": (-430.0, 270.0),
+    },
+    sizes: {},
+    size_by_degree: false,
+    layout: Free,
+    collapsed: [],
+)

@@ -51,6 +51,11 @@ pub fn open_sample_case(into: &Path) -> Result<Project, Error> {
     Project::open(into)
 }
 
+pub fn open_timeline_case(into: &Path) -> Result<Project, Error> {
+    copy_tree(&sample_case_src()?.with_file_name("timeline_case"), into)?;
+    Project::open(into)
+}
+
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), Error> {
     std::fs::create_dir_all(dst).map_err(|source| Error::Io {
         path: dst.to_path_buf(),

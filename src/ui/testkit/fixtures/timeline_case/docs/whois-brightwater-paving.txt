@@ -1,0 +1,4 @@
+SYNTHETIC DEMO WHOIS — fictional domain on the reserved .example TLD.
+Domain Name: brightwater-paving.example
+Creation Date: 2018-02-27T10:22:31Z
+Registrar: Example Registrar (synthetic)

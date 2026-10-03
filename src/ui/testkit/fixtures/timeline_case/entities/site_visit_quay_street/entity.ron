@@ -1,0 +1,6 @@
+(
+    slug: "site_visit_quay_street",
+    kind: Travel,
+    label: "Site visit, Quay Street",
+    value: "",
+)

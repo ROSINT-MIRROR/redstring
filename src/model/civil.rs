@@ -38,6 +38,10 @@ pub fn days_from_civil(y: i64, m: i64, d: i64) -> Result<i64, Error> {
     Ok(era * 146_097 + doe - 719_468)
 }
 
+pub fn civil_ymd(secs: i64) -> Result<(i64, i64, i64), Error> {
+    Ok(civil_from_days(secs.div_euclid(86_400)))
+}
+
 pub fn fnv1a(s: &str) -> Result<u64, Error> {
     let mut h = 0xcbf29ce484222325u64;
     for b in s.bytes() {

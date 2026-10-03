@@ -1,6 +1,8 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+use super::observation::DateVal;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum SourceKind {
     Markdown,
@@ -84,6 +86,9 @@ pub struct Source {
     pub sha256: Option<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<DateVal>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fetched_at: Option<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,6 +131,7 @@ mod tests {
         assert_eq!(s.reference, "https://crt.sh/?q=x");
         assert!(s.excerpt.is_empty());
         assert!(s.sha256.is_none(), "sha256 defaults to None");
+        assert!(s.published.is_none(), "no publication date is ever invented for an old line");
         assert!(s.fetched_at.is_none());
         assert!(s.source_org.is_none());
         assert_eq!(s.tier, SourceTier::Unrated, "tier defaults to Unrated");
@@ -138,6 +144,10 @@ mod tests {
             reference: "evidence/docs/whois-x.txt".to_owned(),
             excerpt: "Registrar: Example".to_owned(),
             sha256: Some("a".repeat(64)),
+            published: Some(DateVal {
+                secs: 1_569_801_600,
+                precision: crate::model::DatePrecision::Day,
+            }),
             fetched_at: Some(1_700_000_000),
             source_org: Some("crt.sh".to_owned()),
             tier: SourceTier::Primary,
@@ -163,6 +173,7 @@ mod tests {
         assert!(!json.contains("sha256"), "unset sha256 must not bloat the line: {json}");
         assert!(!json.contains("tier"), "Unrated tier must not bloat the line: {json}");
         assert!(!json.contains("fetched_at"), "unset fetched_at must not appear: {json}");
+        assert!(!json.contains("published"), "unset published must not appear: {json}");
         assert!(!json.contains("sealed"), "unsealed source must stay byte-identical: {json}");
     }
 }

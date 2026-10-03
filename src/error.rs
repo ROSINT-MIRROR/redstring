@@ -106,6 +106,10 @@ pub enum Error {
         node: usize,
     },
 
+    Timeline {
+        what: String,
+    },
+
     #[cfg(test)]
     InvariantViolated {
         what: String,
@@ -200,6 +204,7 @@ impl std::fmt::Display for Error {
             Self::PathTrace { node } => {
                 write!(f, "path reconstruction hit a missing link at node {node}")
             }
+            Self::Timeline { what } => write!(f, "timeline: {what}"),
             #[cfg(test)]
             Self::InvariantViolated { what } => write!(f, "invariant violated: {what}"),
             #[cfg(test)]

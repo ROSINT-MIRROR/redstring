@@ -117,6 +117,39 @@ summary: 0 structural error(s), 5 advisory warning(s) — 1 unproven (0-src) + 1
 
 Exit codes: `2` structural errors, `1` advisory warnings only, `0` clean.
 
+## Timeline
+
+`Ctrl+T` (or **Timeline** in the toolbar) docks a timeline under the board. It is
+a live projection of the same case — nothing is copied or stored separately —
+laid out on four lanes so the times of one record are never confused:
+
+- **event** — when it happened: date observations, date-range observations and
+  relation `valid_from`/`valid_to` windows, each at its stated precision. A month
+  or a year is drawn as a band over the whole period, never as a point.
+- **published** — when the cited material was made public (`Source.published`,
+  editable on every source; never derived from anything else).
+- **captured** — when the evidence was fetched or received (`Source.fetched_at`).
+- **entered** — when the record entered the case (`created_at`; a record without
+  a stamp is left off and counted, not given one).
+
+Times of day are shown only when a record states one, read verbatim from an
+ISO-8601 text value: `Z` and `±hh:mm` offsets are kept as written; a time without
+a zone is placed by its day and labelled as such. Nothing else is parsed or guessed.
+
+Marks are drawn by footing: corroborated (filled), sourced claim (tinted),
+unproven — no source or `Inference` — (dashed, `?`), disputed (`!`), rejected
+(struck, `×`). Two accounts of the same fact whose dates cannot both hold are both
+kept and linked with `≠`. Records with no date anywhere are listed as unplaced.
+
+Clicking a mark selects its entity or relation on the board and pins a card with
+its sources (URLs and case files open from there), its standing, conflicting
+accounts and the same record's other times; a red string joins them across the
+lanes. Selecting on the board pins and frames that record's marks.
+
+A synthetic demo case lives in `src/ui/testkit/fixtures/timeline_case/` —
+fictional people, a reserved `.example` domain, invented documents. Copy it
+somewhere disposable and run `redstring` inside the copy.
+
 ## Lookups
 
 31 module specs in `modules/`, each a declarative RON file: which entity kinds it

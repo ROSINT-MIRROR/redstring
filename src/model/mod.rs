@@ -11,7 +11,7 @@ mod subtype;
 mod value;
 
 pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, LayoutKind, MAX_CASE_NAME, RelationRec};
-pub use civil::{days_from_civil, fmt_civil_date};
+pub use civil::{civil_ymd, days_from_civil, fmt_civil_date, fmt_civil_range};
 pub use entity::{CATEGORY_META, CategoryMeta, DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, KindMeta, pretty_key, slugify};
 pub use facet::{BadgeCorner, FACET_META, Facet, FacetValue, facet_badge, occupation_of, retain_declared_facets, role_of, set_occupation, set_role, set_subtype, subtype_of};
 pub use observation::{Author, DATE_PRECISION_META, DatePrecision, DateVal, ObsValue, Observation, Origin, VERIFICATION_META, Verification, now_unix, resolve_identity, status_color, status_label};

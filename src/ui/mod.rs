@@ -23,6 +23,7 @@ mod search;
 mod style;
 #[cfg(test)]
 pub mod testkit;
+mod timeline;
 mod watch;
 mod welcome;
 
