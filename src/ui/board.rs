@@ -8,7 +8,7 @@ use petgraph::graph::NodeIndex;
 
 use crate::error::Error;
 use crate::model::{Camera, EntityKind, KIND_META, Preset};
-use crate::shapes::{SourcedEdgeShape, base_radius, texture_full_for};
+use crate::shapes::{SourcedEdgeShape, base_radius, set_relation_labels, texture_full_for};
 
 use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
 
@@ -200,6 +200,7 @@ impl RedstringApp {
     pub fn board(&mut self, ui: &mut egui::Ui) -> Result<(), Error> {
         let rect = ui.available_rect_before_wrap();
         self.board_size = rect.size();
+        set_relation_labels(ui.ctx(), self.prefs.relation_labels)?;
         self.draw_background(ui, rect)?;
 
         self.apply_fold()?;

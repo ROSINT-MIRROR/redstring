@@ -140,6 +140,13 @@ impl RedstringApp {
                     {
                         self.timeline.open = !self.timeline.open;
                     }
+                    if tb_toggle(ui, egui_phosphor::regular::TAG, "Labels", self.prefs.relation_labels)
+                        .on_hover_text("Show relation labels — keep every sourced relation's name on the board, not only on hover or selection. Unsourced warnings always show; labels still give way where they would overlap and hide when zoomed far out. Saved as your preference for every case.")
+                        .clicked()
+                    {
+                        self.prefs.relation_labels = !self.prefs.relation_labels;
+                        self.prefs.save()?;
+                    }
                     ui.separator();
                     if tb_button(ui, egui_phosphor::regular::FRAME_CORNERS, "Center")
                         .on_hover_text("frame the biggest cluster of visible nodes in view")

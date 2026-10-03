@@ -12,6 +12,7 @@ const MAX_RECENT: usize = 8;
 pub struct Prefs {
     pub sidebar_collapsed: bool,
     pub inspector_collapsed: bool,
+    pub relation_labels: bool,
 
     #[serde(default = "default_palette_width")]
     pub palette_width: f32,
@@ -34,6 +35,7 @@ impl Default for Prefs {
         Self {
             sidebar_collapsed: false,
             inspector_collapsed: false,
+            relation_labels: false,
             palette_width: default_palette_width(),
             ui_scale: 1.0,
             theme: Theme::Dark,
@@ -131,6 +133,7 @@ mod tests {
     fn partial_and_empty_files_load() {
         let p: Prefs = ron::from_str("(sidebar_collapsed: true)").unwrap();
         assert!(p.sidebar_collapsed);
+        assert!(!p.relation_labels, "a prefs file without the key keeps relation labels on hover only");
         assert_eq!(p.ui_scale, Prefs::default().ui_scale);
         assert_eq!(p.theme, Theme::Dark);
         assert_eq!(p.background, None);
@@ -145,6 +148,7 @@ mod tests {
         let p = Prefs {
             sidebar_collapsed: true,
             inspector_collapsed: true,
+            relation_labels: true,
             palette_width: 320.0,
             ui_scale: 1.75,
             theme: Theme::Light,

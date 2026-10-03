@@ -1,8 +1,12 @@
 use egui::{Color32, Context, Pos2, Rect, Vec2};
+use egui_graphs::DrawContext;
 
 use crate::error::Error;
 
 const CLAIMS_ID: &str = "redstring_label_claims";
+const RELATION_LABELS_ID: &str = "redstring_relation_labels";
+
+pub const PINNED_EDGE_LABEL_MIN_ZOOM: f32 = 0.75;
 
 pub const LABEL_SIZE: f32 = 5.5;
 pub const LABEL_GAP: f32 = 2.0;
@@ -98,6 +102,22 @@ pub fn claim_label(ctx: &Context, id: u64, rect: Rect, priority: f32) -> Result<
         true
     });
     Ok(win)
+}
+
+pub fn set_relation_labels(ctx: &Context, on: bool) -> Result<(), Error> {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(RELATION_LABELS_ID), on));
+    Ok(())
+}
+
+pub fn relation_labels(ctx: &Context) -> Result<bool, Error> {
+    let Some(on) = ctx.data(|d| d.get_temp::<bool>(egui::Id::new(RELATION_LABELS_ID))) else {
+        return Ok(false);
+    };
+    Ok(on)
+}
+
+pub fn pinned_labels(ctx: &DrawContext) -> Result<bool, Error> {
+    Ok(relation_labels(ctx.ctx)? && ctx.meta.zoom >= PINNED_EDGE_LABEL_MIN_ZOOM)
 }
 
 pub fn claim_edge_label(
@@ -473,5 +493,147 @@ mod tests {
             !b_win2,
             "B must STILL yield: the A/B declutter outcome is invariant to the inserted-first disjoint claim"
         );
+    }
+
+    fn edge_texts(sourced: bool, pinned: bool, zoom: f32) -> Vec<String> {
+        use crate::model::{
+            Author, Entity, EntityKind, Origin, Relation, RelationKind, Source, SourceKind,
+            Verification,
+        };
+        use crate::shapes::{EntityNodeShape, SourcedEdgeShape};
+        use crate::ui::testkit::nodes;
+        use egui_graphs::{DisplayEdge, DrawContext, EdgeProps, MetadataFrame, Node, SettingsStyle};
+        use petgraph::{Directed, stable_graph::DefaultIx};
+
+        let sources = if sourced {
+            vec![Source { kind: SourceKind::Note, reference: "n".into(), ..Default::default() }]
+        } else {
+            Vec::new()
+        };
+        let mut es = SourcedEdgeShape::from(EdgeProps {
+            payload: Relation {
+                kind: RelationKind::Controls,
+                origin: Origin::default(),
+                status: Verification::AnalystAsserted,
+                confidence: 100,
+                author: Author::default(),
+                created_at: 0,
+                sources,
+                valid_from: None,
+                valid_to: None,
+                sealed: false,
+                hidden: false,
+            },
+            order: 0,
+            selected: false,
+            label: String::new(),
+        });
+        let mut n1 = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(
+            nodes::entity(EntityKind::Person, "from_slug", "A", ""),
+        );
+        let mut n2 = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(
+            nodes::entity(EntityKind::Person, "to_slug", "B", ""),
+        );
+        n1.set_location(Pos2::new(40.0, 200.0));
+        n2.set_location(Pos2::new(400.0, 200.0));
+        let ctx = egui::Context::default();
+        set_relation_labels(&ctx, pinned).expect("set the view flag");
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        let mut out = Vec::new();
+        let _full = ctx.run_ui(input, |ui| {
+            let c = ui.ctx();
+            let painter = c.debug_painter();
+            let style = SettingsStyle::default();
+            let mut meta = MetadataFrame::default();
+            meta.zoom = zoom;
+            let dctx = DrawContext {
+                ctx: c,
+                painter: &painter,
+                style: &style,
+                is_directed: true,
+                meta: &meta,
+            };
+            for s in &es.shapes(&n1, &n2, &dctx) {
+                if let egui::Shape::Text(t) = s {
+                    out.push(t.galley.text().to_owned());
+                }
+            }
+        });
+        out
+    }
+
+    fn shows(texts: &[String], needle: &str) -> bool {
+        texts.iter().any(|t| t.contains(needle))
+    }
+
+    #[test]
+    fn show_relation_labels_pins_sourced_names_at_readable_zooms() {
+        use egui_phosphor::regular::PAPERCLIP;
+        let off = edge_texts(true, false, 1.0);
+        assert!(!shows(&off, "controls"), "toggle off: a sourced label waits for hover, got {off:?}");
+        for zoom in [PINNED_EDGE_LABEL_MIN_ZOOM, 1.0, 2.0] {
+            let on = edge_texts(true, true, zoom);
+            assert!(
+                shows(&on, "controls") && shows(&on, PAPERCLIP),
+                "toggle on: the sourced verb and its source count stay visible at zoom {zoom}, got {on:?}"
+            );
+        }
+        let far = edge_texts(true, true, 0.5);
+        assert!(
+            !shows(&far, "controls"),
+            "zoomed far out the pinned labels step back instead of burying the board, got {far:?}"
+        );
+    }
+
+    #[test]
+    fn unsourced_warnings_ignore_the_relation_label_toggle() {
+        use egui_phosphor::regular::WARNING;
+        for pinned in [false, true] {
+            for zoom in [0.5f32, 1.0] {
+                let texts = edge_texts(false, pinned, zoom);
+                assert!(
+                    shows(&texts, WARNING),
+                    "an unsourced edge always warns (pinned {pinned}, zoom {zoom}), got {texts:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn screenshot_labels_and_the_view_toggle_stay_separate() {
+        use crate::shapes::SourcedEdgeShape;
+        SourcedEdgeShape::set_shot_labels(true).expect("enable shot labels");
+        let shot = edge_texts(true, false, 1.0);
+        SourcedEdgeShape::set_shot_labels(false).expect("reset shot labels");
+        assert!(shows(&shot, "controls"), "the --shot flag still labels without the toggle, got {shot:?}");
+        let ctx = egui::Context::default();
+        assert!(!relation_labels(&ctx).expect("read"), "a fresh window starts with labels on hover only");
+        set_relation_labels(&ctx, true).expect("set");
+        assert!(relation_labels(&ctx).expect("read"), "the toggle lives on the window context");
+        assert!(
+            !relation_labels(&egui::Context::default()).expect("read"),
+            "the flag never leaks into another context, such as the offscreen --shot renderer"
+        );
+    }
+
+    #[test]
+    fn the_board_publishes_the_relation_label_preference() {
+        use crate::ui::testkit::harness;
+        let mut app = harness::app().expect("app");
+        app.prefs.relation_labels = true;
+        let on = harness::frame(&mut app, |a, ui| {
+            a.board(ui)?;
+            relation_labels(ui.ctx())
+        })
+        .expect("board frame");
+        assert!(on, "drawing the board must hand the preference to the edge renderer");
+        app.prefs.relation_labels = false;
+        let off = harness::frame(&mut app, |a, ui| {
+            a.board(ui)?;
+            relation_labels(ui.ctx())
+        })
+        .expect("board frame");
+        assert!(!off, "turning the preference off must reach the renderer too");
     }
 }

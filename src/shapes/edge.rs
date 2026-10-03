@@ -14,7 +14,7 @@ use crate::model::{
     Verification, status_color,
 };
 
-use super::label::{claim_edge_label, theme_shift};
+use super::label::{claim_edge_label, pinned_labels, theme_shift};
 
 const WIDTH: f32 = 3.0;
 const HOT_MULT: f32 = 1.9;
@@ -214,7 +214,7 @@ impl SourcedEdgeShape {
             self.source_count,
             self.kind,
             hot,
-            shot_labels_flag(),
+            shot_labels_flag() || pinned_labels(ctx).is_ok_and(|on| on),
             self.sealed,
         ) else {
             return Vec::new();
