@@ -6,7 +6,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::dlog_info;
 use crate::error::Error;
-use crate::model::{DEFAULT_NODE_SIZE, KIND_META, RELATION_META, RelationRec, now_unix};
+use crate::model::{DEFAULT_NODE_SIZE, Entity, KIND_META, RELATION_META, RelationRec, now_unix};
 use crate::project::{
     CaseLock, CaseState, Claim, Merged, Project, Resolve, disk_sig, merge, note_on_disk,
     read_state, same_content, try_lock, wait_lock, write_changes,
@@ -211,14 +211,11 @@ impl RedstringApp {
             if !unchanged {
                 let fresh = entity_of(&project, er, note, d)?;
                 let e = node.payload_mut();
-                e.kind = fresh.kind;
-                e.label = fresh.label;
-                e.value = fresh.value;
-                e.sealed = fresh.sealed;
-                e.observations = fresh.observations;
-                e.facets = fresh.facets;
-                e.note = fresh.note;
-                e.image = fresh.image;
+                *e = Entity {
+                    boost: e.boost,
+                    hidden: e.hidden,
+                    ..fresh
+                };
                 node.set_label(format!("{} {}", KIND_META[er.kind as usize].icon, er.label));
                 out.changed += 1;
             }
