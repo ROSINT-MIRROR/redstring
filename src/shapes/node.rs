@@ -13,13 +13,14 @@ use crate::model::{Entity, Facet, FacetValue, KIND_META};
 
 use super::badge::{Corners, backdrop, badge_fg, collapsed_badge, draw_facet_badges, sealed_badge};
 use super::label::{
-    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_MAX_ROWS, LABEL_MIN_PX, LABEL_SIZE, LABEL_WRAP, LabelAnchor,
-    MAX_FONT_PX, badge_radius, badge_radius_img, claim_label, label_box, label_pad_px,
+    BADGE_CENTER_FRAC, LABEL_GAP, LABEL_ICON_SCALE, LABEL_MAX_ROWS, LABEL_MIN_PX, LABEL_SIZE,
+    LABEL_WRAP, LabelAnchor, MAX_FONT_PX, badge_radius, badge_radius_img, claim_label, label_box,
+    label_pad_px,
 };
 use super::reveal::{display_label, reveal_label};
 use super::texture::{cover_uv, texture_for};
 
-pub const IMG_RADIUS: f32 = 10.0;
+pub const IMG_RADIUS: f32 = 14.0;
 
 const IMG_CORNER: f32 = 3.0;
 
@@ -372,7 +373,10 @@ impl EntityNodeShape {
         let (icon, name) = ctx.ctx.fonts_mut(|f| {
             let icon = f.layout_no_wrap(
                 self.icon.clone(),
-                FontId::new(font_px(ctx, LABEL_SIZE * 2.0 * self.size), FontFamily::Proportional),
+                FontId::new(
+                    font_px(ctx, LABEL_SIZE * LABEL_ICON_SCALE * self.size),
+                    FontFamily::Proportional,
+                ),
                 color,
             );
             let mut name_job = egui::text::LayoutJob::simple(

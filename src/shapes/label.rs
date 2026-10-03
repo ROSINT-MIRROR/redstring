@@ -4,11 +4,12 @@ use crate::error::Error;
 
 const CLAIMS_ID: &str = "redstring_label_claims";
 
-pub const LABEL_SIZE: f32 = 7.0;
+pub const LABEL_SIZE: f32 = 5.5;
 pub const LABEL_GAP: f32 = 2.0;
-pub const LABEL_WRAP: f32 = 75.0;
+pub const LABEL_WRAP: f32 = 60.0;
 pub const LABEL_MAX_ROWS: usize = 2;
-pub const LABEL_MIN_PX: f32 = 9.0;
+pub const LABEL_MIN_PX: f32 = 8.5;
+pub const LABEL_ICON_SCALE: f32 = 1.15;
 
 pub const MAX_FONT_PX: f32 = 256.0;
 
@@ -168,6 +169,93 @@ mod tests {
         assert!(
             (breathing - gap).abs() < 1e-3,
             "breathing room {breathing} below the badge must equal LABEL_GAP {gap}"
+        );
+    }
+
+    fn disc_and_label_px(zoom: f32) -> (f32, f32) {
+        use crate::model::{DEFAULT_NODE_SIZE, Entity, EntityKind, Relation};
+        use crate::shapes::EntityNodeShape;
+        use egui::Shape;
+        use egui_graphs::{DisplayNode, DrawContext, MetadataFrame, Node, SettingsStyle};
+        use petgraph::{Directed, stable_graph::DefaultIx};
+
+        let mut node = Node::<Entity, Relation, Directed, DefaultIx, EntityNodeShape>::new(Entity {
+            slug: "n".into(),
+            kind: EntityKind::Person,
+            label: "Node Label".into(),
+            size: DEFAULT_NODE_SIZE,
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)));
+        let (mut disc, mut font) = (0.0f32, 0.0f32);
+        let _full = ctx.run_ui(input, |ui| {
+            let c = ui.ctx();
+            let painter = c.debug_painter();
+            let style = SettingsStyle::default();
+            let mut meta = MetadataFrame::default();
+            meta.zoom = zoom;
+            let dctx = DrawContext {
+                ctx: c,
+                painter: &painter,
+                style: &style,
+                is_directed: true,
+                meta: &meta,
+            };
+            let shapes =
+                <EntityNodeShape as DisplayNode<Entity, Relation, Directed, DefaultIx>>::shapes(
+                    node.display_mut(),
+                    &dctx,
+                );
+            for s in &shapes {
+                match s {
+                    Shape::Circle(cs) => disc = disc.max(cs.radius * 2.0),
+                    Shape::Text(t) if t.galley.text() == "Node Label" => {
+                        font = t.galley.job.sections[0].format.font_id.size;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        (disc, font)
+    }
+
+    #[test]
+    fn label_stays_about_a_quarter_of_its_disc_at_every_zoom() {
+        for zoom in [0.8f32, 1.0, 1.5, 2.5] {
+            let (disc, font) = disc_and_label_px(zoom);
+            assert!(font > 0.0, "a default-size label must still draw at zoom {zoom}");
+            let ratio = font / disc;
+            assert!(
+                (0.2..=0.26).contains(&ratio),
+                "label {font}px against a {disc}px disc at zoom {zoom} is ratio {ratio}: the name must not outweigh its icon"
+            );
+        }
+    }
+
+    #[test]
+    fn portraits_and_labels_keep_their_proportions() {
+        let disc = NODE_RADIUS * 2.0;
+        let tile = IMG_RADIUS * 2.0;
+        assert!(tile >= disc, "a portrait must never render smaller than a plain icon disc");
+        assert!(
+            LABEL_SIZE / tile <= 0.2,
+            "a portrait's name must not crowd the portrait: {LABEL_SIZE} on a {tile} tile"
+        );
+        assert!(
+            LABEL_ICON_SCALE <= 1.25,
+            "the kind glyph beside a portrait's name is an inline marker, not a second avatar"
+        );
+        let chars_per_line = LABEL_WRAP / (LABEL_SIZE * 0.6);
+        assert!(
+            (16.0..=20.0).contains(&chars_per_line),
+            "the wrap width tracks the font so a line still holds ~18 monospace characters, got {chars_per_line}"
+        );
+        let lod_zoom = LABEL_MIN_PX / (LABEL_SIZE * crate::model::DEFAULT_NODE_SIZE);
+        assert!(
+            lod_zoom < 0.8,
+            "default-size labels must stay drawn down to at least 0.8 zoom, they vanish below {lod_zoom}"
         );
     }
 
