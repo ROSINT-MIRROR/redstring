@@ -8,7 +8,7 @@ use petgraph::stable_graph::StableGraph;
 
 use crate::error::Error;
 use crate::model::{
-    CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, KIND_META,
+    Camera, CaseDisplay, CaseFile, CaseMeta, DEFAULT_NODE_SIZE, Entity, EntityRec, KIND_META,
     RELATION_META, Relation, RelationRec, now_unix,
 };
 use crate::project::{self, Project};
@@ -283,6 +283,7 @@ impl RedstringApp {
         self.band = None;
         camera_write(ui, cf.display.camera)?;
         self.pending_camera = Some(cf.display.camera);
+        self.fit_on_open = cf.display.camera == Camera::default() && !cf.data.entities.is_empty();
         self.watch_project()?;
         self.saved_fp = self.fingerprint()?;
         self.autosave.last_fp = self.saved_fp.clone();

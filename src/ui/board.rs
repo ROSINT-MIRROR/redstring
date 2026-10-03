@@ -11,6 +11,7 @@ use crate::model::{Camera, EntityKind, KIND_META, Preset};
 use crate::shapes::{SourcedEdgeShape, base_radius, set_relation_labels, texture_full_for};
 
 use super::app::{BOARD_META_ID, RedstringApp, RsGraph};
+use super::pinned::{PinnedLayout, PinnedState};
 
 const SCROLL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 
@@ -201,6 +202,12 @@ impl RedstringApp {
         let rect = ui.available_rect_before_wrap();
         self.board_size = rect.size();
         set_relation_labels(ui.ctx(), self.prefs.relation_labels)?;
+        if self.fit_on_open && rect.width() > 1.0 {
+            let status = self.status.clone();
+            self.fit_on_open = false;
+            self.center_graph()?;
+            self.status = status;
+        }
         self.draw_background(ui, rect)?;
 
         self.apply_fold()?;
@@ -212,7 +219,7 @@ impl RedstringApp {
         scroll_zoom(ui)?;
 
         ui.add(
-            &mut GraphView::<_, _, _, _, _, SourcedEdgeShape>::new(&mut self.g)
+            &mut GraphView::<_, _, _, _, _, SourcedEdgeShape, PinnedState, PinnedLayout>::new(&mut self.g)
                 .with_id(Some(BOARD_META_ID.to_owned()))
                 .with_interactions(
                     &SettingsInteraction::default()

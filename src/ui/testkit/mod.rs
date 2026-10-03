@@ -11,6 +11,8 @@ mod tests_alibi;
 #[cfg(test)]
 mod tests_autosave;
 #[cfg(test)]
+mod tests_camera;
+#[cfg(test)]
 mod tests_convergence;
 #[cfg(test)]
 mod tests_delete;
