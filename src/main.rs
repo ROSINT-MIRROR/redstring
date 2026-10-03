@@ -1,3 +1,4 @@
+mod alibi;
 mod error;
 mod log;
 mod model;

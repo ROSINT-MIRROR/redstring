@@ -14,6 +14,7 @@ use crate::modules::Registry;
 use crate::prefs::Prefs;
 use crate::project::{Project, read_case, write_case};
 use crate::ui::RedstringApp;
+use crate::ui::archive::AlibiState;
 use crate::ui::chrome::SettingsTab;
 use crate::ui::layout::LayoutKind;
 use crate::ui::timeline::TimelineState;
@@ -99,6 +100,7 @@ pub fn app_authored(author: Author) -> Result<RedstringApp, Error> {
         ))?,
         custom_theme: None,
         timeline: TimelineState::closed()?,
+        alibi: AlibiState::new()?,
     })
 }
 

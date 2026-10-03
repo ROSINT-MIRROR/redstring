@@ -1,4 +1,6 @@
 mod app;
+mod archive;
+mod archive_view;
 mod board;
 mod center;
 mod chrome;

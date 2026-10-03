@@ -1,0 +1,4 @@
+{"witness":"wayback","url":"https://evil.example/post","status":"skipped","reason":"no_key","snapshot":null,"ts":null,"detail":"ARCHIVE_ORG_KEY not set — free key: https://archive.org/account/s3.php"}
+{"witness":"archivetoday","url":"https://evil.example/post","status":"submitted","reason":"submitted","snapshot":null,"ts":null,"detail":"submit accepted"}
+{"witness":"ghostarchive","url":"https://evil.example/post","status":"submitted","reason":"submitted","snapshot":null,"ts":null,"detail":"rate-limited (http 429) — will end pending unless already public"}
+{"witness":"archivetoday","url":"https://evil.example/post","status":"confirmed","reason":"ok","snapshot":"https://archive.ph/20261003120501/https://evil.example/post","ts":"20261003120501","detail":null}

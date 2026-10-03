@@ -1,3 +1,4 @@
+mod archive;
 mod case;
 mod civil;
 mod entity;
@@ -11,6 +12,7 @@ mod source;
 mod subtype;
 mod value;
 
+pub use archive::{ArchiveRecord, ArchiveStatus, ArchiveVia, merge_archive};
 pub use case::{Camera, CaseDisplay, CaseFile, CaseMeta, EntityRec, FORMAT_VERSION, LayoutKind, MAX_CASE_NAME, RelationRec};
 pub use civil::{civil_ymd, days_from_civil, fmt_civil_date, fmt_civil_range};
 pub use entity::{CATEGORY_META, CategoryMeta, DEFAULT_NODE_SIZE, Entity, EntityKind, KIND_META, KindMeta, pretty_key, slugify};
