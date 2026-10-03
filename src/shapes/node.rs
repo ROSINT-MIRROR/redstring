@@ -18,7 +18,7 @@ use super::label::{
     label_pad_px,
 };
 use super::reveal::{display_label, reveal_label};
-use super::texture::{cover_uv, texture_for};
+use super::texture::{contain_rect, texture_for};
 
 pub const IMG_RADIUS: f32 = 14.0;
 
@@ -325,24 +325,27 @@ impl EntityNodeShape {
         let color = self.frame_color(ctx);
         let color = if self.sealed { mute_node(color) } else { color };
         let dark = ctx.ctx.global_style().visuals.dark_mode;
-        let border = if self.interacted() { BORDER_ACTIVE } else { BORDER };
-        let stroke = Stroke::new(ctx.meta.canvas_to_screen_size(border), color);
         let img_tint = if self.sealed { SEALED_IMG_TINT } else { Color32::WHITE };
+        let ring_cr = CornerRadius::same((rect.width() * 0.3).round().clamp(0.0, 255.0) as u8);
 
         let mut res: Vec<Shape> = Vec::with_capacity(4);
         res.extend(self.selection_ring(ctx).map(|ring| {
-            Shape::from(RectShape::stroke(rect.expand(3.0), cr, ring, StrokeKind::Outside))
+            Shape::from(RectShape::stroke(rect.expand(3.0), ring_cr, ring, StrokeKind::Outside))
         }));
+        if self.interacted() && !self.circle.selected {
+            let hover = Stroke::new(ctx.meta.canvas_to_screen_size(BORDER_ACTIVE), color.gamma_multiply(0.6));
+            res.push(RectShape::stroke(rect.expand(2.0), ring_cr, hover, StrokeKind::Outside).into());
+        }
 
-        let Ok(uv) = cover_uv(tex.size()) else {
+        let Ok(art) = contain_rect(rect, tex.size()) else {
             return res;
         };
+        let full_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
         res.push(
-            RectShape::new(rect, cr, img_tint, Stroke::NONE, StrokeKind::Inside)
-                .with_texture(tex.id(), uv)
+            RectShape::new(art, cr, img_tint, Stroke::NONE, StrokeKind::Inside)
+                .with_texture(tex.id(), full_uv)
                 .into(),
         );
-        res.push(RectShape::stroke(rect, cr, stroke, StrokeKind::Inside).into());
 
         let Ok(img_badge_r) = badge_radius_img(rect.width().min(rect.height())) else {
             return res;
