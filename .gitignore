@@ -13,3 +13,6 @@ evidence/
 
 # Agent worktrees.
 .claude/
+
+# Machine-local notes (bug dumps, scratch). Never part of the published tree.
+/local/

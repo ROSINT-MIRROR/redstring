@@ -1,10 +1,11 @@
 [package]
 name = "redstring"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 license = "0BSD"
 description = "Graph-based investigation tool for journalism — sourced edges, sealed subjects, git-friendly cases."
 readme = "README.md"
+repository = "https://github.com/ROSINT-MIRROR/redstring"
 # Publishing to crates.io is disabled until the application is ready for release.
 publish = false
 
