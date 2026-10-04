@@ -1,4 +1,14 @@
-# Red String
+<p align="center">
+  <img src="docs/redstring-mark.svg" alt="Red String logo" width="120">
+</p>
+
+<h1 align="center">Red String</h1>
+
+<p align="center">
+  <a href="Cargo.toml"><img alt="version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FROSINT-MIRROR%2Fredstring%2Fmaster%2FCargo.toml&query=%24.package.version&label=version&color=informational"></a>
+  <a href="LICENSE"><img alt="license: 0BSD" src="https://img.shields.io/badge/license-0BSD-blue"></a>
+  <img alt="status: development preview" src="https://img.shields.io/badge/status-development%20preview-orange">
+</p>
 
 `redstring` is a desktop tool for investigative link analysis. A case is a graph
 of entities and typed relations; every relation and fact carries its own sources

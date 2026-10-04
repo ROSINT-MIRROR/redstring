@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Red String — sourced connections</title>
+  <desc id="desc">Two investigation trails merge into a sourced, verified relationship.</desc>
+  <style>
+    :root { --thread:#ff3545; --paper:#f2eee7; --ink:#0d1110; }
+    .thread { fill:none; stroke:var(--thread); stroke-width:15; stroke-linecap:round; stroke-linejoin:round; }
+  </style>
+  <path class="thread" d="M82 151C180 151 166 230 230 250M82 361C180 361 166 282 230 262M282 256C352 256 351 158 417 158C467 158 474 226 430 249C370 280 374 357 440 369"/>
+  <circle cx="156" cy="178" r="7" fill="var(--paper)"/>
+  <circle cx="190" cy="222" r="7" fill="var(--paper)"/>
+  <circle cx="156" cy="334" r="7" fill="var(--paper)"/>
+  <circle cx="190" cy="290" r="7" fill="var(--paper)"/>
+  <circle cx="82" cy="151" r="30" fill="var(--ink)" stroke="var(--paper)" stroke-width="9"/>
+  <circle cx="82" cy="151" r="9" fill="var(--thread)"/>
+  <circle cx="82" cy="361" r="30" fill="var(--ink)" stroke="var(--paper)" stroke-width="9"/>
+  <circle cx="82" cy="361" r="9" fill="var(--thread)"/>
+  <circle cx="256" cy="256" r="49" fill="var(--ink)" stroke="var(--thread)" stroke-width="11"/>
+  <path d="M235 224h29l17 17v47h-46z" fill="var(--paper)"/>
+  <path d="M264 224v18h17" fill="none" stroke="var(--ink)" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M244 263l9 10 20-23" fill="none" stroke="var(--thread)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="440" cy="369" r="14" fill="var(--thread)"/>
+</svg>
